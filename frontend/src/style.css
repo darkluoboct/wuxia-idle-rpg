@@ -1,0 +1,221 @@
+@import "tailwindcss";
+
+/* 宋韵冷宣（浅色切换态：清冷古籍白宣，去黄气降噪） */
+:root {
+  --bg-backdrop: #dbd6cc;
+  --bg-paper: #f1eee8;
+  --bg-card: #f7f5f0;
+  --bg-elevated: #ece8e0;
+  --bg-beam: #ebe6dc;
+  --border-subtle: rgba(45, 40, 32, 0.08);
+  --border-ink: rgba(45, 40, 32, 0.15);
+  --border-gold-subtle: rgba(138, 106, 52, 0.25);
+  --border-gold: rgba(138, 106, 52, 0.55);
+  --gold-soft: rgba(138, 106, 52, 0.10);
+  --text-ink: #24211d;
+  --text-muted: #767067;
+  --accent-gold: #86652d;
+  --accent-cinnabar: #993531;
+  --accent-jade: #467366;
+  --font-wenkai: "LXGW WenKai Screen", "LXGW WenKai", "KaiTi", "STKaiti", "Noto Serif SC", serif;
+  --font-brush: "Ma Shan Zheng", "STKaiti", "KaiTi", "Noto Serif SC", serif;
+}
+
+/* 燕云玄墨（默认主视觉：90%浓淡玄墨 + 8%哑光暗金 + 2%矿物朱砂） */
+.theme-midnight {
+  --bg-backdrop: #08090b;
+  --bg-paper: #111317;
+  --bg-card: #16191e;
+  --bg-elevated: #1c2026;
+  --bg-beam: #13161b;
+  --border-subtle: rgba(220, 214, 202, 0.06);
+  --border-ink: rgba(220, 214, 202, 0.11);
+  --border-gold-subtle: rgba(200, 166, 107, 0.22);
+  --border-gold: rgba(200, 166, 107, 0.52);
+  --gold-soft: rgba(200, 166, 107, 0.12);
+  --text-ink: #dcd6ca;
+  --text-muted: #847f76;
+  --accent-gold: #c8a66b;
+  --accent-cinnabar: #b54944;
+  --accent-jade: #6c9689;
+}
+
+html,
+body,
+#app {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background-color: var(--bg-backdrop);
+  color: var(--text-ink);
+  font-family: var(--font-wenkai);
+  transition: background-color 0.25s ease, color 0.25s ease;
+}
+
+.font-brush {
+  font-family: var(--font-brush);
+  letter-spacing: 0.06em;
+}
+
+.vertical-rl {
+  writing-mode: vertical-rl;
+  text-orientation: upright;
+}
+
+/* 语义化极简矿物色工具类 */
+.ink-gold {
+  color: var(--accent-gold);
+}
+.ink-cinnabar {
+  color: var(--accent-cinnabar);
+}
+.ink-jade {
+  color: var(--accent-jade);
+}
+.ink-muted {
+  color: var(--text-muted);
+}
+
+/* 桌面端极简沉稳外画框（去除杂乱网格与繁复多层描边） */
+.game-window-frame {
+  background-color: var(--bg-paper);
+  border: 1px solid var(--border-gold-subtle);
+  box-shadow: 0 24px 72px rgba(0, 0, 0, 0.72);
+}
+
+/* 顶部天枢横梁 */
+.sandalwood-beam {
+  background-color: var(--bg-beam);
+  border-bottom: 1px solid var(--border-ink);
+}
+
+/* 主面板：克制留白，仅保留顶部一缕极淡暗金细线 */
+.wuxia-card {
+  position: relative;
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-ink);
+  border-top-color: var(--border-gold-subtle);
+}
+
+/* 次级面板（仅用于重点区块，不再套娃滥用） */
+.wuxia-elevated {
+  background-color: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+}
+
+/* 选中态：哑光暗金细框（彻底取代原先满屏刺眼的红底块） */
+.tab-gold {
+  background-color: var(--gold-soft);
+  color: var(--accent-gold);
+  border: 1px solid var(--border-gold);
+}
+
+/* 常规交互按钮：素墨细线，悬停泛暗金 */
+.token-btn {
+  background-color: transparent;
+  color: var(--text-ink);
+  border: 1px solid var(--border-ink);
+  transition: all 0.16s ease;
+}
+.token-btn:hover {
+  border-color: var(--border-gold);
+  color: var(--accent-gold);
+  background-color: var(--gold-soft);
+}
+
+/* 矿物朱砂印（全屏严控仅1~2处主视觉焦点或主战按钮使用） */
+.seal-stamp {
+  background-color: #842b28;
+  color: #f0e9df;
+  border: 1px solid #a84743;
+  letter-spacing: 0.06em;
+  transition: opacity 0.16s ease;
+}
+.seal-stamp:hover {
+  opacity: 0.9;
+}
+
+/* 极简窄滚动条 */
+::-webkit-scrollbar {
+  width: 3px;
+  height: 3px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-ink);
+}
+
+/* 核心动效（克制不抢视线，仅战斗交锋与跑马灯使用） */
+@keyframes lungeAlly {
+  0% { transform: translateX(0); }
+  35% { transform: translateX(14px); }
+  100% { transform: translateX(0); }
+}
+
+@keyframes lungeEnemy {
+  0% { transform: translateX(0); }
+  35% { transform: translateX(-14px); }
+  100% { transform: translateX(0); }
+}
+
+@keyframes hitShake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-5px); }
+  55% { transform: translateX(5px); }
+  80% { transform: translateX(-3px); }
+}
+
+@keyframes brushBannerPop {
+  0% { transform: translate(-50%, -50%) scale(1.35); opacity: 0; }
+  20% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+  80% { transform: translate(-50%, -50%) scale(1.02); opacity: 1; }
+  100% { transform: translate(-50%, -54%) scale(0.98); opacity: 0; }
+}
+
+@keyframes dmgFloatUp {
+  0% { transform: translateY(4px); opacity: 0; }
+  25% { transform: translateY(-4px); opacity: 1; }
+  100% { transform: translateY(-20px); opacity: 0; }
+}
+
+@keyframes marqueeScroll {
+  0% { transform: translateX(100%); }
+  100% { transform: translateX(-115%); }
+}
+
+.animate-lunge-ally {
+  animation: lungeAlly 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.animate-lunge-enemy {
+  animation: lungeEnemy 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.animate-hit-shake {
+  animation: hitShake 0.35s ease-in-out;
+}
+
+.animate-brush-banner {
+  animation: brushBannerPop 0.85s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-dmg-float {
+  animation: dmgFloatUp 0.8s ease-out forwards;
+}
+
+.animate-marquee {
+  display: inline-block;
+  white-space: nowrap;
+  animation: marqueeScroll 38s linear infinite;
+}
+.animate-marquee:hover {
+  animation-play-state: paused;
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
