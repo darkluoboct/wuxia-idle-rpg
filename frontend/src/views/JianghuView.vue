@@ -1,140 +1,179 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
+import { Lock } from 'lucide-vue-next'
 import { useGameStore } from '@/stores/gameStore'
-import { EXPANSION_VOLUMES_PREVIEW, MAPS, STORY_CHAPTERS } from '@/config/gameData'
-import { getStanceLabel } from '@/network/mockEngine'
+import { EXPANSION_VOLUMES_PREVIEW, ITEMS, MAPS, SKILLS, STORY_CHAPTERS } from '@/config/gameData'
+import { STANCE_META, TIER_META, stanceRelation } from '@/config/uiMeta'
+import PortraitCard from '@/components/PortraitCard.vue'
+import SceneBackdrop from '@/components/SceneBackdrop.vue'
 
 const store = useGameStore()
-const subView = ref<'STORY' | 'MAPS' | 'RAID'>('STORY')
+const sub = ref<'STORY' | 'MAPS' | 'RAID'>('STORY')
+const tabs = [
+  { k: 'STORY', l: '射雕主线' },
+  { k: 'MAPS', l: '九州舆图' },
+  { k: 'RAID', l: '结义 · 后续长卷' },
+] as const
+
+const cleared = computed(() => Math.max(0, store.player.maxChapterId - 1))
+type State = 'CLEARED' | 'CURRENT' | 'LOCKED'
+const stateOf = (id: number): State => (id < store.player.maxChapterId ? 'CLEARED' : id === store.player.maxChapterId ? 'CURRENT' : 'LOCKED')
+
+function drops(ch: (typeof STORY_CHAPTERS)[number]) {
+  const out: { id: string; name: string; tier: keyof typeof TIER_META; kind: 'skill' | 'item' }[] = []
+  if (ch.dropItemId && ITEMS[ch.dropItemId]) out.push({ id: ch.dropItemId, name: ITEMS[ch.dropItemId].name, tier: ITEMS[ch.dropItemId].tier, kind: 'item' })
+  if (ch.dropSkillId && SKILLS[ch.dropSkillId]) out.push({ id: ch.dropSkillId, name: SKILLS[ch.dropSkillId].name, tier: SKILLS[ch.dropSkillId].tier, kind: 'skill' })
+  return out
+}
 </script>
 
 <template>
-  <div class="wuxia-card p-3.5 h-full min-h-0 flex flex-col gap-3 overflow-hidden">
-    <!-- 顶部子导航 -->
-    <div class="flex items-center justify-between border-b border-[var(--border-ink)] pb-2 shrink-0">
-      <div class="flex items-center gap-1.5 text-xs">
-        <button
-          @click="subView = 'STORY'"
-          class="px-3 py-1 cursor-pointer transition"
-          :class="subView === 'STORY' ? 'tab-gold font-bold' : 'token-btn ink-muted'"
-        >
-          第一卷 · 射雕主线
-        </button>
-        <button
-          @click="subView = 'MAPS'"
-          class="px-3 py-1 cursor-pointer transition"
-          :class="subView === 'MAPS' ? 'tab-gold font-bold' : 'token-btn ink-muted'"
-        >
-          九州舆图
-        </button>
-        <button
-          @click="subView = 'RAID'"
-          class="px-3 py-1 cursor-pointer transition"
-          :class="subView === 'RAID' ? 'tab-gold font-bold' : 'token-btn ink-muted'"
-        >
-          松鹤楼结义与后续长卷
-        </button>
-      </div>
-      <span class="text-xs ink-muted tabular-nums">通关进度 {{ store.player.maxChapterId - 1 }} / 5</span>
-    </div>
-
-    <!-- 1. 射雕主线列表 -->
-    <div v-if="subView === 'STORY'" class="flex-1 min-h-0 overflow-y-auto divide-y divide-[var(--border-ink)] pr-1">
-      <div
-        v-for="ch in STORY_CHAPTERS"
-        :key="ch.id"
-        class="py-3 first:pt-1 flex items-center justify-between gap-4"
-      >
-        <div class="space-y-1 min-w-0">
-          <div class="flex items-center gap-2.5 flex-wrap">
-            <span class="text-xs ink-gold font-bold tabular-nums">第 {{ ch.code }} 回</span>
-            <span class="font-brush text-lg leading-none">{{ ch.title }}</span>
-            <span class="text-xs ink-muted">
-              荐 Lv.{{ ch.recLevel }} · 敌摆「{{ getStanceLabel(ch.bossStance) }}」
-            </span>
-          </div>
-          <p class="text-xs ink-muted">{{ ch.mechanicTip }}</p>
-          <div class="text-[11px] ink-muted tabular-nums">
-            破阵犒赏：真气 +{{ ch.rewardQi.toLocaleString() }} · 纹银 +{{ ch.rewardSilver.toLocaleString() }}
-          </div>
+  <div class="view">
+    <section class="panel flex min-h-0 flex-1 flex-col gap-3 p-3 md:p-4">
+      <div class="flex shrink-0 flex-wrap items-center justify-between gap-2">
+        <div class="tabs flex-1" role="tablist">
+          <button v-for="t in tabs" :key="t.k" class="tab" role="tab" :aria-selected="sub === t.k" @click="sub = t.k">{{ t.l }}</button>
         </div>
-
-        <button
-          @click="store.challengeChapter(ch.id)"
-          class="px-4 py-1.5 text-xs font-bold shrink-0 cursor-pointer transition"
-          :class="ch.id <= store.player.maxChapterId ? 'seal-stamp' : 'token-btn ink-muted'"
-        >
-          {{ ch.id < store.player.maxChapterId ? '再次历练' : '拔剑闯关' }}
-        </button>
+        <div class="flex items-center gap-2 text-xs text-ink3">
+          通关
+          <div class="bar bar-thin bar-gold w-20"><i :style="{ width: `${(cleared / STORY_CHAPTERS.length) * 100}%` }" /></div>
+          <b class="tabular-nums text-gold">{{ cleared }} / {{ STORY_CHAPTERS.length }}</b>
+        </div>
       </div>
-    </div>
 
-    <!-- 2. 九州挂机舆图 -->
-    <div v-else-if="subView === 'MAPS'" class="flex-1 min-h-0 overflow-y-auto grid grid-cols-2 gap-3 content-start pr-1">
-      <div
-        v-for="m in MAPS"
-        :key="m.id"
-        @click="store.moveMap(m.id)"
-        class="wuxia-elevated p-3.5 cursor-pointer transition hover:border-[var(--border-gold)] flex flex-col justify-between gap-3"
-        :class="store.player.currentMapId === m.id ? 'border-[var(--border-gold)]' : ''"
-      >
-        <div class="space-y-1.5">
-          <div class="flex items-center justify-between gap-2">
-            <span class="font-brush text-lg leading-none">{{ m.name }}</span>
+      <!-- ============ 主线：回目时间轴 ============ -->
+      <ol v-if="sub === 'STORY'" class="view-scroll -mr-1 pr-1">
+        <li
+          v-for="ch in STORY_CHAPTERS" :key="ch.id"
+          class="relative grid grid-cols-[2.75rem_minmax(0,1fr)] gap-x-3 pb-4 last:pb-0 sm:grid-cols-[2.75rem_minmax(0,1fr)_auto]"
+          :class="stateOf(ch.id) === 'LOCKED' ? 'opacity-60' : ''"
+        >
+          <!-- 节点 + 竖线 -->
+          <div class="relative flex flex-col items-center">
             <span
-              class="text-[11px] shrink-0"
-              :class="m.safety === 'PEACE' ? 'ink-jade' : 'ink-cinnabar'"
+              class="relative z-10 flex h-11 w-11 items-center justify-center rounded-full border text-sm font-bold tabular-nums"
+              :class="{
+                'border-jade bg-[color-mix(in_srgb,var(--jade)_14%,var(--bg-1))] text-jade': stateOf(ch.id) === 'CLEARED',
+                'anim-pulse-glow border-gold bg-[var(--gold-soft)] text-gold': stateOf(ch.id) === 'CURRENT',
+                'border-linestrong bg-raised text-ink3': stateOf(ch.id) === 'LOCKED',
+              }"
             >
-              {{ m.safety === 'PEACE' ? '和平共修' : '限定纷争' }}
+              <Lock v-if="stateOf(ch.id) === 'LOCKED'" :size="15" />
+              <template v-else>{{ ch.code }}</template>
             </span>
+            <span v-if="ch.id !== STORY_CHAPTERS.length" class="absolute bottom-[-1rem] top-11 w-px" :class="stateOf(ch.id) === 'CLEARED' ? 'bg-jade opacity-60' : 'bg-linestrong opacity-70'" />
           </div>
-          <p class="text-xs ink-muted leading-relaxed">{{ m.ambientDesc }}</p>
-        </div>
 
-        <div class="flex items-center justify-between text-xs pt-2 border-t border-[var(--border-subtle)] tabular-nums">
-          <span class="ink-muted">灵脉速率 <b class="text-[var(--text-ink)]">{{ m.baseQiPerHour }}/时</b></span>
-          <span :class="store.player.currentMapId === m.id ? 'ink-gold font-bold' : 'ink-muted'">
-            {{ store.player.currentMapId === m.id ? '当前驻留' : '动身前往 →' }}
-          </span>
-        </div>
-      </div>
-    </div>
+          <div class="well min-w-0 space-y-2 p-3" :class="stateOf(ch.id) === 'CURRENT' ? '!border-gold' : ''">
+            <div class="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+              <h4 class="font-brush text-xl leading-none">{{ ch.title }}</h4>
+              <span v-if="stateOf(ch.id) === 'CLEARED'" class="chip chip-jade">已通关</span>
+              <span v-else-if="stateOf(ch.id) === 'CURRENT'" class="chip chip-gold">当前关卡</span>
+            </div>
 
-    <!-- 3. 松鹤楼结义与后续长卷 -->
-    <div v-else class="flex-1 min-h-0 overflow-y-auto space-y-3 pr-1">
-      <div class="wuxia-elevated p-3.5 border-l-2 border-l-[var(--border-gold)] flex items-center justify-between gap-4">
-        <div class="space-y-1">
-          <div class="flex items-center gap-2">
-            <span class="text-[11px] tab-gold px-1.5 py-0.2 font-bold">三人实时组队</span>
-            <span class="font-brush text-lg leading-none">松鹤楼义结金兰 · 少室山三渡金刚伏魔圈</span>
+            <div class="flex flex-wrap items-center gap-1.5 text-xs">
+              <span class="chip" :class="store.player.level >= ch.recLevel ? 'chip-jade' : 'chip-red'">
+                荐 Lv.{{ ch.recLevel }}{{ store.player.level >= ch.recLevel ? ' · 已达' : ` · 差 ${ch.recLevel - store.player.level} 级` }}
+              </span>
+              <span
+                class="chip"
+                :class="{
+                  'chip-jade': stanceRelation(store.currentLoadout.stance, ch.bossStance) === 'WIN',
+                  'chip-red': stanceRelation(store.currentLoadout.stance, ch.bossStance) === 'LOSE',
+                }"
+              >
+                敌摆「{{ STANCE_META[ch.bossStance].short }}」·
+                {{ { WIN: '我方克制', LOSE: '被克制', EVEN: '同势' }[stanceRelation(store.currentLoadout.stance, ch.bossStance)] }}
+              </span>
+              <span class="chip">敌首 {{ ch.bossName }}</span>
+            </div>
+
+            <p class="hint">{{ ch.mechanicTip }}</p>
+
+            <div class="flex flex-wrap items-center gap-1.5 text-xs">
+              <span class="text-ink3">犒赏</span>
+              <span class="chip chip-jade tabular-nums">真气 +{{ ch.rewardQi.toLocaleString() }}</span>
+              <span class="chip chip-gold tabular-nums">纹银 +{{ ch.rewardSilver.toLocaleString() }}</span>
+              <button
+                v-for="d in drops(ch)" :key="d.id" class="chip tier-chip" :class="TIER_META[d.tier].cls"
+                :title="`可能掉落 · ${TIER_META[d.tier].label}`" @click="store.inspectById(d.kind, d.id)"
+              >
+                {{ TIER_META[d.tier].label }} · {{ d.name }}
+              </button>
+            </div>
           </div>
-          <p class="text-xs ink-muted">
-            进入秘境后自动由“1主+2伙伴”切换为「3名真实玩家主角同场出战」。当前结义队友：乔北冥（丐帮）、清风道长（全真）。
-          </p>
-        </div>
-        <button
-          @click="store.startThreePlayerCoopRaid()"
-          class="seal-stamp px-4 py-1.5 font-bold text-xs shrink-0 cursor-pointer"
+
+          <div class="col-span-2 col-start-1 mt-2 flex items-center sm:col-span-1 sm:col-start-3 sm:mt-0">
+            <button
+              class="btn w-full sm:w-auto sm:min-w-[6.5rem]"
+              :class="stateOf(ch.id) === 'CURRENT' ? 'btn-seal !min-h-[2.6rem]' : ''"
+              :disabled="stateOf(ch.id) === 'LOCKED'"
+              @click="store.challengeChapter(ch.id)"
+            >
+              {{ { CLEARED: '再次历练', CURRENT: '拔剑闯关', LOCKED: '未解锁' }[stateOf(ch.id)] }}
+            </button>
+          </div>
+        </li>
+      </ol>
+
+      <!-- ============ 舆图 ============ -->
+      <div v-else-if="sub === 'MAPS'" class="view-scroll -mr-1 grid content-start gap-3 pr-1 sm:grid-cols-2">
+        <article
+          v-for="m in MAPS" :key="m.id" class="well well-hover group overflow-hidden"
+          :class="store.player.currentMapId === m.id ? '!border-gold' : ''"
         >
-          结义发兵
-        </button>
+          <div class="relative h-28 overflow-hidden">
+            <SceneBackdrop :map-id="m.id" :shichen-idx="store.shichenIdx" :dark="store.isMidnightTheme" :animated="false" />
+            <div class="absolute inset-x-0 bottom-0 flex items-end justify-between gap-2 bg-gradient-to-t from-black/70 to-transparent px-3 pb-2 pt-8">
+              <h4 class="font-brush text-xl leading-none text-[#f0e9dc]">{{ m.name.replace(/（.*?）/, '') }}</h4>
+              <span class="chip bg-black/40 backdrop-blur-[2px]" :class="m.safety === 'PEACE' ? 'chip-jade' : 'chip-red'">
+                {{ m.safety === 'PEACE' ? '和平共修' : '限定纷争' }}
+              </span>
+            </div>
+          </div>
+          <div class="space-y-2.5 p-3">
+            <p class="hint min-h-[3.3rem]">{{ m.ambientDesc }}</p>
+            <div class="flex items-center justify-between border-t border-line pt-2.5 text-xs tabular-nums">
+              <span class="text-ink3">灵脉 <b class="text-ink">{{ m.baseQiPerHour.toLocaleString() }}</b>/时 · {{ m.onlineCount }} 人在线</span>
+              <button v-if="store.player.currentMapId !== m.id" class="btn btn-sm btn-gold" @click="store.moveMap(m.id)">动身前往</button>
+              <span v-else class="chip chip-gold">当前驻留</span>
+            </div>
+          </div>
+        </article>
       </div>
 
-      <div class="text-xs font-bold ink-muted pt-1">岁时武库 · 后续资料片演进长卷</div>
-      <div class="grid grid-cols-2 gap-2.5 text-xs">
-        <div
-          v-for="v in EXPANSION_VOLUMES_PREVIEW"
-          :key="v.vol"
-          class="wuxia-elevated p-3 space-y-1"
-        >
-          <div class="flex items-center justify-between">
-            <span class="font-brush text-base ink-gold">{{ v.vol }}</span>
-            <span class="text-[11px] ink-muted">{{ v.range }}</span>
+      <!-- ============ 结义 + 后续长卷 ============ -->
+      <div v-else class="view-scroll -mr-1 space-y-4 pr-1">
+        <article class="well relative overflow-hidden p-4">
+          <div class="pointer-events-none absolute inset-0 opacity-70" style="background: radial-gradient(ellipse at 85% 50%, var(--gold-soft), transparent 60%)" />
+          <div class="relative grid items-center gap-4 md:grid-cols-[1fr_auto]">
+            <div class="space-y-2">
+              <span class="chip chip-gold">三人实时组队</span>
+              <h4 class="font-brush text-2xl leading-tight">松鹤楼义结金兰 · 少室山三渡金刚伏魔圈</h4>
+              <p class="hint">进入秘境后由“1 主 + 2 伙伴”切换为「3 名真实玩家主角同场出战」。当前结义队友：乔北冥（丐帮）、清风道长（全真）。</p>
+              <button class="btn btn-seal mt-1" @click="store.startThreePlayerCoopRaid()">结义发兵</button>
+            </div>
+            <div class="mx-auto flex w-[min(100%,20rem)] items-end justify-center gap-2">
+              <PortraitCard bare size="sm" name="乔北冥" subtitle="丐帮" style-type="hongqigong" class="flex-1" />
+              <PortraitCard bare size="sm" is-main :name="store.player.nickname" subtitle="你" style-type="hero_sword" class="flex-1" />
+              <PortraitCard bare size="sm" name="清风道长" subtitle="全真" style-type="huangyaoshi" class="flex-1" />
+            </div>
           </div>
-          <div class="text-xs">{{ v.chapters }}</div>
-          <div class="text-[11px] ink-muted">核心机制：{{ v.core }}</div>
+        </article>
+
+        <div>
+          <div class="sec-title mb-2.5">岁时武库 · 后续资料片</div>
+          <div class="grid gap-2.5 sm:grid-cols-2">
+            <article v-for="v in EXPANSION_VOLUMES_PREVIEW" :key="v.vol" class="well relative space-y-1.5 p-3.5 opacity-85">
+              <Lock :size="14" class="absolute right-3 top-3 text-ink3" />
+              <div class="font-brush text-lg leading-none text-gold">{{ v.vol }}</div>
+              <div class="text-xs text-ink3">{{ v.range }}</div>
+              <p class="text-sm">{{ v.chapters }}</p>
+              <p class="hint">核心机制：{{ v.core }}</p>
+            </article>
+          </div>
         </div>
       </div>
-    </div>
+    </section>
   </div>
 </template>

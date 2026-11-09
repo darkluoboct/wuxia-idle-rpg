@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { PortraitStyle } from '@/config/typesHelper'
+import InkFigure from './InkFigure.vue'
 
 const props = defineProps<{
   name: string
@@ -13,6 +14,9 @@ const props = defineProps<{
   isEnemy?: boolean
   anim?: 'NONE' | 'LUNGE_ALLY' | 'LUNGE_ENEMY' | 'HIT'
   size?: 'sm' | 'md' | 'lg'
+  pose?: 'stand' | 'sit'
+  /** 打坐场景里不需要卡片底板，只要人物 + 名牌 */
+  bare?: boolean
   popup?: { text: string; isCrit: boolean; category: string; key: number } | null
 }>()
 
@@ -20,159 +24,125 @@ const hpPercent = computed(() => {
   if (props.hp === undefined || !props.maxHp) return 100
   return Math.max(0, Math.min(100, Math.round((props.hp / props.maxHp) * 100)))
 })
+const isDown = computed(() => props.hp !== undefined && props.hp <= 0)
+const rageFull = computed(() => (props.rage ?? 0) >= 100 && !isDown.value)
 
-const verticalName = computed(() => {
-  const cleaned = props.name.replace(/【.*?】/g, '').replace(/.*·/, '').trim()
-  return (cleaned || props.name).slice(0, 4)
-})
-
-/** 低饱和宋画水墨衣冠色，彻底告别高饱和五颜六色 */
-const palette = computed(() => {
-  switch (props.styleType) {
-    case 'hero_sword':
-      return { robe: '#273138', lapel: '#1b2228', accent: '#b89964', weapon: 'sword' }
-    case 'guojing':
-      return { robe: '#3a312a', lapel: '#26201b', accent: '#a88754', weapon: 'palm' }
-    case 'huangrong':
-      return { robe: '#293935', lapel: '#1b2623', accent: '#c2a46e', weapon: 'staff' }
-    case 'hongqigong':
-      return { robe: '#3d2c28', lapel: '#281d1a', accent: '#9e8256', weapon: 'gourd' }
-    case 'huangyaoshi':
-      return { robe: '#253533', lapel: '#182422', accent: '#9db0a8', weapon: 'flute' }
-    case 'ouyangfeng':
-      return { robe: '#332a36', lapel: '#211b24', accent: '#a85a52', weapon: 'snake' }
-    case 'meichaofeng':
-      return { robe: '#2e2933', lapel: '#1e1b22', accent: '#9a7e8f', weapon: 'claw' }
-    case 'zhoubotong':
-      return { robe: '#31363d', lapel: '#202429', accent: '#b59b68', weapon: 'taiji' }
-    case 'monk':
-      return { robe: '#423426', lapel: '#2b2218', accent: '#c29e63', weapon: 'palm' }
-    default:
-      return { robe: '#2e2c2b', lapel: '#1e1d1c', accent: '#a8524d', weapon: 'sword' }
-  }
+const figureBox = computed(() => {
+  if (props.size === 'sm') return 'h-[5rem]'
+  if (props.size === 'lg') return 'h-[8.5rem] md:h-[11rem]'
+  return 'h-[6rem] md:h-[8rem]'
 })
 
 const animClass = computed(() => {
-  if (props.anim === 'LUNGE_ALLY') return 'animate-lunge-ally border-[var(--border-gold)]'
-  if (props.anim === 'LUNGE_ENEMY') return 'animate-lunge-enemy border-[var(--accent-cinnabar)]'
-  if (props.anim === 'HIT') return 'animate-hit-shake border-[var(--accent-cinnabar)]'
+  if (props.anim === 'LUNGE_ALLY') return 'anim-lunge-ally'
+  if (props.anim === 'LUNGE_ENEMY') return 'anim-lunge-enemy'
+  if (props.anim === 'HIT') return 'anim-hit'
   return ''
 })
 
-const portraitBoxHeight = computed(() => {
-  if (props.size === 'sm') return 'h-[60px]'
-  if (props.size === 'lg') return 'h-[106px]'
-  return props.isMain ? 'h-[90px]' : 'h-[78px]'
+const popupClass = computed(() => {
+  if (!props.popup) return ''
+  if (props.popup.category === 'dodge') return 'text-jade text-lg'
+  if (props.popup.category === 'heal') return 'text-jade text-xl'
+  if (props.popup.isCrit) return 'text-gold text-2xl'
+  if (props.popup.category === 'qi') return 'text-gold text-xl'
+  return 'text-cinnabar text-xl'
 })
 
-const popupColorClass = computed(() => {
-  if (!props.popup) return ''
-  if (props.popup.category === 'dodge') return 'ink-jade'
-  if (props.popup.isCrit || props.popup.category === 'qi') return 'ink-gold text-base'
-  return 'ink-cinnabar'
+/** 竖排题名取“姓名”部分（去掉【称号】与“·”前缀） */
+const verticalName = computed(() => {
+  const cleaned = props.name.replace(/【.*?】/g, '').replace(/.*·/, '').trim()
+  return (cleaned || props.name).slice(0, 4)
 })
 </script>
 
 <template>
   <div
-    class="wuxia-elevated relative overflow-visible transition-all duration-200 select-none p-1.5"
+    class="relative select-none transition-opacity duration-300"
     :class="[
-      animClass,
-      isMain ? 'border-t border-t-[var(--border-gold)]' : '',
-      hp !== undefined && hp <= 0 ? 'opacity-40 grayscale' : '',
+      bare ? '' : 'well',
+      !bare && isMain ? 'border-t-2 !border-t-[var(--gold)]' : '',
+      rageFull ? 'anim-pulse-glow' : '',
+      isDown ? 'opacity-45 grayscale' : '',
     ]"
   >
     <!-- 战斗飘字 -->
     <div
       v-if="popup"
       :key="popup.key"
-      class="pointer-events-none absolute -top-3 left-1/2 -translate-x-1/2 z-30 whitespace-nowrap font-brush text-sm font-bold animate-dmg-float drop-shadow-[0_2px_3px_rgba(0,0,0,0.9)]"
-      :class="popupColorClass"
+      class="pointer-events-none absolute left-1/2 top-0 z-30 whitespace-nowrap font-brush font-bold [animation:dmgFloat_0.9s_ease-out_forwards] [text-shadow:0_2px_6px_rgba(0,0,0,0.85)]"
+      :class="popupClass"
     >
       {{ popup.text }}
     </div>
 
-    <!-- 左上素雅竖排题名（去掉右上重复红章） -->
-    <div
-      class="vertical-rl font-brush absolute top-1.5 left-1.5 z-20 text-[11px] leading-none px-0.5 py-0.5 ink-muted opacity-85"
-    >
-      {{ verticalName }}
-    </div>
-
-    <!-- 水墨半身剪影画框 -->
-    <div
-      class="relative mx-auto flex items-end justify-center bg-black/15 overflow-hidden w-full"
-      :class="portraitBoxHeight"
-    >
-      <svg viewBox="0 0 160 120" class="absolute inset-0 w-full h-full opacity-15" preserveAspectRatio="none">
-        <path d="M0,120 L0,84 Q42,56 82,86 T160,68 L160,120 Z" fill="currentColor" />
-      </svg>
-
-      <svg viewBox="0 0 120 120" class="relative z-10 h-full w-auto">
-        <line
-          v-if="palette.weapon === 'sword'"
-          x1="24" y1="18" x2="94" y2="96"
-          :stroke="palette.accent" stroke-width="2.5" stroke-linecap="round" opacity="0.8"
+    <!-- 人物舞台 -->
+    <div class="relative overflow-hidden" :class="[figureBox, bare ? '' : 'rounded-[1px]']">
+      <template v-if="!bare">
+        <div
+          class="absolute inset-0"
+          :style="{
+            background: isEnemy
+              ? 'radial-gradient(ellipse at 50% 85%, color-mix(in srgb, var(--cinnabar) 22%, transparent), transparent 70%)'
+              : 'radial-gradient(ellipse at 50% 85%, var(--gold-soft), transparent 70%)',
+          }"
         />
-        <line
-          v-if="palette.weapon === 'flute'"
-          x1="28" y1="68" x2="94" y2="48"
-          :stroke="palette.accent" stroke-width="2.5" stroke-linecap="round" opacity="0.8"
-        />
-        <line
-          v-if="palette.weapon === 'staff' || palette.weapon === 'snake'"
-          x1="90" y1="14" x2="82" y2="112"
-          :stroke="palette.accent" stroke-width="3" stroke-linecap="round" opacity="0.8"
-        />
-        <circle
-          v-if="palette.weapon === 'taiji' || palette.weapon === 'palm'"
-          cx="60" cy="54" r="34"
-          fill="none" :stroke="palette.accent" stroke-width="1.2" stroke-dasharray="5 5" opacity="0.45"
-        />
+        <svg viewBox="0 0 100 100" class="absolute inset-0 h-full w-full opacity-60" preserveAspectRatio="xMidYMid slice">
+          <circle cx="50" cy="52" r="34" fill="none" :stroke="isEnemy ? 'var(--cinnabar)' : 'var(--gold)'" stroke-width="0.7" opacity="0.4" />
+          <path d="M0,100 L0,80 Q22,64 44,80 T100,72 L100,100 Z" fill="currentColor" opacity="0.08" />
+        </svg>
+      </template>
 
-        <rect x="52" y="14" width="16" height="9" rx="2" fill="#181716" />
-        <line x1="46" y1="18" x2="74" y2="18" :stroke="palette.accent" stroke-width="2" />
-        <circle cx="60" cy="34" r="12.5" fill="#c9b8a6" />
-        <path d="M26,118 C29,76 41,52 60,52 C79,52 91,76 94,118 Z" :fill="palette.robe" />
-        <path d="M37,118 C40,84 48,60 60,60 C72,60 80,84 83,118 Z" :fill="palette.lapel" opacity="0.6" />
-        <path d="M47,54 L60,82 L73,54" fill="none" :stroke="palette.accent" stroke-width="2.2" opacity="0.85" />
-      </svg>
+      <div class="relative flex h-full items-end justify-center" :class="animClass">
+        <div class="h-full" :class="[isEnemy ? '[transform:scaleX(-1)]' : '', pose === 'sit' ? 'anim-breathe' : '']">
+          <InkFigure :style-type="styleType" :pose="pose ?? 'stand'" />
+        </div>
+      </div>
 
+      <!-- 受击红闪 -->
       <div
-        v-if="hp !== undefined && hp <= 0"
-        class="absolute inset-0 z-20 bg-black/70 flex items-center justify-center"
+        v-if="anim === 'HIT'"
+        class="pointer-events-none absolute inset-0 [animation:hitFlash_0.4s_ease-out_forwards]"
+        style="background: radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--cinnabar) 70%, transparent), transparent 70%)"
+      />
+
+      <!-- 竖排题名 -->
+      <div
+        v-if="!bare"
+        class="vertical-rl font-brush absolute left-1.5 top-1.5 z-20 text-xs leading-none text-ink3 opacity-90"
       >
-        <span class="text-[10px] ink-muted border border-[var(--border-ink)] px-2 py-0.5">力竭</span>
+        {{ verticalName }}
+      </div>
+
+      <div v-if="isDown" class="absolute inset-0 z-20 flex items-center justify-center bg-black/55">
+        <span class="chip bg-black/40">力竭</span>
       </div>
     </div>
 
-    <div class="mt-1 text-center truncate">
-      <div class="text-xs font-bold leading-tight truncate" :class="isEnemy ? 'ink-cinnabar' : ''">
+    <!-- 名牌 -->
+    <div
+      class="text-center"
+      :class="bare ? 'mx-auto mt-1 w-fit max-w-full rounded-[2px] border border-line bg-[color-mix(in_srgb,var(--bg-1)_76%,transparent)] px-2 py-0.5 backdrop-blur-[2px]' : 'px-1.5 pb-1.5 pt-1'"
+    >
+      <div class="truncate text-sm font-bold leading-tight" :class="[isEnemy ? 'text-cinnabar' : isMain ? 'text-gold' : '']">
         {{ name }}
       </div>
-      <div v-if="subtitle" class="text-[10px] ink-muted truncate mt-0.5">
-        {{ subtitle }}
-      </div>
-    </div>
+      <div v-if="subtitle" class="mt-0.5 truncate text-xs leading-tight text-ink3">{{ subtitle }}</div>
 
-    <!-- 极简气血与怒气细线 -->
-    <div v-if="hp !== undefined && maxHp" class="mt-1 space-y-0.5">
-      <div class="h-[3px] w-full bg-black/30 overflow-hidden">
-        <div
-          class="h-full transition-all duration-300"
-          :class="isEnemy ? 'bg-[var(--accent-cinnabar)]' : 'bg-[var(--accent-jade)]'"
-          :style="{ width: `${hpPercent}%` }"
-        />
-      </div>
-      <div v-if="rage !== undefined" class="h-[2px] w-full bg-black/20 overflow-hidden">
-        <div
-          class="h-full bg-[var(--accent-gold)] opacity-80 transition-all duration-300"
-          :style="{ width: `${Math.min(100, Math.max(0, rage))}%` }"
-        />
-      </div>
-      <div class="flex items-center justify-between text-[10px] tabular-nums ink-muted leading-none pt-0.5">
-        <span>{{ hp.toLocaleString() }}</span>
-        <span v-if="rage !== undefined" class="ink-gold">怒 {{ rage }}%</span>
+      <!-- 气血 / 怒气 -->
+      <div v-if="hp !== undefined && maxHp" class="mt-1.5 space-y-1">
+        <div class="bar bar-thin" :class="isEnemy ? 'bar-red' : 'bar-jade'">
+          <i :style="{ width: `${hpPercent}%` }" />
+        </div>
+        <div v-if="rage !== undefined" class="bar bar-thin bar-gold" style="height: 0.18rem">
+          <i :style="{ width: `${Math.min(100, Math.max(0, rage))}%` }" />
+        </div>
+        <div class="flex items-center justify-between text-xs leading-none tabular-nums text-ink2">
+          <span>{{ hp.toLocaleString() }}</span>
+          <span v-if="rage !== undefined" :class="rageFull ? 'font-bold text-gold' : 'text-ink3'">
+            {{ rageFull ? '怒满' : `怒 ${rage}` }}
+          </span>
+        </div>
       </div>
     </div>
   </div>

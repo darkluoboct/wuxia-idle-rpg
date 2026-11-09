@@ -2,20 +2,32 @@
 <html lang="zh-CN" class="theme-midnight">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#0b0c0e" />
     <title>金庸群侠：问道武林 · 江湖客户端</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&family=Noto+Serif+SC:wght@400;600;700;900&display=swap"
-      rel="stylesheet"
-    />
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+    <!--
+      字体全部走 jsdelivr（国内可达），并以 media=print + onload 的方式异步加载：
+      样式表不再阻塞首屏，字体到位前先用系统楷体/宋体兜底（font-display: swap）。
+    -->
     <link
       rel="stylesheet"
       href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-screen-webfont@1.7.0/style.css"
+      media="print"
+      onload="this.media='all'"
     />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/@fontsource/ma-shan-zheng@5.3.1/index.css"
+      media="print"
+      onload="this.media='all'"
+    />
+    <noscript>
+      <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-screen-webfont@1.7.0/style.css" />
+      <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/ma-shan-zheng@5.3.1/index.css" />
+    </noscript>
   </head>
-  <body class="antialiased selection:bg-amber-700/25">
+  <body class="antialiased">
     <div id="app"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>

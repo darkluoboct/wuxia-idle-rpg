@@ -23,7 +23,20 @@ import {
   INITIAL_UNIQUE_ARTIFACTS,
   simulateServerBattle,
 } from '@/network/mockEngine'
-import { COMPANIONS, ITEMS, MAPS, REALMS, SECTS, SKILLS, STORY_CHAPTERS, TRIO_SYNERGIES } from '@/config/gameData'
+import {
+  COMPANIONS,
+  GHOST_APPRAISE_COST,
+  INN_GIFT_COST,
+  INN_TEA_COST,
+  ITEMS,
+  MAPS,
+  REALMS,
+  SECTS,
+  SKILLS,
+  STORY_CHAPTERS,
+  TRIO_SYNERGIES,
+} from '@/config/gameData'
+import { EQUIP_SLOT_META, shichenIdxFromDate, SKILL_SLOT_META } from '@/config/uiMeta'
 
 const SHICHEN_LABELS = ['子时·夜半', '寅时·平旦', '辰时·烟雨', '午时·日正', '申时·斜阳', '戌时·黄昏']
 
@@ -33,9 +46,27 @@ export const useGameStore = defineStore('wuxiaGame', () => {
   // 主题与响应式抽屉状态（默认启动采用燕云玄墨深色护眼主题）
   const isMidnightTheme = ref(true)
   const activeTab = ref<MainTab>('CULTIVATE')
-  const mobileDrawer = ref<'NONE' | 'CHAR' | 'NEARBY' | 'CHAT'>('NONE')
-  const shichenIdx = ref(2)
-  const toastMessage = ref<{ text: string; tone: 'info' | 'gold' | 'danger' } | null>(null)
+  // 窄屏下左 / 右侧栏以抽屉形式呈现
+  const mobileDrawer = ref<'NONE' | 'CHAR' | 'WORLD'>('NONE')
+  // 时辰随真实时间流转（驱动场景昼夜与日志时间标签）
+  const shichenIdx = ref(shichenIdxFromDate())
+  setInterval(() => {
+    shichenIdx.value = shichenIdxFromDate()
+  }, 60_000)
+
+  // 轻提示：可堆叠，每条独立计时（避免同文案连发时被旧计时器提前清掉）
+  type ToastTone = 'info' | 'gold' | 'danger'
+  const toasts = ref<{ id: number; text: string; tone: ToastTone }[]>([])
+  let toastSeq = 0
+
+  // 二次确认弹窗（叛师等不可逆操作）
+  const confirmDialog = ref<{
+    title: string
+    body: string
+    confirmText: string
+    tone: 'danger' | 'gold'
+    onConfirm: () => void
+  } | null>(null)
 
   // 点击富文本词条弹出的详情浮窗
   const inspectModal = ref<{ title: string; subtitle: string; tier: TierColor; desc: string; extra?: string } | null>(null)
@@ -242,11 +273,22 @@ export const useGameStore = defineStore('wuxiaGame', () => {
   const floatingPopups = ref<Record<string, { text: string; isCrit: boolean; category: string; key: number }>>({})
   let battleTimer: ReturnType<typeof setTimeout> | null = null
 
-  function showToast(text: string, tone: 'info' | 'gold' | 'danger' = 'info') {
-    toastMessage.value = { text, tone }
+  function showToast(text: string, tone: ToastTone = 'info') {
+    const id = ++toastSeq
+    toasts.value.push({ id, text, tone })
+    if (toasts.value.length > 3) toasts.value.shift()
     setTimeout(() => {
-      if (toastMessage.value?.text === text) toastMessage.value = null
-    }, 3200)
+      toasts.value = toasts.value.filter((t) => t.id !== id)
+    }, 3600)
+  }
+
+  function askConfirm(opts: NonNullable<typeof confirmDialog.value>) {
+    confirmDialog.value = opts
+  }
+  function resolveConfirm(accepted: boolean) {
+    const d = confirmDialog.value
+    confirmDialog.value = null
+    if (accepted && d) d.onConfirm()
   }
 
   function appendLog(channel: GameLogEntry['channel'], segments: RichSegment[]) {
@@ -274,7 +316,7 @@ export const useGameStore = defineStore('wuxiaGame', () => {
       const lv = learnedSkills.value[id] ?? 1
       openInspect({
         title: `《${s.name}》`,
-        subtitle: `${s.slot}槽武学 · 第 ${lv} 重 · 来源：${s.source}`,
+        subtitle: `${SKILL_SLOT_META[s.slot].label} · 第 ${lv} 重 · 来源：${s.source}`,
         tier: s.tier,
         desc: s.desc,
         extra: `招式意境：“${s.castNarrative}”`,
@@ -283,7 +325,7 @@ export const useGameStore = defineStore('wuxiaGame', () => {
       const it = ITEMS[id]
       openInspect({
         title: `【${it.name}】`,
-        subtitle: `${it.slot}槽奇珍${it.reqStat ? ` · 门槛：${it.reqStat.label}` : ''}`,
+        subtitle: `${EQUIP_SLOT_META[it.slot].label}${it.reqStat ? ` · 门槛：${it.reqStat.label}` : ''}`,
         tier: it.tier,
         desc: it.desc,
         extra: it.signatureEffect ? `${it.signatureEffect}（共鸣者：${it.signatureOwner}）` : undefined,
@@ -626,6 +668,10 @@ export const useGameStore = defineStore('wuxiaGame', () => {
   function challengeChapter(chapterId: number) {
     const ch = STORY_CHAPTERS.find((c) => c.id === chapterId)
     if (!ch) return
+    if (chapterId > player.value.maxChapterId) {
+      showToast('前路未通：需先通关上一回，方可挑战此关', 'danger')
+      return
+    }
     const drops: { id: string; name: string; tier: TierColor }[] = []
     if (ch.dropItemId && ITEMS[ch.dropItemId]) {
       drops.push({ id: ch.dropItemId, name: ITEMS[ch.dropItemId].name, tier: ITEMS[ch.dropItemId].tier })
@@ -885,13 +931,20 @@ export const useGameStore = defineStore('wuxiaGame', () => {
   }
 
   // ==================== 武库装配与秘籍参悟 ====================
+  /** 参悟升重所需真气（代入第06册悟性减免公式）；UI 用它显示价格并判断是否买得起 */
+  function getSkillUpgradeCost(skillId: string): number {
+    const lv = learnedSkills.value[skillId] ?? 0
+    const sk = SKILLS[skillId]
+    if (!sk || lv <= 0) return 0
+    const tierBase = sk.tier === 'green' ? 400 : sk.tier === 'blue' ? 900 : sk.tier === 'purple' ? 2200 : sk.tier === 'orange' ? 5000 : 11000
+    return Math.round(tierBase * lv * (1 - player.value.stats.intStat / (player.value.stats.intStat + 180)))
+  }
+
   function upgradeSkillMastery(skillId: string) {
     const lv = learnedSkills.value[skillId] ?? 0
     if (lv <= 0 || lv >= 10) return
     const sk = SKILLS[skillId]
-    const tierBase = sk.tier === 'green' ? 400 : sk.tier === 'blue' ? 900 : sk.tier === 'purple' ? 2200 : sk.tier === 'orange' ? 5000 : 11000
-    // 代入第06册悟性减免公式
-    const cost = Math.round(tierBase * lv * (1 - player.value.stats.intStat / (player.value.stats.intStat + 180)))
+    const cost = getSkillUpgradeCost(skillId)
     if (player.value.qiExp < cost) {
       showToast(`参悟所需真气不足（需 ${cost.toLocaleString()} 真气，高悟性可减免消耗）`, 'danger')
       return
@@ -922,7 +975,7 @@ export const useGameStore = defineStore('wuxiaGame', () => {
     const c = COMPANIONS[compId]
     const state = companionAffinity.value[compId]
     if (!c || !state) return
-    const cost = isFavorite ? 1200 : 300
+    const cost = isFavorite ? INN_GIFT_COST : INN_TEA_COST
     if (player.value.silver < cost) {
       showToast('囊中羞涩，纹银不足以置办酒席！', 'danger')
       return
@@ -958,8 +1011,8 @@ export const useGameStore = defineStore('wuxiaGame', () => {
   }
 
   function appraiseGhostCurio() {
-    if (player.value.silver < 600) {
-      showToast('鉴宝需花费 600 两纹银！', 'danger')
+    if (player.value.silver < GHOST_APPRAISE_COST) {
+      showToast(`鉴宝需花费 ${GHOST_APPRAISE_COST} 两纹银！`, 'danger')
       return
     }
     // 正派弟子未蒙面抓包判定
@@ -972,7 +1025,7 @@ export const useGameStore = defineStore('wuxiaGame', () => {
       ])
     }
 
-    player.value.silver -= 600
+    player.value.silver -= GHOST_APPRAISE_COST
     const highInsight = player.value.stats.intStat >= 28 || player.value.stats.luck >= 28
     if (highInsight && !ownedItemIds.value.includes('xuantie_heavysword')) {
       ownedItemIds.value.push('xuantie_heavysword')
@@ -1069,7 +1122,8 @@ export const useGameStore = defineStore('wuxiaGame', () => {
     mobileDrawer,
     shichenIdx,
     shichenLabel: computed(() => SHICHEN_LABELS[shichenIdx.value]),
-    toastMessage,
+    toasts,
+    confirmDialog,
     inspectModal,
     player,
     learnedSkills,
@@ -1099,6 +1153,9 @@ export const useGameStore = defineStore('wuxiaGame', () => {
     slashBanner,
     floatingPopups,
     toggleTheme,
+    askConfirm,
+    resolveConfirm,
+    getSkillUpgradeCost,
     openInspect,
     inspectById,
     settleOfflineQi,

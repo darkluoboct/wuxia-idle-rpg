@@ -771,6 +771,11 @@ export const STORY_CHAPTERS: StoryChapterConfig[] = [
 ]
 
 /** 后续资料片路线预览（对应第07册） */
+/** 市井消费定价（store 与 UI 共用，避免两处硬编码不一致） */
+export const INN_TEA_COST = 300
+export const INN_GIFT_COST = 1200
+export const GHOST_APPRAISE_COST = 600
+
 export const EXPANSION_VOLUMES_PREVIEW = [
   { vol: '2.0 神雕篇', range: 'Lv.76~90 · 登峰造极', chapters: '赤练魔踪 → 华山双绝 → 绝情断肠 → 独孤剑冢 → 襄阳飞石', core: '剑冢择剑 / 自创黯然销魂 / 古墓双修' },
   { vol: '3.0 倚天篇', range: 'Lv.91~105 · 出神入化', chapters: '冰火狮吼 → 蝴蝶医仙 → 六派围攻光明顶 → 武当太极 → 金刚伏魔圈', core: '九阳护体 / 刀剑互砍 / 正邪全服光明顶大战' },
