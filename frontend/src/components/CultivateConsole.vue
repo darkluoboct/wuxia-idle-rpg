@@ -1,128 +1,124 @@
 <script setup lang="ts">
-/**
- * 修行控制台：放置游戏最核心的三个动作 —— 收功领真气、运转周天升级、冲穴破境。
- * 原先藏在左侧栏的小字按钮，在这里升格为舞台正下方的主操作区。
- */
 import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { LockKeyhole, Sparkles, Wind } from 'lucide-vue-next'
 import { useGameStore } from '@/stores/gameStore'
-import { REALMS } from '@/config/gameData'
+import { REALMS, SKILLS } from '@/config/gameData'
+import { IS_MOCK_MODE } from '@/network/apiClient'
 
 const store = useGameStore()
 const usePill = ref(false)
+const usingPill = computed(() => usePill.value && store.pillCount > 0)
 
 const p = computed(() => store.player)
-const nextRealm = computed(() => REALMS.find((r) => r.tier === p.value.realmTier + 1) ?? null)
+const partner = computed(() => IS_MOCK_MODE ? p.value.coCultivatePartner : store.activeCoCultivation?.partner.nickname)
+const nextRealm = computed(() => REALMS.find((r) => r.tier === p.value.realmTier + 1))
+const breakRate = computed(() => nextRealm.value
+  ? Math.min(100, Math.round(nextRealm.value.baseBreakRate + p.value.stats.con * 0.3 + p.value.breakPityRate + (usingPill.value ? 35 : 0)))
+  : 100)
 
-const breakRate = computed(() => {
-  if (!nextRealm.value) return 100
-  const bonus = usePill.value && store.pillCount > 0 ? 25 : 0
-  return Math.min(100, Math.round(nextRealm.value.baseBreakRate + p.value.stats.con * 0.3 + p.value.breakPityRate + bonus))
-})
-
-const expPct = computed(() => Math.min(100, Math.round((p.value.qiExp / Math.max(1, p.value.nextLevelQi)) * 100)))
+const expPct = computed(() => Math.min(100, Math.round(p.value.qiExp / Math.max(1, p.value.nextLevelQi) * 100)))
 const atCap = computed(() => p.value.level >= store.currentRealm.maxLevel)
 const canLevel = computed(() => !atCap.value && p.value.qiExp >= p.value.nextLevelQi)
-const levelHint = computed(() => {
-  if (atCap.value) return `已达【${store.currentRealm.name}】极境，需冲穴破境`
-  if (p.value.qiExp < p.value.nextLevelQi) return `尚差真气 ${(p.value.nextLevelQi - p.value.qiExp).toLocaleString()}`
-  return `Lv.${p.value.level} → Lv.${p.value.level + 1}`
-})
+const levelHint = computed(() => atCap.value
+  ? `已达到「${store.currentRealm.name}」的等级上限，先突破境界再升级。`
+  : canLevel.value ? `升到 ${p.value.level + 1} 级，花费 ${p.value.nextLevelQi.toLocaleString()} 真气。`
+    : `还差 ${(p.value.nextLevelQi - p.value.qiExp).toLocaleString()} 真气才能升级。`)
 
-/** 离线待领真气（与 store.settleOfflineQi 的公式保持一致，仅作预览） */
 const now = ref(Date.now())
-let timer: ReturnType<typeof setInterval> | undefined
-onMounted(() => (timer = setInterval(() => (now.value = Date.now()), 5000)))
+let timer: ReturnType<typeof setInterval>
+onMounted(() => { timer = setInterval(() => { now.value = Date.now() }, 5000) })
 onUnmounted(() => clearInterval(timer))
-const pending = computed(() => {
-  const sec = Math.max(60, Math.floor((now.value - p.value.lastSettleAt) / 1000))
-  return Math.max(480, Math.round(store.effectiveQiPerHour * Math.min(12, sec / 3600)))
+const pending = computed(() => store.getIdleRewards(now.value))
+const hourlySilver = computed(() => IS_MOCK_MODE
+  ? store.getIdleRewards(p.value.lastSettleAt + 3_600_000).gainedSilver
+  : Math.floor(store.effectiveQiPerHour * 0.28))
+
+const skills = computed(() => {
+  const l = store.currentLoadout
+  return [
+    { label: '内功', art: 'inner', id: l.innerSkillId },
+    { label: '外功', art: 'outer', id: l.outerSkillId },
+    { label: '轻功', art: 'light', id: l.lightSkillId },
+    { label: '绝技', art: 'ult', id: l.ultSkillId },
+  ]
 })
 
-const RING_R = 26
-const ringLen = 2 * Math.PI * RING_R
-const ringOffset = computed(() => ringLen * (1 - expPct.value / 100))
+function openSkill(id: string | null) {
+  if (id) store.inspectById('skill', id)
+  else {
+    store.arsenalTab = 'SKILLS'
+    store.selectTab('ARSENAL')
+  }
+}
 </script>
 
 <template>
-  <section class="panel shrink-0 p-3 md:p-4">
-    <div class="grid items-center gap-x-4 gap-y-3 sm:grid-cols-[auto_1fr] xl:grid-cols-[auto_1fr_auto]">
-      <!-- 丹田气海环 -->
-      <button
-        class="group relative mx-auto h-[4.75rem] w-[4.75rem] shrink-0 rounded-full transition-transform hover:scale-[1.04]"
-        title="点击丹田：立即收功聚气"
-        @click="store.settleOfflineQi()"
-      >
-        <svg viewBox="0 0 64 64" class="h-full w-full -rotate-90">
-          <circle cx="32" cy="32" r="30.5" fill="none" stroke="var(--line-strong)" stroke-width="1" stroke-dasharray="1 4.2" />
-          <circle cx="32" cy="32" :r="RING_R" fill="color-mix(in srgb, var(--bg-2) 80%, transparent)" stroke="var(--line)" stroke-width="4" />
-          <circle
-            cx="32" cy="32" :r="RING_R" fill="none" stroke="var(--gold)" stroke-width="4" stroke-linecap="round"
-            :stroke-dasharray="ringLen" :stroke-dashoffset="ringOffset" class="transition-[stroke-dashoffset] duration-700"
-          />
-        </svg>
-        <span class="absolute inset-0 flex flex-col items-center justify-center leading-none">
-          <span class="text-base font-bold tabular-nums text-gold">{{ expPct }}%</span>
-          <span class="font-brush mt-1 text-xs text-ink3">丹田</span>
-        </span>
-      </button>
+  <div class="cultivate-hud">
+    <p class="cultivate-status font-brush" :title="partner ? `与「${partner}」一起修行，真气收益 +15%` : undefined">
+      <Wind aria-hidden="true" />
+      {{ partner ? '双人共修中' : '正在修行' }}<span aria-hidden="true">…</span>
+    </p>
 
-      <!-- 读数 -->
-      <div class="min-w-0 space-y-2">
-        <div class="flex flex-wrap items-baseline gap-x-4 gap-y-0.5">
-          <div class="text-sm text-ink2">
-            吐纳效率 <b class="text-base text-jade tabular-nums">+{{ store.effectiveQiPerHour.toLocaleString() }}</b><span class="text-xs">/时</span>
-          </div>
-          <div class="text-xs text-ink3">
-            离线待领 <b class="text-gold tabular-nums">≈ +{{ pending.toLocaleString() }}</b> 真气
-          </div>
-        </div>
-        <div class="bar bar-gold"><i :style="{ width: `${expPct}%` }" /></div>
-        <div class="flex items-center justify-between text-xs tabular-nums text-ink3">
-          <span>储气 {{ p.qiExp.toLocaleString() }} / {{ p.nextLevelQi.toLocaleString() }}</span>
-          <span :class="canLevel ? 'text-gold' : ''">{{ levelHint }}</span>
-        </div>
+    <section class="cultivate-income" aria-label="修行收益">
+      <div class="cultivate-progress" :title="levelHint">
+        <span>升级真气 <b>{{ p.qiExp.toLocaleString() }}</b> / {{ p.nextLevelQi.toLocaleString() }}</span>
+        <span>{{ expPct }}%</span>
+        <div class="wuxia-meter qi-meter" role="progressbar" aria-label="角色升级进度" :aria-valuenow="expPct"><i :style="{ width: `${expPct}%` }" /></div>
       </div>
 
-      <!-- 动作 -->
-      <div class="flex gap-2 sm:col-span-2 xl:col-span-1 xl:flex-col">
-        <button class="btn flex-1" @click="store.settleOfflineQi()">凝神收功</button>
-        <button class="btn btn-gold flex-1" :class="canLevel ? 'anim-pulse-glow' : ''" :disabled="!canLevel" @click="store.upgradeLevel()">
-          运转周天
+      <div class="income-tray">
+        <span class="income-label font-brush">修行收益</span>
+        <div class="income-resource">
+          <i class="art art-coin" aria-hidden="true" />
+          <div><b>{{ hourlySilver.toLocaleString() }}</b><small>纹银 / 小时</small></div>
+        </div>
+        <div class="income-resource">
+          <i class="art art-inner" aria-hidden="true" />
+          <div><b>{{ store.effectiveQiPerHour.toLocaleString() }}</b><small>真气 / 小时</small></div>
+        </div>
+        <button
+          class="claim-reward" aria-label="领取修行收益" :title="`可领 ${pending.gainedQi.toLocaleString()} 真气和 ${pending.gainedSilver.toLocaleString()} 纹银`"
+          :disabled="store.onlineActionBusy" @click="store.settleOfflineQi()"
+        >
+          <i class="art art-chest" aria-hidden="true" />
+          <span><strong class="font-brush">领取收益</strong><small>+{{ pending.gainedQi.toLocaleString() }} 真气</small></span>
         </button>
       </div>
-    </div>
+    </section>
 
-    <!-- 冲穴破境：窄屏自然换行，说明文字单行省略（完整内容在 title） -->
-    <div class="mt-3 border-t border-line pt-3">
-      <div v-if="nextRealm" class="flex flex-wrap items-center justify-between gap-x-4 gap-y-2.5">
-        <div class="min-w-[14rem] flex-1 space-y-1">
-          <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
-            <span class="font-brush text-lg leading-none">冲穴 · {{ nextRealm.name }}</span>
-            <span class="chip" :class="atCap ? 'chip-gold' : ''">{{ atCap ? '修为圆满 · 可冲击' : `境内 Lv.${p.level} / ${store.currentRealm.maxLevel}` }}</span>
-          </div>
-          <p class="hint truncate" :title="`${nextRealm.meridian} · ${nextRealm.unlockDesc}`">{{ nextRealm.meridian }} · {{ nextRealm.unlockDesc }}</p>
-        </div>
-
-        <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
-          <button
-            class="flex items-center gap-2 text-left text-xs text-ink2 disabled:opacity-45"
-            role="switch" :aria-checked="usePill" :disabled="store.pillCount <= 0" @click="usePill = !usePill"
-          >
-            <span class="switch" :aria-checked="usePill" />
-            <span>九花玉露丸 <b class="text-jade">+25%</b><span class="text-ink3">（余 {{ store.pillCount }}）</span></span>
-          </button>
-
-          <div class="w-[5.5rem]">
-            <div class="flex items-baseline justify-between text-xs"><span class="text-ink3">成率</span><b class="text-base tabular-nums text-gold">{{ breakRate }}%</b></div>
-            <div class="bar bar-thin bar-gold"><i :style="{ width: `${breakRate}%` }" /></div>
-          </div>
-
-          <button class="btn" :class="atCap ? 'btn-seal' : 'btn-gold'" @click="store.attemptBreakthrough(usePill)">
-            冲击玄关<span v-if="p.breakPityRate" class="text-xs font-normal opacity-80">（保底 +{{ p.breakPityRate }}%）</span>
-          </button>
-        </div>
+    <div class="wuxia-hotbar" role="group" aria-label="武学与修行">
+      <div class="hotbar-skills">
+        <button
+          v-for="skill in skills" :key="skill.art" class="hotbar-skill"
+          :title="skill.id ? SKILLS[skill.id]?.name : `去武库选${skill.label}`"
+          :aria-label="skill.id ? `查看${SKILLS[skill.id]?.name}` : `去武库选${skill.label}`" @click="openSkill(skill.id)"
+        >
+          <i v-if="skill.id" class="art" :class="`art-${skill.art}`" aria-hidden="true" />
+          <LockKeyhole v-else :size="20" aria-hidden="true" />
+          <span>{{ skill.label }}</span>
+        </button>
       </div>
-      <p v-else class="text-center text-sm text-gold">你已臻至极境，天人合一。</p>
+      <div v-if="IS_MOCK_MODE" class="hotbar-actions">
+        <button
+          class="hotbar-pill" role="switch" aria-label="突破时服用通脉破障丹" :aria-checked="usingPill"
+          :disabled="store.pillCount === 0 || !nextRealm" :title="`纯阳·通脉破障丹：专用于大境界关隘冲击，剩 ${store.pillCount} 枚（成功率 +35%）`"
+          @click="usePill = !usingPill"
+        >
+          <i class="art art-potion" aria-hidden="true" />
+          <b>{{ store.pillCount }}</b>
+        </button>
+        <button class="hotbar-command" aria-label="升级角色" :title="levelHint" :disabled="!canLevel" @click="store.upgradeLevel()">
+          <span class="font-brush">升级</span><small>{{ atCap ? '已达上限' : `Lv.${p.level + 1}` }}</small>
+        </button>
+        <button
+          class="hotbar-command hotbar-break" aria-label="突破境界"
+          :title="nextRealm ? `突破到「${nextRealm.name}」，成功率 ${breakRate}%` : '已达最高境界「天人合一」'" :disabled="!nextRealm"
+          @click="store.attemptBreakthrough(usingPill)"
+        >
+          <span class="font-brush">突破</span><small><Sparkles :size="10" aria-hidden="true" /> {{ nextRealm ? `${breakRate}%` : '已练满' }}</small>
+        </button>
+      </div>
+      <span v-else class="px-2 text-xs text-ink3">角色升级和突破筹备中</span>
     </div>
-  </section>
+  </div>
 </template>

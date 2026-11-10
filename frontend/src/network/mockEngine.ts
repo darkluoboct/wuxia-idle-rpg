@@ -1,97 +1,7 @@
-import type {
-  BattleEventDTO,
-  BattleReportDTO,
-  CombatUnitDTO,
-  GhostMarketListingDTO,
-  LoadoutPresetDTO,
-  PendingAdventureDTO,
-  PlayerDTO,
-  RichSegment,
-  RoomPlayerDTO,
-  StanceType,
-  UniqueArtifactStatusDTO,
-} from './protocol'
-import { COMPANIONS, ITEMS, MAPS, REALMS, SECTS, SKILLS, STORY_CHAPTERS, TRIO_SYNERGIES } from '@/config/gameData'
+import type { GhostMarketListingDTO, PendingAdventureDTO, RoomPlayerDTO, UniqueArtifactStatusDTO } from './protocol'
+import { ITEMS } from '@/config/gameData'
 
-export function calcNextLevelQi(level: number): number {
-  return Math.round(500 * Math.pow(level, 1.55) * Math.pow(1.08, Math.floor(level / 5)))
-}
-
-export function getStanceLabel(stance: StanceType): string {
-  if (stance === 'FIERCE') return '刚猛强攻势'
-  if (stance === 'AGILE') return '奇门极速势'
-  return '太极柔化势'
-}
-
-export function evaluateStanceAdvantage(ally: StanceType, enemy: StanceType): {
-  advantage: 'ALLY' | 'ENEMY' | 'NONE'
-  description: string
-} {
-  if (ally === enemy) {
-    return {
-      advantage: 'NONE',
-      description: `双方同摆【${getStanceLabel(ally)}】，旗鼓相当，正面硬撼！`,
-    }
-  }
-  const winMap: Record<StanceType, StanceType> = {
-    FIERCE: 'AGILE',
-    AGILE: 'TAICHI',
-    TAICHI: 'FIERCE',
-  }
-  if (winMap[ally] === enemy) {
-    const flavor =
-      ally === 'FIERCE'
-        ? '一力降十会！我方掌风霸道，压制敌方奇门变招（伤害 +25%）'
-        : ally === 'AGILE'
-          ? '唯快不破！我方抢占先机看穿虚实（暴击与破招 +25%）'
-          : '借力打力！我方太极圆转卸劲反震敌方刚猛掌力（减伤与反震 +25%）'
-    return { advantage: 'ALLY', description: `【架势克制】${flavor}` }
-  }
-  return {
-    advantage: 'ENEMY',
-    description: `【架势受制】敌方【${getStanceLabel(enemy)}】克制我方【${getStanceLabel(ally)}】，需靠深厚内力与伙伴连携破局！`,
-  }
-}
-
-/** 计算玩家二级战斗面板（严格对应第06册公式） */
-export function computeDerivedStats(player: PlayerDTO, loadout: LoadoutPresetDTO) {
-  const realm = REALMS.find((r) => r.tier === player.realmTier) ?? REALMS[0]
-  const m = realm.multiplier
-  const s = player.stats
-
-  const w = loadout.weaponId ? ITEMS[loadout.weaponId] : undefined
-  const ar = loadout.armorId ? ITEMS[loadout.armorId] : undefined
-  const ac = loadout.accId ? ITEMS[loadout.accId] : undefined
-  const rl = loadout.relicBookId ? ITEMS[loadout.relicBookId] : undefined
-  const inner = loadout.innerSkillId ? SKILLS[loadout.innerSkillId] : undefined
-  const light = loadout.lightSkillId ? SKILLS[loadout.lightSkillId] : undefined
-  const outer = loadout.outerSkillId ? SKILLS[loadout.outerSkillId] : undefined
-
-  const equipHp = (ar?.hpBonus ?? 0) + (ac?.hpBonus ?? 0) + (rl?.hpBonus ?? 0)
-  const equipAtk = w?.atkBonus ?? 0
-  const equipDef = (ar?.defBonus ?? 0) + (rl?.defBonus ?? 0)
-
-  const maxHp = Math.round((320 + player.level * 85 + s.con * 46) * m * (inner?.id === 'jiuyin_zonggang' ? 1.25 : 1.08) + equipHp)
-  const maxMp = Math.round((120 + player.level * 32 + s.con * 26 + s.intStat * 12) * m)
-  const atk = Math.round((45 + player.level * 13 + s.str * 8.5 + s.agi * 2.5) * m + equipAtk)
-  const def = Math.round((22 + player.level * 6 + s.con * 5.5 + s.str * 2.0) * m + equipDef)
-  const speed = Math.round(100 + s.agi * 3.2 + (light?.speedBonus ?? 0))
-  const dodge = Math.min(65, Math.round((s.agi / (s.agi + 180 + player.level * 4)) * 45 + (light?.dodgeBonus ?? 0)))
-  const crit = Math.min(
-    75,
-    Math.round(
-      8 +
-        ((s.agi * 0.6 + s.intStat * 0.4) / (s.agi + s.intStat + 220)) * 40 +
-        (w?.critBonus ?? 0) +
-        (ac?.critBonus ?? 0) +
-        (outer?.critBonus ?? 0) +
-        (inner?.critBonus ?? 0)
-    )
-  )
-
-  const combatPower = Math.round(maxHp * 0.35 + maxMp * 0.25 + atk * 4.2 + def * 2.8 + speed * 3.5 + crit * 45)
-  return { maxHp, maxMp, atk, def, speed, dodge, crit, combatPower }
-}
+export { calcNextLevelQi, computeDerivedStats, evaluateStanceAdvantage, simulateServerBattle } from '../../../shared/battle.ts'
 
 /** 模拟同地图在线真实玩家池 */
 export function generateRoomPlayers(mapId: string): RoomPlayerDTO[] {
@@ -122,364 +32,6 @@ export function generateRoomPlayers(mapId: string): RoomPlayerDTO[] {
   ]
 }
 
-/** 服务端权威确定性战斗推演生成器（支持 1主+2副 及 3人真实玩家结义组队） */
-export function simulateServerBattle(params: {
-  sceneTitle: string
-  mode: BattleReportDTO['mode']
-  player: PlayerDTO
-  loadout: LoadoutPresetDTO
-  enemyMain: { name: string; title: string; portrait: CombatUnitDTO['portraitStyle']; hp: number; atk: number; mp: number; stance: StanceType }
-  enemyGuards?: { name: string; title: string; portrait: CombatUnitDTO['portraitStyle']; hp: number; atk: number }[]
-  coopPlayers?: { leftPlayer: { name: string; sect: string; hp: number; atk: number }; rightPlayer: { name: string; sect: string; hp: number; atk: number } }
-  rewards?: BattleReportDTO['rewards']
-}): BattleReportDTO {
-  const { sceneTitle, mode, player, loadout, enemyMain, enemyGuards, coopPlayers, rewards } = params
-  const pDerived = computeDerivedStats(player, loadout)
-  const stanceInfo = evaluateStanceAdvantage(loadout.stance, enemyMain.stance)
-
-  const units: CombatUnitDTO[] = []
-
-  // 构建我方 3 单位（单人 1主+2伙伴 或 3真实玩家结义）
-  if (coopPlayers) {
-    units.push({
-      slot: 'ALLY_LEFT',
-      id: 'coop_p1',
-      name: coopPlayers.leftPlayer.name,
-      title: `${coopPlayers.leftPlayer.sect}·结义义兄`,
-      portraitStyle: 'guojing',
-      isPlayer: true,
-      maxHp: coopPlayers.leftPlayer.hp,
-      hp: coopPlayers.leftPlayer.hp,
-      maxMp: 3500,
-      rage: 40,
-      weaponName: '乌金重剑',
-    })
-  } else if (loadout.leftCompanionId && COMPANIONS[loadout.leftCompanionId]) {
-    const c = COMPANIONS[loadout.leftCompanionId]
-    const hp = Math.round(c.baseHp * (1 + player.level * 0.04))
-    units.push({
-      slot: 'ALLY_LEFT',
-      id: c.id,
-      name: c.name,
-      title: `左翼·${c.title}`,
-      portraitStyle: c.portraitStyle,
-      isPlayer: false,
-      maxHp: hp,
-      hp,
-      maxMp: 2000,
-      rage: 30,
-    })
-  }
-
-  const mainWeapon = loadout.weaponId ? ITEMS[loadout.weaponId]?.name : '赤手空拳'
-  units.push({
-    slot: 'ALLY_MAIN',
-    id: player.id,
-    name: player.nickname,
-    title: player.currentSectId ? (SECTS.find((s) => s.id === player.currentSectId)?.name ?? '江湖侠客') : '逍遥散人',
-    portraitStyle: 'hero_sword',
-    isPlayer: true,
-    maxHp: pDerived.maxHp,
-    hp: pDerived.maxHp,
-    maxMp: pDerived.maxMp,
-    rage: 50,
-    weaponName: mainWeapon,
-  })
-
-  if (coopPlayers) {
-    units.push({
-      slot: 'ALLY_RIGHT',
-      id: 'coop_p2',
-      name: coopPlayers.rightPlayer.name,
-      title: `${coopPlayers.rightPlayer.sect}·结义义妹`,
-      portraitStyle: 'huangrong',
-      isPlayer: true,
-      maxHp: coopPlayers.rightPlayer.hp,
-      hp: coopPlayers.rightPlayer.hp,
-      maxMp: 3200,
-      rage: 40,
-      weaponName: '东邪碧玉箫',
-    })
-  } else if (loadout.rightCompanionId && COMPANIONS[loadout.rightCompanionId]) {
-    const c = COMPANIONS[loadout.rightCompanionId]
-    const hp = Math.round(c.baseHp * (1 + player.level * 0.038))
-    units.push({
-      slot: 'ALLY_RIGHT',
-      id: c.id,
-      name: c.name,
-      title: `右翼·${c.title}`,
-      portraitStyle: c.portraitStyle,
-      isPlayer: false,
-      maxHp: hp,
-      hp,
-      maxMp: 2200,
-      rage: 30,
-    })
-  }
-
-  // 构建敌方单位
-  if (enemyGuards?.[0]) {
-    units.push({
-      slot: 'ENEMY_LEFT',
-      id: 'e_left',
-      name: enemyGuards[0].name,
-      title: enemyGuards[0].title,
-      portraitStyle: enemyGuards[0].portrait,
-      isPlayer: false,
-      maxHp: enemyGuards[0].hp,
-      hp: enemyGuards[0].hp,
-      maxMp: 1800,
-      rage: 20,
-    })
-  }
-  units.push({
-    slot: 'ENEMY_MAIN',
-    id: 'e_main',
-    name: enemyMain.name,
-    title: enemyMain.title,
-    portraitStyle: enemyMain.portrait,
-    isPlayer: mode === 'PVP_HUASHAN' || mode === 'PVP_AMBUSH',
-    maxHp: enemyMain.hp,
-    hp: enemyMain.hp,
-    maxMp: enemyMain.mp,
-    rage: 35,
-  })
-  if (enemyGuards?.[1]) {
-    units.push({
-      slot: 'ENEMY_RIGHT',
-      id: 'e_right',
-      name: enemyGuards[1].name,
-      title: enemyGuards[1].title,
-      portraitStyle: enemyGuards[1].portrait,
-      isPlayer: false,
-      maxHp: enemyGuards[1].hp,
-      hp: enemyGuards[1].hp,
-      maxMp: 1800,
-      rage: 20,
-    })
-  }
-
-  // 克隆工作血量进行推演
-  const hpState: Record<string, number> = {}
-  const rageState: Record<string, number> = {}
-  for (const u of units) {
-    hpState[u.slot] = u.hp
-    rageState[u.slot] = u.rage
-  }
-
-  const events: BattleEventDTO[] = []
-  const outerSkill = (loadout.outerSkillId && SKILLS[loadout.outerSkillId]) || SKILLS.yuenv_jian
-  const ultSkill = (loadout.ultSkillId && SKILLS[loadout.ultSkillId]) || SKILLS.kanglong_youhui
-  const lightSkill = (loadout.lightSkillId && SKILLS[loadout.lightSkillId]) || SKILLS.jinyan_gong
-
-  // 内力深浅压制系数 K_mp
-  const kMp = Math.max(0.78, Math.min(1.48, 1 + 0.25 * ((pDerived.maxMp - enemyMain.mp) / Math.max(500, enemyMain.mp))))
-  const stanceMultAlly = stanceInfo.advantage === 'ALLY' ? 1.25 : stanceInfo.advantage === 'ENEMY' ? 0.88 : 1.0
-  const stanceMultEnemy = stanceInfo.advantage === 'ENEMY' ? 1.22 : stanceInfo.advantage === 'ALLY' ? 0.82 : 1.0
-
-  // 开场三才架势交锋播报
-  events.push({
-    round: 1,
-    type: 'STANCE_CLASH',
-    actorSlot: 'ALLY_MAIN',
-    segments: [
-      { type: 'tag', text: '阵势对决', tone: stanceInfo.advantage === 'ALLY' ? 'jade' : 'gold' },
-      { type: 'text', text: ` ${stanceInfo.description}` },
-    ],
-  })
-
-  const trioSynergy = TRIO_SYNERGIES.find(
-    (syn) => syn.leftId === loadout.leftCompanionId && syn.rightId === loadout.rightCompanionId
-  )
-
-  for (let round = 1; round <= 12; round++) {
-    if (hpState.ALLY_MAIN <= 0 || (hpState.ENEMY_MAIN <= 0 && (hpState.ENEMY_LEFT ?? 0) <= 0 && (hpState.ENEMY_RIGHT ?? 0) <= 0)) {
-      break
-    }
-
-    // 挑选当前存活的敌方目标
-    const targetSlot: CombatUnitDTO['slot'] =
-      (hpState.ENEMY_LEFT ?? 0) > 0 && round % 2 === 1
-        ? 'ENEMY_LEFT'
-        : hpState.ENEMY_MAIN > 0
-          ? 'ENEMY_MAIN'
-          : (hpState.ENEMY_RIGHT ?? 0) > 0
-            ? 'ENEMY_RIGHT'
-            : 'ENEMY_MAIN'
-    const targetUnit = units.find((u) => u.slot === targetSlot)!
-
-    // 1. 我方主角出手（满100怒气放绝技，否则放外功）
-    const isUlt = rageState.ALLY_MAIN >= 100
-    const castSkill = isUlt ? ultSkill : outerSkill
-    const isCrit = ((round * 37 + player.stats.agi) % 100) < pDerived.crit
-    const baseDmg = pDerived.atk * castSkill.powerRatio * stanceMultAlly * kMp * (isCrit ? 1.55 : 1.0)
-    const dmg = Math.max(95, Math.round(baseDmg * (0.95 + ((round * 13) % 10) * 0.01)))
-
-    hpState[targetSlot] = Math.max(0, hpState[targetSlot] - dmg)
-    rageState.ALLY_MAIN = isUlt ? 15 : Math.min(100, rageState.ALLY_MAIN + 35)
-
-    const segs: RichSegment[] = [
-      { type: 'actor', name: player.nickname, isAlly: true, isPlayer: true },
-      { type: 'text', text: `${castSkill.castNarrative}，使出` },
-      { type: 'skill', id: castSkill.id, name: `《${castSkill.name}》`, tier: castSkill.tier },
-      { type: 'text', text: '直击' },
-      { type: 'actor', name: targetUnit.name, isAlly: false },
-      { type: 'text', text: '！造成 ' },
-      { type: 'damage', value: dmg, isCrit, category: castSkill.qiDamageRatio ? 'qi' : 'phys' },
-    ]
-    if (kMp >= 1.15) {
-      segs.push({ type: 'tag', text: `内力碾压+${Math.round((kMp - 1) * 100)}%`, tone: 'gold' })
-    }
-
-    events.push({
-      round,
-      type: 'SKILL_CAST',
-      actorSlot: 'ALLY_MAIN',
-      targetSlot,
-      skillId: castSkill.id,
-      skillName: castSkill.name,
-      skillTier: castSkill.tier,
-      isUlt,
-      hitResult: isCrit ? 'CRIT' : 'HIT',
-      hpDelta: -dmg,
-      rageDelta: isUlt ? -85 : 35,
-      segments: segs,
-    })
-
-    // 2. 左翼伙伴/结义义兄连携追击判定
-    const leftUnit = units.find((u) => u.slot === 'ALLY_LEFT')
-    if (leftUnit && hpState[targetSlot] > 0 && (round % 2 === 1 || !!trioSynergy || !!coopPlayers)) {
-      const assistDmg = Math.round(pDerived.atk * 0.78 * stanceMultAlly)
-      hpState[targetSlot] = Math.max(0, hpState[targetSlot] - assistDmg)
-      const compCfg = loadout.leftCompanionId ? COMPANIONS[loadout.leftCompanionId] : undefined
-      events.push({
-        round,
-        type: 'ASSIST_ATTACK',
-        actorSlot: 'ALLY_LEFT',
-        targetSlot,
-        skillName: compCfg?.assistSkillName ?? '重剑横扫',
-        hpDelta: -assistDmg,
-        segments: [
-          { type: 'tag', text: trioSynergy ? `羁绊·${trioSynergy.name}` : '左翼破阵', tone: 'purple' },
-          { type: 'text', text: ' 身旁的' },
-          { type: 'actor', name: leftUnit.name, isAlly: true },
-          { type: 'text', text: `踏步跟进，施展「${compCfg?.assistSkillName ?? '破军连击'}」首尾相衔！追加 ` },
-          { type: 'damage', value: assistDmg, category: 'phys' },
-        ],
-      })
-    }
-
-    if (hpState.ENEMY_MAIN <= 0 && (hpState.ENEMY_LEFT ?? 0) <= 0 && (hpState.ENEMY_RIGHT ?? 0) <= 0) {
-      break
-    }
-
-    // 3. 敌方主将反扑
-    const enemyActorSlot: CombatUnitDTO['slot'] = hpState.ENEMY_MAIN > 0 ? 'ENEMY_MAIN' : 'ENEMY_LEFT'
-    const enemyActor = units.find((u) => u.slot === enemyActorSlot)!
-
-    // 轻功闪避判定
-    const rollDodge = (round * 29 + player.stats.agi) % 100
-    if (rollDodge < Math.min(42, pDerived.dodge)) {
-      rageState.ALLY_MAIN = Math.min(100, rageState.ALLY_MAIN + (lightSkill.id === 'lingbo_weibu' ? 25 : 10))
-      events.push({
-        round,
-        type: 'DODGE',
-        actorSlot: 'ALLY_MAIN',
-        targetSlot: 'ALLY_MAIN',
-        hitResult: 'DODGE',
-        rageDelta: lightSkill.id === 'lingbo_weibu' ? 25 : 10,
-        segments: [
-          { type: 'actor', name: enemyActor.name, isAlly: false },
-          { type: 'text', text: '掌风凌厉袭来，' },
-          { type: 'actor', name: player.nickname, isAlly: true, isPlayer: true },
-          { type: 'text', text: lightSkill.castNarrative + '，使出' },
-          { type: 'skill', id: lightSkill.id, name: `《${lightSkill.name}》`, tier: lightSkill.tier },
-          { type: 'tag', text: '飘然闪避', tone: 'jade' },
-        ],
-      })
-      continue
-    }
-
-    let rawEnemyDmg = Math.round(enemyMain.atk * stanceMultEnemy * (1 - pDerived.def / (pDerived.def + 700 + player.level * 55)))
-    rawEnemyDmg = Math.max(70, rawEnemyDmg)
-
-    // 右翼奇策援护化解判定
-    const rightUnit = units.find((u) => u.slot === 'ALLY_RIGHT')
-    if (rightUnit && round % 2 === 0) {
-      const reducedDmg = Math.round(rawEnemyDmg * 0.48)
-      hpState.ALLY_MAIN = Math.max(0, hpState.ALLY_MAIN - reducedDmg)
-      const rComp = loadout.rightCompanionId ? COMPANIONS[loadout.rightCompanionId] : undefined
-      events.push({
-        round,
-        type: 'GUARD_BLOCK',
-        actorSlot: 'ALLY_RIGHT',
-        targetSlot: 'ALLY_MAIN',
-        hpDelta: -reducedDmg,
-        segments: [
-          { type: 'actor', name: enemyActor.name, isAlly: false },
-          { type: 'text', text: '狠招直取咽喉！右翼' },
-          { type: 'actor', name: rightUnit.name, isAlly: true },
-          { type: 'text', text: `眼疾手快施展「${rComp?.assistSkillName ?? '玉箫封穴'}」卸去大半劲力，你仅受 ` },
-          { type: 'damage', value: reducedDmg, category: 'phys' },
-        ],
-      })
-    } else {
-      hpState.ALLY_MAIN = Math.max(0, hpState.ALLY_MAIN - rawEnemyDmg)
-      rageState.ALLY_MAIN = Math.min(100, rageState.ALLY_MAIN + 20)
-
-      // 软猬甲或九阳神功反伤判定
-      const hasReflect = loadout.armorId === 'ruanwei_armor' || loadout.innerSkillId === 'jiuyang_shengong' || loadout.stance === 'TAICHI'
-      const reflectDmg = hasReflect ? Math.round(rawEnemyDmg * 0.38) : 0
-      if (reflectDmg > 0) {
-        hpState[enemyActorSlot] = Math.max(0, hpState[enemyActorSlot] - reflectDmg)
-      }
-
-      const enemySegs: RichSegment[] = [
-        { type: 'actor', name: enemyActor.name, isAlly: false },
-        { type: 'text', text: '催动全身真气猛烈扑击，震得你气血翻涌，承受 ' },
-        { type: 'damage', value: rawEnemyDmg, category: 'phys' },
-      ]
-      if (reflectDmg > 0) {
-        enemySegs.push(
-          { type: 'text', text: '；你的护体劲力/软猬宝甲瞬间反震其 ' },
-          { type: 'damage', value: reflectDmg, category: 'reflect' }
-        )
-      }
-
-      events.push({
-        round,
-        type: 'SKILL_CAST',
-        actorSlot: enemyActorSlot,
-        targetSlot: 'ALLY_MAIN',
-        hitResult: 'HIT',
-        hpDelta: -rawEnemyDmg,
-        reflectDelta: reflectDmg > 0 ? -reflectDmg : undefined,
-        rageDelta: 20,
-        segments: enemySegs,
-      })
-    }
-  }
-
-  const enemyDead = hpState.ENEMY_MAIN <= 0 && (hpState.ENEMY_LEFT ?? 0) <= 0 && (hpState.ENEMY_RIGHT ?? 0) <= 0
-  const winner: 'ALLY' | 'ENEMY' = enemyDead || hpState.ALLY_MAIN > hpState.ENEMY_MAIN ? 'ALLY' : 'ENEMY'
-
-  return {
-    battleId: `bt_${Date.now()}`,
-    sceneTitle,
-    mode,
-    stanceBanner: {
-      allyStance: loadout.stance,
-      enemyStance: enemyMain.stance,
-      advantage: stanceInfo.advantage,
-      description: stanceInfo.description,
-    },
-    units,
-    winner,
-    events,
-    rewards: winner === 'ALLY' ? rewards : undefined,
-  }
-}
-
 /** 初始全服唯一真品神兵公示表 */
 export const INITIAL_UNIQUE_ARTIFACTS: UniqueArtifactStatusDTO[] = [
   { artifactCode: 'TRUE_TULONG', itemId: 'xuantie_heavysword', name: '真·屠龙宝刀', holderNickname: '萧峰传人·乔北冥', holderSect: '丐帮', defendStreak: 3, nextContestLabel: '周日20:00 王盘山扬刀大会' },
@@ -491,9 +43,11 @@ export const INITIAL_UNIQUE_ARTIFACTS: UniqueArtifactStatusDTO[] = [
 /** 初始子时鬼市匿名寄售与竞拍单 */
 export const INITIAL_GHOST_LISTINGS: GhostMarketListingDTO[] = [
   { id: 'mk_1', maskedSeller: '蒙面客·甲戌', itemId: 'kongming_quan', itemName: '《空明拳》手抄拓本', tier: 'orange', listingType: 'FIXED', currency: 'SILVER', price: 6800, desc: '清音洞孤本拓印，至柔化刚拳谱。' },
-  { id: 'mk_2', maskedSeller: '黑衣人·丙辰', itemId: 'wucan_baoyi', itemName: '大雪山乌蚕宝衣', tier: 'orange', listingType: 'FIXED', currency: 'SILVER', price: 8500, desc: '刀枪不入，外功减免30%。' },
-  { id: 'mk_3', maskedSeller: '全真逆徒·匿名销赃', itemId: 'jiuwei_fox', itemName: '黑沼·九尾灵狐', tier: 'orange', listingType: 'FIXED', currency: 'SILVER', price: 9200, desc: '通灵白狐，速度大增并可替死一次。' },
-  { id: 'mk_4', maskedSeller: '鬼市压轴官拍', itemId: 'lingbo_weibu', itemName: '《凌波微步》琅嬛帛卷', tier: 'red', listingType: 'AUCTION', currency: 'GOLD', price: 320, highestBidderMasked: '蒙面客·癸亥', desc: '21:00子时压轴竞拍！足踏六十四卦，闪避回怒神技！' },
+  { id: 'mk_2', maskedSeller: '黑衣人·丙辰', itemId: 'wucan_baoyi', itemName: '大雪山乌蚕宝衣', tier: 'orange', listingType: 'FIXED', currency: 'SILVER', price: 8500, desc: '穿上能提高防御和气血上限。' },
+  { id: 'mk_3', maskedSeller: '全真逆徒·匿名销赃', itemId: 'jiuwei_fox', itemName: '黑沼·九尾灵狐', tier: 'orange', listingType: 'FIXED', currency: 'SILVER', price: 9200, desc: '白狐伴你同行，提高气血上限和暴击率。' },
+  { id: 'mk_4', maskedSeller: '鬼市压轴官拍', itemId: 'lingbo_weibu', itemName: '《凌波微步》琅嬛帛卷', tier: 'red', listingType: 'AUCTION', currency: 'GOLD', price: 320, highestBidderMasked: '蒙面客·癸亥', desc: '一门轻功，能让你更容易闪避。躲开攻击还能攒怒气。' },
+  { id: 'mk_5', maskedSeller: '关外客商', itemId: 'snow_hood', itemName: ITEMS.snow_hood.name, tier: ITEMS.snow_hood.tier, listingType: 'FIXED', currency: 'SILVER', price: 8800, desc: ITEMS.snow_hood.desc },
+  { id: 'mk_6', maskedSeller: '走镖人', itemId: 'deerskin_boots', itemName: ITEMS.deerskin_boots.name, tier: ITEMS.deerskin_boots.tier, listingType: 'FIXED', currency: 'SILVER', price: 4800, desc: ITEMS.deerskin_boots.desc },
 ]
 
 /** 随机奇遇事件模板池 */
@@ -501,28 +55,28 @@ export const ADVENTURE_POOL: Omit<PendingAdventureDTO, 'id'>[] = [
   {
     title: '赵王府药房·宝蛇异香',
     location: '中都赵王府后院',
-    description: '你潜入参仙老怪梁子翁药房，竹篓中一条通体赤红的大腹宝蛇忽昂首向你扑来！蛇血乃是梁子翁以二十年名贵灵药喂养而成……',
+    description: '你溜进梁子翁的药房，一条红蛇突然从竹篓里蹿出来。这条蛇吃了二十年的灵药，听说它的血能助人练功。',
     options: [
-      { key: 'A', label: '眼疾手快捏住七寸，痛饮宝蛇热腾蛇血！', requirementText: '需身法 ≥ 18（永久根骨+4，真气+3500）', canSelect: true },
-      { key: 'B', label: '将宝蛇放归山林，顺手取走桌上银两', requirementText: '侠义 +30，纹银 +2500', canSelect: true },
+      { key: 'A', label: '抓住宝蛇，饮下蛇血', requirementText: '根骨 +4，真气 +3,500', canSelect: true },
+      { key: 'B', label: '放走宝蛇，取走桌上的银两', requirementText: '侠义 +30，纹银 +2,500', canSelect: true },
     ],
   },
   {
     title: '昆仑翠谷·苍猿腹痛',
     location: '断崖百丈幽谷',
-    description: '你在山崖采药失足滑入云海翠谷，一头年迈苍猿步履蹒跚走来，指着自己隆起结疤的腹部向你哀鸣求助。',
+    description: '你采药时跌进山谷。一只老白猿慢慢走过来，指着肚子上的旧伤，像在求你帮忙。',
     options: [
-      { key: 'A', label: '以玄铁匕首小心剖开旧疤，取出油布经书并缝合！', requirementText: '需悟性 ≥ 22（领悟神品《九阳神功》！）', canSelect: true },
-      { key: 'B', label: '喂食止痛草药安抚白猿', requirementText: '侠义 +50，福缘 +3', canSelect: true },
+      { key: 'A', label: '给白猿处理旧伤', requirementText: '学会《九阳神功》', canSelect: true },
+      { key: 'B', label: '喂白猿吃些止痛草药', requirementText: '侠义 +50，福缘 +3', canSelect: true },
     ],
   },
   {
     title: '桃花清音洞·画方画圆',
     location: '桃花岛石洞',
-    description: '须发皆白的老顽童周伯通拉着你不放：“好兄弟，你来试试左手画方、右手画圆！心思越杂的名门弟子越学不会！”',
+    description: '老顽童周伯通拉住你，笑道：“好兄弟，来试试左手画方，右手画圆！”',
     options: [
-      { key: 'A', label: '屏弃杂念，左右双掌分使不同劲力！', requirementText: '散人额外加成（身法+3，领悟《空明拳》）', canSelect: true },
-      { key: 'B', label: '陪老顽童斗促织畅谈江湖趣闻', requirementText: '周伯通好感度 +120，真气 +4000', canSelect: true },
+      { key: 'A', label: '试试一手画方，一手画圆', requirementText: '身法 +3，学会《空明拳》', canSelect: true },
+      { key: 'B', label: '陪老顽童斗蟋蟀', requirementText: '周伯通好感 +120，真气 +4,000', canSelect: true },
     ],
   },
 ]

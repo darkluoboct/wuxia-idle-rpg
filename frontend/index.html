@@ -5,6 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#0b0c0e" />
     <title>金庸群侠：问道武林 · 江湖客户端</title>
+    <style>
+      body:has(#game-frame) { margin: 0; overflow: hidden; background: #0b0c0e; }
+      #game-frame {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        border: 0;
+        transform: translate(-50%, -50%) scale(var(--game-scale, 1));
+      }
+    </style>
+    <link rel="icon" type="image/svg+xml" href="/src/assets/favicon.svg" />
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
     <!--
       字体全部走 jsdelivr（国内可达），并以 media=print + onload 的方式异步加载：
@@ -29,6 +40,29 @@
   </head>
   <body class="antialiased">
     <div id="app"></div>
-    <script type="module" src="/src/main.ts"></script>
+    <script type="module">
+      if (window === window.parent) {
+        // The game uses its own viewport for responsive styles and modal dialogs.
+        const width = 1280
+        const height = 720
+        const frame = document.createElement('iframe')
+        frame.id = 'game-frame'
+        frame.title = document.title
+        frame.width = width
+        frame.height = height
+        frame.src = window.location.href
+
+        function fitGame() {
+          const scale = Math.min(1, window.innerWidth / width, window.innerHeight / height)
+          frame.style.setProperty('--game-scale', scale)
+        }
+
+        fitGame()
+        document.body.append(frame)
+        window.addEventListener('resize', fitGame)
+      } else {
+        import('/src/main.ts')
+      }
+    </script>
   </body>
 </html>

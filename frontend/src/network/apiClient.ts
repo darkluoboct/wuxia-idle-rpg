@@ -1,70 +1,66 @@
-import type { BattleReportDTO, LoadoutPresetDTO, PlayerDTO, WsServerEvent } from './protocol'
+import type { WsServerEvent } from './protocol'
 
-/**
- * 双模网络配置：
- * 默认启用内置本地模拟引擎 (VITE_USE_MOCK !== 'false')，让您无需启动后端即可完整交互体验所有玩法；
- * 当您的后端接口就绪时，在 .env.local 中设置 VITE_USE_MOCK=false 即可无缝直连真实服务端！
- */
-export const IS_MOCK_MODE = import.meta.env.VITE_USE_MOCK !== 'false'
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api/v1'
-export const WS_URL = import.meta.env.VITE_WS_URL || 'ws://127.0.0.1:8080/ws'
+const entryMode = new URLSearchParams(window.location.search).get('mode')
+export const IS_GUEST_ENTRY = entryMode === 'guest'
+export const IS_MOCK_MODE = IS_GUEST_ENTRY || (entryMode !== 'online' && import.meta.env.MODE !== 'online' && import.meta.env.VITE_USE_MOCK !== 'false')
 
-export class WuxiaApiClient {
-  private token: string | null = localStorage.getItem('wuxia_jwt')
+export class ApiError extends Error {
+  constructor(readonly status: number, readonly code: string, message: string) {
+    super(message)
+  }
+}
+
+class WuxiaApiClient {
   private ws: WebSocket | null = null
 
-  setToken(token: string) {
-    this.token = token
-    localStorage.setItem('wuxia_jwt', token)
-  }
-
-  async request<T>(method: 'GET' | 'POST' | 'PUT', path: string, body?: unknown): Promise<T> {
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-    }
-    if (this.token) {
-      headers['Authorization'] = `Bearer ${this.token}`
-    }
-    const resp = await fetch(`${API_BASE_URL}${path}`, {
+  async request<T>(method: 'GET' | 'POST' | 'PUT', path: string, body?: unknown, requestId?: string): Promise<T> {
+    const headers: Record<string, string> = {}
+    if (body !== undefined) headers['Content-Type'] = 'application/json'
+    if (requestId) headers['Idempotency-Key'] = requestId
+    const response = await fetch(`/api/v1${path}`, {
       method,
       headers,
-      body: body ? JSON.stringify(body) : undefined,
+      body: body === undefined ? undefined : JSON.stringify(body),
+      credentials: 'same-origin',
+      signal: AbortSignal.timeout(10_000),
     })
-    if (!resp.ok) {
-      const errText = await resp.text()
-      throw new Error(errText || `HTTP ${resp.status}`)
+    const data = await response.json().catch(() => null)
+    if (!response.ok) {
+      throw new ApiError(response.status, data?.code ?? '', data?.message ?? '江湖暂时连不上，请稍后再试')
     }
-    return (await resp.json()) as T
+    if (data === null) throw new Error('接口没有返回存档')
+    return data as T
   }
 
-  /** 连接真实后端的 WebSocket 房间广播网关 */
-  connectWs(onEvent: (ev: WsServerEvent) => void) {
-    if (IS_MOCK_MODE) return
-    if (this.ws) this.ws.close()
-    const url = this.token ? `${WS_URL}?token=${encodeURIComponent(this.token)}` : WS_URL
-    this.ws = new WebSocket(url)
-    this.ws.onmessage = (msg) => {
-      try {
-        const parsed = JSON.parse(msg.data) as WsServerEvent
-        onEvent(parsed)
-      } catch {
-        // ignore malformed frame
-      }
+  connectWs(onEvent: (event: WsServerEvent) => void, onDisconnect: () => void) {
+    this.closeWs()
+    const url = new URL('/ws', window.location.href)
+    url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+    const socket = new WebSocket(url)
+    this.ws = socket
+    socket.onmessage = (message) => {
+      if (this.ws !== socket) return
+      let event: WsServerEvent
+      try { event = JSON.parse(message.data) as WsServerEvent } catch { return }
+      onEvent(event)
+    }
+    socket.onclose = () => {
+      if (this.ws !== socket) return
+      this.ws = null
+      onDisconnect()
     }
   }
 
-  // 对应《第11册》REST路由契约的真实请求封装方法（供切换真实后端时直接调用）
-  settleIdle() {
-    return this.request<{ gainedQi: number; gainedSilver: number; player: PlayerDTO }>('POST', '/cultivate/settle')
+  closeWs() {
+    const socket = this.ws
+    this.ws = null
+    socket?.close()
   }
-  breakthrough(usePill: boolean) {
-    return this.request<{ success: boolean; message: string; player: PlayerDTO }>('POST', '/cultivate/breakthrough', { usePill })
-  }
-  saveLoadout(preset: LoadoutPresetDTO) {
-    return this.request<void>('PUT', `/loadout/${preset.presetIdx}`, preset)
-  }
-  challengeHuashan(targetId: string) {
-    return this.request<BattleReportDTO>('POST', '/huashan/challenge', { targetId })
+
+  sendChat(content: string) {
+    if (this.ws?.readyState !== WebSocket.OPEN) return false
+    this.ws.send(JSON.stringify({ event: 'CHAT_SEND', data: { content } }))
+    return true
   }
 }
 

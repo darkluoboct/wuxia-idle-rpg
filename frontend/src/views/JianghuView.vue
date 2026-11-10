@@ -1,30 +1,27 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
+import { storeToRefs } from 'pinia'
 import { Lock } from 'lucide-vue-next'
 import { useGameStore } from '@/stores/gameStore'
-import { EXPANSION_VOLUMES_PREVIEW, ITEMS, MAPS, SKILLS, STORY_CHAPTERS } from '@/config/gameData'
+import { IS_MOCK_MODE } from '@/network/apiClient'
+import { EXPANSION_VOLUMES_PREVIEW, getChapterDrops, getMapHerbs, MAPS, STORY_CHAPTERS } from '@/config/gameData'
 import { STANCE_META, TIER_META, stanceRelation } from '@/config/uiMeta'
 import PortraitCard from '@/components/PortraitCard.vue'
+import RaidLobbyPanel from '@/components/RaidLobbyPanel.vue'
 import SceneBackdrop from '@/components/SceneBackdrop.vue'
 
 const store = useGameStore()
-const sub = ref<'STORY' | 'MAPS' | 'RAID'>('STORY')
+const { jianghuTab: sub } = storeToRefs(store)
 const tabs = [
   { k: 'STORY', l: '射雕主线' },
-  { k: 'MAPS', l: '九州舆图' },
-  { k: 'RAID', l: '结义 · 后续长卷' },
+  { k: 'MAPS', l: '江湖地图' },
+  { k: 'RAID', l: '结义副本' },
 ] as const
 
 const cleared = computed(() => Math.max(0, store.player.maxChapterId - 1))
 type State = 'CLEARED' | 'CURRENT' | 'LOCKED'
 const stateOf = (id: number): State => (id < store.player.maxChapterId ? 'CLEARED' : id === store.player.maxChapterId ? 'CURRENT' : 'LOCKED')
 
-function drops(ch: (typeof STORY_CHAPTERS)[number]) {
-  const out: { id: string; name: string; tier: keyof typeof TIER_META; kind: 'skill' | 'item' }[] = []
-  if (ch.dropItemId && ITEMS[ch.dropItemId]) out.push({ id: ch.dropItemId, name: ITEMS[ch.dropItemId].name, tier: ITEMS[ch.dropItemId].tier, kind: 'item' })
-  if (ch.dropSkillId && SKILLS[ch.dropSkillId]) out.push({ id: ch.dropSkillId, name: SKILLS[ch.dropSkillId].name, tier: SKILLS[ch.dropSkillId].tier, kind: 'skill' })
-  return out
-}
 </script>
 
 <template>
@@ -73,7 +70,7 @@ function drops(ch: (typeof STORY_CHAPTERS)[number]) {
 
             <div class="flex flex-wrap items-center gap-1.5 text-xs">
               <span class="chip" :class="store.player.level >= ch.recLevel ? 'chip-jade' : 'chip-red'">
-                荐 Lv.{{ ch.recLevel }}{{ store.player.level >= ch.recLevel ? ' · 已达' : ` · 差 ${ch.recLevel - store.player.level} 级` }}
+                推荐 {{ ch.recLevel }} 级{{ store.player.level >= ch.recLevel ? '' : ` · 还差 ${ch.recLevel - store.player.level} 级` }}
               </span>
               <span
                 class="chip"
@@ -82,21 +79,21 @@ function drops(ch: (typeof STORY_CHAPTERS)[number]) {
                   'chip-red': stanceRelation(store.currentLoadout.stance, ch.bossStance) === 'LOSE',
                 }"
               >
-                敌摆「{{ STANCE_META[ch.bossStance].short }}」·
-                {{ { WIN: '我方克制', LOSE: '被克制', EVEN: '同势' }[stanceRelation(store.currentLoadout.stance, ch.bossStance)] }}
+                对手用{{ STANCE_META[ch.bossStance].name }} ·
+                {{ { WIN: '你占上风', LOSE: '对手占上风', EVEN: '打法相同' }[stanceRelation(store.currentLoadout.stance, ch.bossStance)] }}
               </span>
-              <span class="chip">敌首 {{ ch.bossName }}</span>
+              <span class="chip">对手 {{ ch.bossName }}</span>
             </div>
 
             <p class="hint">{{ ch.mechanicTip }}</p>
 
             <div class="flex flex-wrap items-center gap-1.5 text-xs">
-              <span class="text-ink3">犒赏</span>
+              <span class="text-ink3">通关奖励</span>
               <span class="chip chip-jade tabular-nums">真气 +{{ ch.rewardQi.toLocaleString() }}</span>
               <span class="chip chip-gold tabular-nums">纹银 +{{ ch.rewardSilver.toLocaleString() }}</span>
               <button
-                v-for="d in drops(ch)" :key="d.id" class="chip tier-chip" :class="TIER_META[d.tier].cls"
-                :title="`可能掉落 · ${TIER_META[d.tier].label}`" @click="store.inspectById(d.kind, d.id)"
+                v-for="d in getChapterDrops(ch)" :key="d.id" class="chip tier-chip" :class="TIER_META[d.tier].cls"
+                :title="`通关可得 · ${TIER_META[d.tier].label}`" @click="store.inspectById(d.kind, d.id)"
               >
                 {{ TIER_META[d.tier].label }} · {{ d.name }}
               </button>
@@ -107,10 +104,10 @@ function drops(ch: (typeof STORY_CHAPTERS)[number]) {
             <button
               class="btn w-full sm:w-auto sm:min-w-[6.5rem]"
               :class="stateOf(ch.id) === 'CURRENT' ? 'btn-seal !min-h-[2.6rem]' : ''"
-              :disabled="stateOf(ch.id) === 'LOCKED'"
+              :disabled="stateOf(ch.id) === 'LOCKED' || store.onlineActionBusy"
               @click="store.challengeChapter(ch.id)"
             >
-              {{ { CLEARED: '再次历练', CURRENT: '拔剑闯关', LOCKED: '未解锁' }[stateOf(ch.id)] }}
+              {{ { CLEARED: '再战一次', CURRENT: '开始闯关', LOCKED: '先打上一关' }[stateOf(ch.id)] }}
             </button>
           </div>
         </li>
@@ -123,20 +120,38 @@ function drops(ch: (typeof STORY_CHAPTERS)[number]) {
           :class="store.player.currentMapId === m.id ? '!border-gold' : ''"
         >
           <div class="relative h-28 overflow-hidden">
-            <SceneBackdrop :map-id="m.id" :shichen-idx="store.shichenIdx" :dark="store.isMidnightTheme" :animated="false" />
+            <SceneBackdrop :map-id="m.id" :shichen-idx="store.shichenIdx" />
             <div class="absolute inset-x-0 bottom-0 flex items-end justify-between gap-2 bg-gradient-to-t from-black/70 to-transparent px-3 pb-2 pt-8">
               <h4 class="font-brush text-xl leading-none text-[#f0e9dc]">{{ m.name.replace(/（.*?）/, '') }}</h4>
               <span class="chip bg-black/40 backdrop-blur-[2px]" :class="m.safety === 'PEACE' ? 'chip-jade' : 'chip-red'">
-                {{ m.safety === 'PEACE' ? '和平共修' : '限定纷争' }}
+                {{ m.safety === 'PEACE' ? '和平区' : IS_MOCK_MODE ? '可劫镖' : '纷争区' }}
               </span>
             </div>
           </div>
           <div class="space-y-2.5 p-3">
             <p class="hint min-h-[3.3rem]">{{ m.ambientDesc }}</p>
-            <div class="flex items-center justify-between border-t border-line pt-2.5 text-xs tabular-nums">
-              <span class="text-ink3">灵脉 <b class="text-ink">{{ m.baseQiPerHour.toLocaleString() }}</b>/时 · {{ m.onlineCount }} 人在线</span>
-              <button v-if="store.player.currentMapId !== m.id" class="btn btn-sm btn-gold" @click="store.moveMap(m.id)">动身前往</button>
-              <span v-else class="chip chip-gold">当前驻留</span>
+            <div class="flex flex-wrap items-center gap-1 border-t border-line/50 pt-2 text-[0.72rem]">
+              <span class="text-ink3">本地产药：</span>
+              <span
+                v-for="h in getMapHerbs(m.id)"
+                :key="h.id"
+                class="chip !py-0 !text-[0.65rem]"
+                :class="[TIER_META[h.tier].cls, (store.herbInventory[h.id] ?? 0) > 0 ? '' : 'opacity-60']"
+              >
+                {{ h.name }} ({{ store.herbInventory[h.id] ?? 0 }})
+              </span>
+            </div>
+            <div class="flex items-center justify-between border-t border-line pt-2 text-xs tabular-nums">
+              <div class="text-ink3">
+                <div>基础收益 <b class="text-ink">{{ m.baseQiPerHour.toLocaleString() }}</b> 真气/小时</div>
+                <div v-if="IS_MOCK_MODE">{{ m.onlineCount }} 人在线</div>
+                <div v-else-if="store.roomConnected && store.roomMapId === m.id">{{ store.roomCount }} 人在线</div>
+              </div>
+              <button v-if="store.player.currentMapId !== m.id" class="btn btn-sm btn-gold" :disabled="store.onlineActionBusy" @click="store.moveMap(m.id)">前往</button>
+              <div v-else class="flex items-center gap-1.5">
+                <span class="chip chip-gold">你在这里</span>
+                <button class="btn btn-sm btn-gold" @click="store.forageHerbs(m.id)">采药</button>
+              </div>
             </div>
           </div>
         </article>
@@ -144,32 +159,35 @@ function drops(ch: (typeof STORY_CHAPTERS)[number]) {
 
       <!-- ============ 结义 + 后续长卷 ============ -->
       <div v-else class="view-scroll -mr-1 space-y-4 pr-1">
-        <article class="well relative overflow-hidden p-4">
+        <article v-if="IS_MOCK_MODE" class="well relative overflow-hidden p-4">
           <div class="pointer-events-none absolute inset-0 opacity-70" style="background: radial-gradient(ellipse at 85% 50%, var(--gold-soft), transparent 60%)" />
           <div class="relative grid items-center gap-4 md:grid-cols-[1fr_auto]">
             <div class="space-y-2">
-              <span class="chip chip-gold">三人实时组队</span>
-              <h4 class="font-brush text-2xl leading-tight">松鹤楼义结金兰 · 少室山三渡金刚伏魔圈</h4>
-              <p class="hint">进入秘境后由“1 主 + 2 伙伴”切换为「3 名真实玩家主角同场出战」。当前结义队友：乔北冥（丐帮）、清风道长（全真）。</p>
-              <button class="btn btn-seal mt-1" @click="store.startThreePlayerCoopRaid()">结义发兵</button>
+              <span class="chip chip-gold">三人合战</span>
+              <h4 class="font-brush text-2xl leading-tight">少室山 · 金刚伏魔圈</h4>
+              <p class="hint">这场由乔北冥和清风道长与你并肩出战，两人会替换你平时带的伙伴。</p>
+              <p v-if="store.nextRaidRelic" class="text-sm text-gold">打赢可得《{{ store.nextRaidRelic.name }}》</p>
+              <p v-else class="hint">副本秘宝已集齐，再战仍可获得真气和纹银。</p>
+              <button class="btn btn-seal mt-1" @click="store.startThreePlayerCoopRaid()">挑战副本</button>
             </div>
             <div class="mx-auto flex w-[min(100%,20rem)] items-end justify-center gap-2">
               <PortraitCard bare size="sm" name="乔北冥" subtitle="丐帮" style-type="hongqigong" class="flex-1" />
-              <PortraitCard bare size="sm" is-main :name="store.player.nickname" subtitle="你" style-type="hero_sword" class="flex-1" />
+              <PortraitCard bare size="sm" is-main :name="store.player.nickname" subtitle="你" style-type="hero_sword" :avatar-id="store.player.avatarId" class="flex-1" />
               <PortraitCard bare size="sm" name="清风道长" subtitle="全真" style-type="huangyaoshi" class="flex-1" />
             </div>
           </div>
         </article>
+        <RaidLobbyPanel v-else />
 
         <div>
-          <div class="sec-title mb-2.5">岁时武库 · 后续资料片</div>
+          <div class="sec-title mb-2.5">后续篇章</div>
           <div class="grid gap-2.5 sm:grid-cols-2">
             <article v-for="v in EXPANSION_VOLUMES_PREVIEW" :key="v.vol" class="well relative space-y-1.5 p-3.5 opacity-85">
               <Lock :size="14" class="absolute right-3 top-3 text-ink3" />
               <div class="font-brush text-lg leading-none text-gold">{{ v.vol }}</div>
               <div class="text-xs text-ink3">{{ v.range }}</div>
               <p class="text-sm">{{ v.chapters }}</p>
-              <p class="hint">核心机制：{{ v.core }}</p>
+              <p class="hint">玩法 · {{ v.core }}</p>
             </article>
           </div>
         </div>

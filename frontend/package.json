@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:online": "vite --mode online",
     "build": "vue-tsc -b && vite build",
+    "build:online": "vue-tsc -b && vite build --mode online",
     "preview": "vite preview"
   },
   "dependencies": {

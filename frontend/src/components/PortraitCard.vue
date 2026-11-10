@@ -1,12 +1,15 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { PortraitStyle } from '@/config/typesHelper'
+import type { PlayerAvatarId } from '@/network/protocol'
+import { PLAYER_AVATARS } from '@/config/uiMeta'
 import InkFigure from './InkFigure.vue'
 
 const props = defineProps<{
   name: string
   subtitle?: string
   styleType: PortraitStyle
+  avatarId?: PlayerAvatarId
   hp?: number
   maxHp?: number
   rage?: number
@@ -95,7 +98,8 @@ const verticalName = computed(() => {
 
       <div class="relative flex h-full items-end justify-center" :class="animClass">
         <div class="h-full" :class="[isEnemy ? '[transform:scaleX(-1)]' : '', pose === 'sit' ? 'anim-breathe' : '']">
-          <InkFigure :style-type="styleType" :pose="pose ?? 'stand'" />
+          <img v-if="avatarId" :src="PLAYER_AVATARS[avatarId].image" alt="" class="h-full w-auto object-contain" />
+          <InkFigure v-else :style-type="styleType" :pose="pose ?? 'stand'" />
         </div>
       </div>
 

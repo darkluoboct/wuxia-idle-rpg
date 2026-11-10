@@ -1,4 +1,14 @@
-import type { EquipSlotType, SkillSlotType, StanceType, TierColor } from './typesHelper'
+import type { SkillSlotType, TierColor } from './typesHelper'
+import type { ItemConfig } from './gameData'
+import type { PlayerAvatarId } from '@/network/protocol'
+import heroine from '@/assets/selection-heroine.webp'
+import hero from '@/assets/selection-hero.webp'
+export { EQUIP_SLOT_META, STANCE_META, stanceRelation } from '../../../shared/combatMeta.ts'
+
+export const PLAYER_AVATARS: Record<PlayerAvatarId, { label: string; image: string }> = {
+  hero_sword: { label: '女侠', image: heroine },
+  hero_sword_male: { label: '男侠', image: hero },
+}
 
 /** 品质：五色阶 → 中文品名 / CSS 色阶类（见 style.css 的 .t-*） */
 export const TIER_META: Record<TierColor, { label: string; cls: string; rank: number }> = {
@@ -10,29 +20,26 @@ export const TIER_META: Record<TierColor, { label: string; cls: string; rank: nu
 }
 
 export const SKILL_SLOT_META: Record<SkillSlotType, { label: string; glyph: string }> = {
-  INNER: { label: '内功心法', glyph: '内' },
-  OUTER: { label: '外功招式', glyph: '外' },
-  LIGHT: { label: '轻功身法', glyph: '轻' },
-  ULT: { label: '绝技奥义', glyph: '绝' },
+  INNER: { label: '内功', glyph: '内' },
+  OUTER: { label: '外功', glyph: '外' },
+  LIGHT: { label: '轻功', glyph: '轻' },
+  ULT: { label: '绝技', glyph: '绝' },
 }
 
-export const EQUIP_SLOT_META: Record<EquipSlotType, { label: string; glyph: string }> = {
-  WEAPON: { label: '兵刃', glyph: '兵' },
-  ARMOR: { label: '衣甲', glyph: '甲' },
-  ACC: { label: '佩饰', glyph: '佩' },
-  RELIC: { label: '秘宝', glyph: '秘' },
-}
+export const BASE_STAT_LABELS = { str: '臂力', con: '根骨', agi: '身法', intStat: '悟性', luck: '福缘', karma: '侠义' }
 
-/** 三才架势：刚猛 克 奇门，奇门 克 太极，太极 克 刚猛 */
-export const STANCE_META: Record<StanceType, { name: string; short: string; beats: StanceType; hint: string }> = {
-  FIERCE: { name: '刚猛强攻势', short: '刚猛', beats: 'AGILE', hint: '一力降十会 · 爆发 +25%' },
-  AGILE: { name: '奇门极速势', short: '奇门', beats: 'TAICHI', hint: '唯快不破 · 暴击 +25%' },
-  TAICHI: { name: '太极柔化势', short: '太极', beats: 'FIERCE', hint: '借力卸劲 · 反震 +25%' },
-}
+const skillPowerFormat = new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 4 })
+export const formatSkillPower = (power: number) => skillPowerFormat.format(power)
 
-export function stanceRelation(mine: StanceType, foe: StanceType): 'WIN' | 'LOSE' | 'EVEN' {
-  if (mine === foe) return 'EVEN'
-  return STANCE_META[mine].beats === foe ? 'WIN' : 'LOSE'
+export function itemBonusLabels(item: ItemConfig) {
+  const labels: string[] = []
+  if (item.atkBonus) labels.push(`攻击 +${item.atkBonus.toLocaleString()}`)
+  if (item.defBonus) labels.push(`防御 +${item.defBonus.toLocaleString()}`)
+  if (item.hpBonus) labels.push(`气血 +${item.hpBonus.toLocaleString()}`)
+  if (item.critBonus) labels.push(`暴击率 +${item.critBonus}%`)
+  if (item.dodgeBonus) labels.push(`闪避率 +${item.dodgeBonus}%`)
+  if (item.slot === 'ARMOR' && item.idleBonus) labels.push(`修行真气 +${item.idleBonus}%`)
+  return labels
 }
 
 /** 时辰：与 store 的 SHICHEN_LABELS 一一对应（0 子夜 / 1 平旦 / 2 辰时 / 3 日正 / 4 斜阳 / 5 黄昏） */

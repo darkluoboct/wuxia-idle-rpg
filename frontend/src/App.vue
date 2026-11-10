@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, type Component } from 'vue'
-import { Compass, Moon, Sun, UserRound } from 'lucide-vue-next'
+import { computed, onMounted, onUnmounted, ref, watch, type Component } from 'vue'
+import { Compass, Landmark, LogOut, Mountain, Settings, Store, Swords, UserRound } from 'lucide-vue-next'
 import { useGameStore, type MainTab } from '@/stores/gameStore'
-import { IS_MOCK_MODE } from '@/network/apiClient'
+import { IS_GUEST_ENTRY, IS_MOCK_MODE } from '@/network/apiClient'
 import { TIER_META } from '@/config/uiMeta'
-import InkBackdrop from '@/components/InkBackdrop.vue'
 import LeftCharacterSidebar from '@/components/LeftCharacterSidebar.vue'
 import RightJianghuSidebar from '@/components/RightJianghuSidebar.vue'
+import OnlineEntry from '@/components/OnlineEntry.vue'
+import CharacterSelect from '@/components/CharacterSelect.vue'
 import CultivateView from '@/views/CultivateView.vue'
 import JianghuView from '@/views/JianghuView.vue'
 import ArsenalView from '@/views/ArsenalView.vue'
@@ -14,36 +15,50 @@ import SectView from '@/views/SectView.vue'
 import MarketView from '@/views/MarketView.vue'
 
 const store = useGameStore()
+const showingLocalEntry = ref(IS_MOCK_MODE && !IS_GUEST_ENTRY)
+const choosingCharacter = ref(true)
+const hasEnteredJianghu = ref(false)
 
-const navTabs: { key: MainTab; label: string; full: string; glyph: string; hotkey: string; view: Component }[] = [
-  { key: 'CULTIVATE', label: '修行', full: '修行吐纳', glyph: '修', hotkey: '1', view: CultivateView },
-  { key: 'JIANGHU', label: '江湖', full: '闯荡江湖', glyph: '江', hotkey: '2', view: JianghuView },
-  { key: 'ARSENAL', label: '武库', full: '随身武库', glyph: '武', hotkey: '3', view: ArsenalView },
-  { key: 'SECT', label: '门派', full: '宗门百派', glyph: '门', hotkey: '4', view: SectView },
-  { key: 'MARKET', label: '市井', full: '市井风云', glyph: '市', hotkey: '5', view: MarketView },
+function enterJianghu() {
+  choosingCharacter.value = false
+  hasEnteredJianghu.value = true
+}
+
+function chooseCharacter() {
+  store.closeBattleStage()
+  store.mobileDrawer = 'NONE'
+  choosingCharacter.value = true
+}
+
+function returnFromSelection() {
+  if (hasEnteredJianghu.value && store.characterList.some((role) => role.id === store.player.id)) enterJianghu()
+  else showingLocalEntry.value = true
+}
+
+watch(() => store.onlinePhase, (phase) => {
+  if (phase !== 'ready') choosingCharacter.value = true
+  if (phase === 'login') hasEnteredJianghu.value = false
+})
+
+const navTabs: { key: MainTab; label: string; icon: Component; hotkey: string; view: Component }[] = [
+  { key: 'CULTIVATE', label: '修行', icon: Landmark, hotkey: '1', view: CultivateView },
+  { key: 'JIANGHU', label: '江湖', icon: Compass, hotkey: '2', view: JianghuView },
+  { key: 'ARSENAL', label: '武库', icon: Swords, hotkey: '3', view: ArsenalView },
+  { key: 'SECT', label: '门派', icon: Mountain, hotkey: '4', view: SectView },
+  { key: 'MARKET', label: '市井', icon: Store, hotkey: '5', view: MarketView },
 ]
 
 /** 战斗播放时中央始终显示演武台，此时不高亮任何页签 */
 const inBattle = computed(() => !!store.activeBattle)
 const currentTab = computed(() => (inBattle.value ? 'CULTIVATE' : store.activeTab))
 const currentView = computed(() => navTabs.find((t) => t.key === currentTab.value)!.view)
-
-function goTab(key: MainTab) {
-  store.activeTab = key
-  store.mobileDrawer = 'NONE'
-  if (store.activeBattle && !store.isBattlePlaying) store.closeBattleStage()
-}
+const stage = ref<HTMLElement>()
+watch([currentTab, inBattle], () => { if (stage.value) stage.value.scrollTop = 0 })
 const toggleDrawer = (d: 'CHAR' | 'WORLD') => (store.mobileDrawer = store.mobileDrawer === d ? 'NONE' : d)
-
-/* ---------- 江湖邸报：单条轮播（替代 2900px 长文横滚，可读、可暂停） ---------- */
-const bulletins = computed(() => store.marqueeBulletin.split('　　·　　').filter(Boolean))
-const bulletinIdx = ref(0)
-const bulletinPaused = ref(false)
-const bulletin = computed(() => bulletins.value[bulletinIdx.value % Math.max(1, bulletins.value.length)] ?? '')
-let bulletinTimer: ReturnType<typeof setInterval> | undefined
 
 /* ---------- 键盘 ---------- */
 function handleKeydown(e: KeyboardEvent) {
+  if (store.onlinePhase !== 'ready' || choosingCharacter.value) return
   if (e.key === 'Escape') {
     if (store.confirmDialog) store.resolveConfirm(false)
     else if (store.inspectModal) store.inspectModal = null
@@ -55,8 +70,8 @@ function handleKeydown(e: KeyboardEvent) {
   if (store.confirmDialog || store.inspectModal) return
 
   const hit = navTabs.find((t) => t.hotkey === e.key)
-  if (hit) goTab(hit.key)
-  else if (e.code === 'Space' && store.activeBattle) {
+  if (hit) store.selectTab(hit.key)
+  else if (e.code === 'Space' && store.activeBattle && tag !== 'BUTTON' && tag !== 'SUMMARY') {
     e.preventDefault()
     if (store.isBattlePlaying) store.skipBattleToEnd()
     else store.closeBattleStage()
@@ -66,13 +81,10 @@ function handleKeydown(e: KeyboardEvent) {
 onMounted(() => {
   document.documentElement.classList.toggle('theme-midnight', store.isMidnightTheme)
   window.addEventListener('keydown', handleKeydown)
-  bulletinTimer = setInterval(() => {
-    if (!bulletinPaused.value) bulletinIdx.value++
-  }, 7000)
+  void store.resumeOnline()
 })
 onUnmounted(() => {
   window.removeEventListener('keydown', handleKeydown)
-  clearInterval(bulletinTimer)
 })
 
 /** 窄屏资产读数：18600 → 1.9万 */
@@ -83,123 +95,94 @@ const TOAST_GLYPH = { gold: '喜', danger: '警', info: '讯' } as const
 </script>
 
 <template>
-  <div class="relative flex h-dvh flex-col overflow-hidden">
-    <InkBackdrop />
-
-    <!-- ==================== 顶栏 ==================== -->
-    <header class="relative z-30 shrink-0 border-b border-line bg-[color-mix(in_srgb,var(--bg-1)_90%,transparent)] backdrop-blur-md">
-      <div class="mx-auto flex h-[3.4rem] w-full max-w-[112rem] items-center justify-between gap-3 px-3 md:px-4">
-        <!-- 题名 -->
-        <div class="flex min-w-0 shrink-0 items-center gap-2.5">
-          <span class="seal vertical-rl h-8 w-6 text-xs tracking-[0.2em] sm:h-9 sm:w-7 sm:text-sm">问道</span>
-          <div class="leading-none">
-            <div class="font-brush text-xl leading-none tracking-[0.1em] text-gold sm:text-[1.65rem] sm:tracking-[0.12em]">金庸群侠</div>
-            <div class="mt-1 hidden items-center gap-1.5 text-xs text-ink3 lg:flex">
-              <i class="inline-block h-1.5 w-1.5 rounded-full bg-jade" />
-              {{ store.shichenLabel }} · {{ IS_MOCK_MODE ? '演武模式' : '江湖在线' }}
-            </div>
-          </div>
-        </div>
-
-        <!-- 主导航（≥ 768px） -->
-        <nav class="tabs hidden border-b-0 md:flex" role="tablist" aria-label="主导航">
-          <button
-            v-for="t in navTabs" :key="t.key" class="tab flex items-center gap-1.5 !px-2.5 lg:!px-3.5"
-            role="tab" :aria-selected="!inBattle && store.activeTab === t.key" :title="`${t.full}（${t.hotkey}）`"
-            @click="goTab(t.key)"
-          >
-            <span class="seal-gold seal hidden h-[1.15rem] w-[1.15rem] text-[0.7rem] lg:inline-flex">{{ t.glyph }}</span>
-            <span class="lg:hidden">{{ t.label }}</span>
-            <span class="hidden lg:inline">{{ t.full }}</span>
-            <kbd class="hidden font-sans text-[0.65rem] opacity-50 xl:inline">{{ t.hotkey }}</kbd>
-          </button>
-        </nav>
-
-        <!-- 资产 / 主题 / 抽屉 -->
-        <div class="flex shrink-0 items-center gap-1.5 text-sm tabular-nums sm:gap-2">
-          <div class="flex items-center gap-2 rounded-sm border border-line px-2 py-1 text-xs sm:gap-3 sm:px-2.5 sm:text-sm">
-            <span class="flex items-center gap-1.5" title="纹银">
-              <i class="inline-block h-3 w-3 rounded-full bg-[radial-gradient(circle_at_35%_30%,#f4f1ea,#9a9fa6)] shadow-[0_0_0_1px_rgba(0,0,0,.3)]" />
-              <b class="sm:hidden">{{ compact(store.player.silver) }}</b><b class="hidden sm:inline">{{ store.player.silver.toLocaleString() }}</b>
-            </span>
-            <span class="flex items-center gap-1.5" title="元宝">
-              <i class="inline-block h-3 w-3 rotate-45 rounded-[2px] bg-[linear-gradient(135deg,#f3d68b,#b88a32)] shadow-[0_0_0_1px_rgba(0,0,0,.3)]" />
-              <b class="text-gold sm:hidden">{{ compact(store.player.goldIngot) }}</b><b class="hidden text-gold sm:inline">{{ store.player.goldIngot.toLocaleString() }}</b>
-            </span>
-          </div>
-
-          <button class="btn btn-sm !px-2 md:hidden" aria-label="人物卷" @click="toggleDrawer('CHAR')"><UserRound :size="16" /></button>
-          <button class="btn btn-sm !px-2 xl:hidden" aria-label="江湖卷" @click="toggleDrawer('WORLD')"><Compass :size="16" /></button>
-          <button
-            class="btn btn-sm !px-2" :aria-label="store.isMidnightTheme ? '切换为宋宣（浅色）' : '切换为玄墨（深色）'"
-            :title="store.isMidnightTheme ? '切换为宋宣' : '切换为玄墨'" @click="store.toggleTheme()"
-          >
-            <Sun v-if="store.isMidnightTheme" :size="16" />
-            <Moon v-else :size="16" />
-          </button>
-        </div>
+  <OnlineEntry v-if="showingLocalEntry || (store.onlinePhase !== 'ready' && store.onlinePhase !== 'create')" @guest="showingLocalEntry = false" />
+  <CharacterSelect v-else-if="choosingCharacter || store.onlinePhase === 'create'" :can-return="hasEnteredJianghu" @enter="enterJianghu" @back="returnFromSelection" />
+  <div v-else class="wuxia-shell">
+    <header class="wuxia-header">
+      <div class="wuxia-wordmark" :title="IS_MOCK_MODE ? '问道武林 · 试玩模式' : '问道武林 · 江湖在线'">
+        <h1 class="font-brush">金庸群侠</h1>
+        <span class="seal vertical-rl">问道</span>
       </div>
 
-      <!-- 江湖邸报 -->
-      <div
-        class="border-t border-line text-xs"
-        @mouseenter="bulletinPaused = true" @mouseleave="bulletinPaused = false"
-      >
-        <div class="mx-auto flex h-[1.85rem] w-full max-w-[112rem] items-center gap-2.5 px-3 md:px-4">
-          <span class="font-brush shrink-0 text-sm tracking-widest text-gold">邸报</span>
-          <span class="h-3 w-px shrink-0 bg-line" />
-          <Transition mode="out-in" enter-active-class="transition duration-300" enter-from-class="opacity-0 translate-y-1" leave-active-class="transition duration-200" leave-to-class="opacity-0 -translate-y-1">
-            <p :key="bulletinIdx" class="min-w-0 flex-1 truncate text-ink2" :title="bulletin">{{ bulletin }}</p>
-          </Transition>
-          <span class="shrink-0 tabular-nums text-ink3">{{ (bulletinIdx % Math.max(1, bulletins.length)) + 1 }}/{{ bulletins.length }}</span>
+      <div class="wuxia-navigation">
+        <nav class="wuxia-nav" role="tablist" aria-label="主导航">
+          <button
+            v-for="t in navTabs" :key="t.key" role="tab" :aria-selected="!inBattle && store.activeTab === t.key"
+            :title="`${t.label}（${t.hotkey}）`" :aria-keyshortcuts="t.hotkey" @click="store.selectTab(t.key)"
+          >
+            <component :is="t.icon" aria-hidden="true" />
+            <span>{{ t.label }}</span>
+          </button>
+        </nav>
+        <button
+          class="wuxia-appearance" :aria-label="store.isMidnightTheme ? '切换为宋宣（浅色）' : '切换为玄墨（深色）'"
+          :title="store.isMidnightTheme ? '切换为宋宣' : '切换为玄墨'" @click="store.toggleTheme()"
+        ><Settings aria-hidden="true" /><span>外观</span></button>
+      </div>
+
+      <div class="wuxia-assets tabular-nums">
+        <div class="wuxia-currency" aria-label="资产">
+          <span :title="`纹银 ${store.player.silver.toLocaleString()}`">
+            <i class="art art-coin" aria-hidden="true" />
+            <b class="sm:hidden">{{ compact(store.player.silver) }}</b><b class="hidden sm:inline">{{ store.player.silver.toLocaleString() }}</b>
+          </span>
+          <span :title="`元宝 ${store.player.goldIngot.toLocaleString()}`">
+            <i class="art art-ingot" aria-hidden="true" />
+            <b class="sm:hidden">{{ compact(store.player.goldIngot) }}</b><b class="hidden sm:inline">{{ store.player.goldIngot.toLocaleString() }}</b>
+          </span>
         </div>
+        <button class="wuxia-icon" aria-label="选择角色" title="选择角色" @click="chooseCharacter"><UserRound /></button>
+        <button v-if="!IS_MOCK_MODE" class="wuxia-icon" aria-label="退出登录" title="退出登录" :disabled="store.authBusy" @click="store.logout()"><LogOut /></button>
+        <button class="wuxia-icon md:hidden" aria-label="查看角色" title="查看角色" aria-controls="character-rail" :aria-expanded="store.mobileDrawer === 'CHAR'" @click="toggleDrawer('CHAR')"><UserRound /></button>
+        <button class="wuxia-icon xl:hidden" aria-label="任务与战报" title="任务与战报" aria-controls="world-rail" :aria-expanded="store.mobileDrawer === 'WORLD'" @click="toggleDrawer('WORLD')"><Compass /></button>
+        <button
+          class="wuxia-icon md:hidden" :aria-label="store.isMidnightTheme ? '切换为宋宣（浅色）' : '切换为玄墨（深色）'"
+          :title="store.isMidnightTheme ? '切换为宋宣' : '切换为玄墨'" @click="store.toggleTheme()"
+        ><Settings /></button>
       </div>
     </header>
 
-    <!-- ==================== 主体 ==================== -->
-    <main
-      class="mx-auto grid min-h-0 w-full max-w-[112rem] flex-1 grid-cols-1 gap-3 p-3 md:grid-cols-[17.5rem_minmax(0,1fr)] md:p-4 xl:grid-cols-[18.5rem_minmax(0,1fr)_20rem]"
-    >
-      <!-- 左：人物卷（< 768px 为左抽屉） -->
-      <aside
-        class="fixed inset-y-0 left-0 z-40 w-[min(88vw,22rem)] -translate-x-full p-2 transition-transform duration-300 data-[open=true]:translate-x-0 md:static md:z-auto md:w-auto md:min-h-0 md:translate-x-0 md:p-0"
-        :data-open="store.mobileDrawer === 'CHAR'"
-      >
-        <LeftCharacterSidebar />
+    <main class="wuxia-layout">
+      <aside id="character-rail" class="wuxia-rail character-rail" aria-label="人物卷" :data-open="store.mobileDrawer === 'CHAR'">
+        <div class="rail-frame"><LeftCharacterSidebar /></div>
       </aside>
 
-      <!-- 中：当前页签 -->
-      <section class="h-full min-h-0 overflow-y-auto">
-        <Transition mode="out-in" enter-active-class="anim-modal">
-          <component :is="currentView" :key="currentTab" />
-        </Transition>
+      <section ref="stage" class="wuxia-stage" :class="{ 'wuxia-interior': currentTab !== 'CULTIVATE' || inBattle }" aria-label="江湖舞台">
+        <div v-if="!IS_MOCK_MODE && (currentTab === 'SECT' || currentTab === 'MARKET')" class="view">
+          <section class="panel space-y-2 p-4">
+            <h2 class="sec-title">{{ currentTab === 'SECT' ? '门派' : '市井' }}筹备中</h2>
+            <p class="hint">先去嘉兴会友，或到江湖页闯闯射雕主线。</p>
+          </section>
+        </div>
+        <component v-else :is="currentView" :key="currentTab" />
       </section>
 
-      <!-- 右：江湖卷（< 1280px 为右抽屉） -->
-      <aside
-        class="fixed inset-y-0 right-0 z-40 w-[min(88vw,22rem)] translate-x-full p-2 transition-transform duration-300 data-[open=true]:translate-x-0 xl:static xl:z-auto xl:w-auto xl:min-h-0 xl:translate-x-0 xl:p-0"
-        :data-open="store.mobileDrawer === 'WORLD'"
-      >
-        <RightJianghuSidebar />
+      <aside id="world-rail" class="wuxia-rail world-rail" aria-label="江湖卷" :data-open="store.mobileDrawer === 'WORLD'">
+        <div class="rail-frame"><RightJianghuSidebar /></div>
       </aside>
     </main>
 
+    <div v-if="store.canRetryOnline" class="panel fixed right-3 top-16 z-40 flex items-center gap-2 p-2 text-sm">
+      <span>连接中断</span>
+      <button class="btn btn-sm btn-gold" :disabled="store.onlineRetryBusy" @click="store.retryOnlineAction()">重试这次操作</button>
+    </div>
+
     <!-- 抽屉遮罩 -->
     <Transition enter-active-class="transition-opacity duration-200" enter-from-class="opacity-0" leave-active-class="transition-opacity duration-200" leave-to-class="opacity-0">
-      <div v-if="store.mobileDrawer !== 'NONE'" class="fixed inset-0 z-30 bg-[var(--scrim)]" @click="store.mobileDrawer = 'NONE'" />
+      <div
+        v-if="store.mobileDrawer !== 'NONE'" class="fixed inset-0 z-30 bg-[var(--scrim)]"
+        :class="store.mobileDrawer === 'CHAR' ? 'md:hidden' : 'xl:hidden'" @click="store.mobileDrawer = 'NONE'"
+      />
     </Transition>
 
     <!-- ==================== 底部导航（< 768px） ==================== -->
-    <nav
-      class="relative z-30 grid shrink-0 grid-cols-5 border-t border-line bg-[color-mix(in_srgb,var(--bg-1)_94%,transparent)] pb-[env(safe-area-inset-bottom)] backdrop-blur-md md:hidden"
-      role="tablist" aria-label="主导航"
-    >
+    <nav class="wuxia-mobile-nav" role="tablist" aria-label="主导航">
       <button
-        v-for="t in navTabs" :key="t.key" class="flex flex-col items-center gap-1 py-2 text-xs"
+        v-for="t in navTabs" :key="t.key"
         role="tab" :aria-selected="!inBattle && store.activeTab === t.key"
-        :class="!inBattle && store.activeTab === t.key ? 'font-bold text-gold' : 'text-ink3'" @click="goTab(t.key)"
+        @click="store.selectTab(t.key)"
       >
-        <span class="seal h-7 w-7 text-base" :class="!inBattle && store.activeTab === t.key ? '' : 'seal-gold !text-ink3'">{{ t.glyph }}</span>
+        <component :is="t.icon" aria-hidden="true" />
         {{ t.label }}
       </button>
     </nav>
@@ -231,7 +214,7 @@ const TOAST_GLYPH = { gold: '喜', danger: '警', info: '讯' } as const
                 <h4 class="font-brush tier-text mt-2 text-[1.9rem] leading-tight">{{ store.inspectModal.title }}</h4>
                 <div class="mt-1 text-xs text-ink3">{{ store.inspectModal.subtitle }}</div>
               </div>
-              <button v-focus class="btn btn-sm shrink-0" @click="store.inspectModal = null">合卷</button>
+              <button v-focus class="btn btn-sm shrink-0" @click="store.inspectModal = null">关闭</button>
             </div>
             <p class="border-t border-line pt-3 text-[0.9375rem] leading-relaxed">{{ store.inspectModal.desc }}</p>
             <p v-if="store.inspectModal.extra" class="border-l-2 border-[var(--tc)] pl-3 text-sm italic leading-relaxed text-ink2">
@@ -254,7 +237,7 @@ const TOAST_GLYPH = { gold: '喜', danger: '警', info: '讯' } as const
           </h4>
           <p class="text-sm leading-relaxed text-ink2">{{ store.confirmDialog.body }}</p>
           <div class="flex justify-end gap-2 pt-1">
-            <button v-focus class="btn" @click="store.resolveConfirm(false)">再想想</button>
+            <button v-focus class="btn" @click="store.resolveConfirm(false)">取消</button>
             <button class="btn" :class="store.confirmDialog.tone === 'danger' ? 'btn-seal' : 'btn-gold'" @click="store.resolveConfirm(true)">
               {{ store.confirmDialog.confirmText }}
             </button>

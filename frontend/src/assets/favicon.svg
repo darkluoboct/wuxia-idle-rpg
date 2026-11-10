@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <rect x="1" y="1" width="30" height="30" rx="6" fill="#842b29" stroke="#d7b47a" stroke-width="2"/>
+  <rect x="4" y="4" width="24" height="24" rx="4" fill="none" stroke="#d7b47a" stroke-width=".6"/>
+  <text x="16" y="23" text-anchor="middle" font-size="20" font-family="KaiTi, serif" fill="#f4e3c5">侠</text>
+</svg>
