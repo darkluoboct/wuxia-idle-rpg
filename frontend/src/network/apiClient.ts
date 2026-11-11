@@ -1,6 +1,6 @@
 import type { WsServerEvent } from './protocol'
 
-const entryMode = new URLSearchParams(window.location.search).get('mode')
+const entryMode = typeof window === 'undefined' ? null : new URLSearchParams(window.location.search).get('mode')
 export const IS_GUEST_ENTRY = entryMode === 'guest'
 export const IS_MOCK_MODE = IS_GUEST_ENTRY || (entryMode !== 'online' && import.meta.env.MODE !== 'online' && import.meta.env.VITE_USE_MOCK !== 'false')
 

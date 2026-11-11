@@ -127,7 +127,7 @@ async function toggleFullscreen() {
         <button type="submit" class="login-primary font-brush" :disabled="busy"><LoaderCircle v-if="busy" class="login-spinner" aria-hidden="true" /><span v-else class="login-button-ornament" aria-hidden="true">❖</span><span>{{ busy ? '静候片刻' : mode === 'register' ? '注册并启程' : '进入江湖' }}</span><ChevronRight v-if="!busy" aria-hidden="true" /></button>
       </form>
       <div class="login-secondary"><button type="button" :disabled="busy" @click="toggleMode"><UserRound v-if="mode === 'register'" aria-hidden="true" /><UserRoundPlus v-else aria-hidden="true" />{{ mode === 'register' ? '已有账号，去登录' : '注册账号' }}</button><button type="button" :disabled="submitting" @click="enterGuest"><Gamepad2 aria-hidden="true" />游客进入</button></div>
-      <p class="guest-note">游客可体验江湖，进度仅在本次会话保留。</p>
+      <p class="guest-note">游客可试玩，最近游玩的角色进度可保存在当前浏览器。</p>
       <div class="login-panel-flourish" aria-hidden="true"><span />◆<span /></div>
     </section>
 

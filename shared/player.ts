@@ -166,13 +166,13 @@ export function createStarterCharacter(identity: Pick<PlayerDTO, 'id' | 'nicknam
   }
 }
 
-export function cultivationRate(player: PlayerDTO, preset: LoadoutPresetDTO) {
+export function cultivationRate(player: PlayerDTO, preset: LoadoutPresetDTO, collectionBonus = 0) {
   const map = MAPS.find((zone) => zone.id === player.currentMapId) ?? MAPS[0]
   const inner = preset.innerSkillId ? SKILLS[preset.innerSkillId]?.idleQiBonus ?? 0 : 0
   const armor = preset.armorId ? ITEMS[preset.armorId]?.idleBonus ?? 0 : 0
   const sect = player.currentSectId === 'quanzhen' ? 25 : 0
   const coCultivate = player.coCultivatePartner ? 15 : 0
-  return Math.round(map.baseQiPerHour * (1 + player.stats.con / 100) * (1 + (inner + armor + sect + coCultivate) / 100))
+  return Math.round(map.baseQiPerHour * (1 + player.stats.con / 100) * (1 + (inner + armor + sect + coCultivate + collectionBonus) / 100))
 }
 
 export function coCultivationRate(soloQiPerHour: number) {

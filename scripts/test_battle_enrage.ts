@@ -1,5 +1,5 @@
 import { computeDerivedStats, strikeDamage, incomingDamage, innerPressure, evaluateStanceAdvantage } from '../shared/battle.ts'
-import { ITEMS, SKILLS, REALMS, STORY_CHAPTERS, COMPANIONS } from '../shared/gameData.ts'
+import { ITEMS, SKILLS, REALMS, ONLINE_STORY_CHAPTERS as STORY_CHAPTERS, COMPANIONS } from '../shared/gameData.ts'
 import { skillPowerAtMastery } from '../shared/skillMastery.ts'
 import type { PlayerDTO, LoadoutPresetDTO, StanceType, SkillTier } from '../shared/protocol.ts'
 

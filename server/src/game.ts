@@ -3,7 +3,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify'
 import type { PoolClient } from 'pg'
 import { calcNextLevelQi, computeDerivedStats, simulateServerBattle, simulateShaoshiRaid } from '../../shared/battle.ts'
 import { EQUIP_SLOT_META, STANCE_META } from '../../shared/combatMeta.ts'
-import { COOP_RAID_RELICS, getChapterDrops, ITEMS, MAPS, SHAOSHI_RAID, SKILLS, STORY_CHAPTERS } from '../../shared/gameData.ts'
+import { COOP_RAID_RELICS, getChapterDrops, ITEMS, ONLINE_MAPS, ONLINE_STORY_CHAPTERS, SHAOSHI_RAID, SKILLS } from '../../shared/gameData.ts'
 import {
   PATROL_DROP_CHANCE, PATROL_ENCOUNTER_MINUTES, TRIAL_PATROL_HOURS, TRIAL_REPLAY_HOURS,
   TRIAL_STAGES, trialItemOf, trialPartId, trialSetOfStage, trialStageOf,
@@ -449,7 +449,7 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
 
   app.post('/api/v1/map/move', (request) => respond(request, async (character, now, client, readRelated) => {
     const { mapId } = objectBody(request.body)
-    if (typeof mapId !== 'string' || !MAPS.some((map) => map.id === mapId)) {
+    if (typeof mapId !== 'string' || !ONLINE_MAPS.some((map) => map.id === mapId)) {
       throw new GameError(400, 'INVALID_MAP', '江湖图上找不到这个地方')
     }
     if (mapId === character.player.currentMapId) return { result: NO_IDLE_GAIN, changed: false }
@@ -467,7 +467,7 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
   }))
 
   function requireCoCultivationPartners(character: Character, partner: Character, mapId: string, now: number) {
-    if (MAPS.find((map) => map.id === mapId)?.safety !== 'PEACE') {
+    if (ONLINE_MAPS.find((map) => map.id === mapId)?.safety !== 'PEACE') {
       throw new GameError(409, 'CO_CULTIVATION_PEACE_ONLY', '到和平地图才能一起修行')
     }
     if ([character, partner].some(({ player }) => player.currentMapId !== mapId || !rooms.isOnlineInMap(player.id, mapId))) {
@@ -631,7 +631,7 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
   }))
 
   app.post<{ Params: { chapterId: string } }>('/api/v1/story/:chapterId/challenge', (request) => respond<StoryChallengeResult>(request, async (character, _now, client) => {
-    const chapter = STORY_CHAPTERS.find((ch) => String(ch.id) === request.params.chapterId)
+    const chapter = ONLINE_STORY_CHAPTERS.find((ch) => String(ch.id) === request.params.chapterId)
     if (!chapter) throw new GameError(404, 'CHAPTER_NOT_FOUND', '江湖图上没有这一关')
     const { player } = character
     if (chapter.id > player.maxChapterId) throw new GameError(409, 'CHAPTER_LOCKED', '先打过上一关，就能挑战这里')

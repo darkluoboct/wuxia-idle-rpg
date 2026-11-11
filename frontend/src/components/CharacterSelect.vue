@@ -12,7 +12,7 @@ defineProps<{ canReturn: boolean }>()
 const emit = defineEmits<{ enter: []; back: [] }>()
 const store = useGameStore()
 const roles = computed(() => IS_MOCK_MODE ? store.characterList : store.onlinePhase === 'ready' ? [store.player] : [])
-const selectedId = ref(store.player.id)
+const selectedId = ref(store.savedGame?.playerId ?? store.player.id)
 const selected = computed(() => roles.value.find((role) => role.id === selectedId.value))
 const canCreate = computed(() => IS_MOCK_MODE ? roles.value.length < 4 : store.onlinePhase === 'create')
 const serverName = IS_MOCK_MODE ? '嘉兴烟雨 · 本地试玩' : '嘉兴烟雨 · 江湖在线'
@@ -131,7 +131,7 @@ async function toggleFullscreen() {
 
       <button class="create-character" :disabled="!canCreate || store.authBusy" @click="openModal('create')"><span class="create-plus"><Plus aria-hidden="true" /></span><span class="font-brush">创建角色</span></button>
       <div class="ledger-footer"><span>{{ roles.length }} / {{ IS_MOCK_MODE ? 4 : 1 }} 位侠客</span><button :disabled="!IS_MOCK_MODE || !selected" :title="IS_MOCK_MODE ? '删除所选试玩角色' : '联机角色暂不支持删除'" @click="openModal('delete')"><Trash2 aria-hidden="true" />删除角色</button></div>
-      <p class="ledger-note"><ShieldCheck aria-hidden="true" />{{ IS_MOCK_MODE ? '本地试玩 · 角色仅在本次会话保留' : '江湖存档 · 随账号保存' }}</p>
+      <p class="ledger-note"><ShieldCheck aria-hidden="true" />{{ IS_MOCK_MODE ? '本地试玩' : '江湖存档 · 随账号保存' }}</p>
     </section>
 
     <div v-if="selected" class="character-stage" aria-hidden="true">

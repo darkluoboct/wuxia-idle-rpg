@@ -1266,6 +1266,116 @@ export const SKILLS: Record<string, SkillConfig> = {
     desc: '五虎断门刀绝门凶招。阔背大刀发疯般连横乱剁，暴烈无比。',
     castNarrative: '赤红双目单刀横拉，疯狂剁出一记血色横斩，狂暴劈退敌方前锋！',
   },
+  jiuyang_shengong: {
+    id: 'jiuyang_shengong',
+    name: '九阳神功',
+    slot: 'INNER',
+    tier: 'red',
+    source: '昆仑翠谷白猿奇遇',
+    powerRatio: 1.65,
+    idleQiBonus: 45,
+    desc: '“他强由他强，清风拂山岗！”反弹40%近战伤害，每回合自动净化全队寒毒。',
+    castNarrative: '周身九阳真气沛然运转，护体金芒大盛，将敌方劲力尽数震回',
+  },
+  kurong_chan: {
+    id: 'kurong_chan',
+    name: '枯荣禅功',
+    slot: 'INNER',
+    tier: 'orange',
+    source: '大理一灯居 / 南帝亲授',
+    powerRatio: 1.38,
+    idleQiBonus: 22,
+    desc: '枯荣相生，一灯大师疗伤之本。气血低于30%时每回合回复12%气血，离线打坐 +22%。',
+    castNarrative: '运起枯荣禅功，左半身枯寂如槁木，右半身生机勃发，伤势转眼愈合大半',
+  },
+  kaishan_zhang: {
+    id: 'kaishan_zhang',
+    name: '开山掌',
+    slot: 'OUTER',
+    tier: 'green',
+    source: '江南武馆入门掌法',
+    powerRatio: 1.1,
+    critBonus: 6,
+    desc: '江南武馆的入门掌法，朴实无华，一掌击出势大力沉。',
+    castNarrative: '沉腰立马，一掌平平拍出，掌风竟带着开山裂石的闷响',
+  },
+  lanhua_fuxue: {
+    id: 'lanhua_fuxue',
+    name: '兰花拂穴手',
+    slot: 'OUTER',
+    tier: 'purple',
+    source: '东海桃花岛 · 二阶',
+    powerRatio: 1.4,
+    critBonus: 15,
+    desc: '指尖如兰花轻拂，点穴封脉于无形，暴击率 +15%。',
+    castNarrative: '十指翻飞如兰花绽放，轻轻拂过敌方周身要穴，几乎不见力道，却教人半身酸麻',
+  },
+  tonggui_jian: {
+    id: 'tonggui_jian',
+    name: '同归剑法',
+    slot: 'OUTER',
+    tier: 'purple',
+    source: '全真教 · 三代精锐',
+    powerRatio: 1.5,
+    critBonus: 8,
+    desc: '以命搏命的全真剑招，气血越低出剑越猛。',
+    castNarrative: '剑尖抵向敌方，竟全不理对方来招，一式【同归于尽】的决绝剑意已锁死对手',
+  },
+  xiaoyao_you: {
+    id: 'xiaoyao_you',
+    name: '逍遥游',
+    slot: 'OUTER',
+    tier: 'blue',
+    source: '黄蓉所赠拳谱',
+    powerRatio: 1.25,
+    critBonus: 8,
+    desc: '丐帮三袋弟子常习的拳法，飘逸灵动，暴击率 +8%。',
+    castNarrative: '拳势如闲云野鹤，忽左忽右，似是随意挥洒，却把对手逼得处处受制',
+  },
+  shuangshou_hubo: {
+    id: 'shuangshou_hubo',
+    name: '双手互搏',
+    slot: 'OUTER',
+    tier: 'orange',
+    source: '清音洞老顽童周伯通',
+    powerRatio: 1.72,
+    critBonus: 10,
+    desc: '左手画方、右手画圆，两路武功同时使出——每回合普通外功有概率触发二次连击！',
+    castNarrative: '左手使一路刚猛掌法，右手使一路阴柔拳招，两股劲力各不相扰，同时轰向敌方',
+  },
+  nizhuan_jiuyin: {
+    id: 'nizhuan_jiuyin',
+    name: '逆转九阴',
+    slot: 'ULT',
+    tier: 'red',
+    source: '白驼山庄五阶 · 欧阳锋真传',
+    powerRatio: 3.0,
+    qiDamageRatio: 0.6,
+    desc: '倒转经脉，换来毁天灭地的狂暴一击，释放时免疫点穴控制。',
+    castNarrative: '倒立而行，周身经脉逆转，一股诡异而磅礴的内劲自头顶贯下，所过之处无不摧折',
+  },
+  lianzhu_shenjian: {
+    id: 'lianzhu_shenjian',
+    name: '连珠神箭',
+    slot: 'OUTER',
+    tier: 'purple',
+    source: '蒙古神箭手哲别',
+    powerRatio: 1.52,
+    critBonus: 14,
+    desc: '弓弦连响，数箭首尾相衔，每次出手有概率追加一箭，暴击率 +14%。',
+    castNarrative: '弓如满月，一箭未落二箭已出，三支羽箭首尾相衔，如流星般连珠射向敌方要害',
+  },
+  dashouyin: {
+    id: 'dashouyin',
+    name: '密宗大手印',
+    slot: 'OUTER',
+    tier: 'orange',
+    source: '雪域灵智上人',
+    powerRatio: 1.66,
+    qiDamageRatio: 0.25,
+    desc: '密宗至刚掌法，重掌震散护体罡气，使敌方下回合防御大减。',
+    castNarrative: '口诵梵咒，一掌缓缓按出，掌心泛起暗红，所过之处空气都似凝成了铁',
+  },
 };
 
 
@@ -1334,6 +1444,7 @@ export interface ItemConfig {
   critBonus?: number
   dodgeBonus?: number
   idleBonus?: number
+  signatureOwner?: string // 名器择主共鸣角色ID/名称
   signatureEffect?: string
   /** 所属历练套装；散件为空 */
   setId?: string
@@ -1594,6 +1705,148 @@ export const ITEMS: Record<string, ItemConfig> = {
     defBonus: 14,
     desc: '靴面绣着云纹，穿上迈步轻快，更容易闪开对手的招式。',
   },
+  qimei_stick: {
+    id: 'qimei_stick',
+    name: '齐眉熟铜棍',
+    slot: 'WEAPON',
+    tier: 'blue',
+    atkBonus: 52,
+    desc: '江南武馆的制式铜棍，势大力沉，善于守御。',
+  },
+  tiebai_bow: {
+    id: 'tiebai_bow',
+    name: '铁胎硬弓',
+    slot: 'WEAPON',
+    tier: 'blue',
+    reqStat: { key: 'str', val: 18, label: '臂力 ≥ 18' },
+    atkBonus: 58,
+    desc: '郭靖在大漠射雕所用的铁胎硬弓，弓如满月，开局必定先声夺人。',
+  },
+  chansi_hufan: {
+    id: 'chansi_hufan',
+    name: '玄铁缠丝护腕',
+    slot: 'WEAPON',
+    tier: 'blue',
+    atkBonus: 55,
+    critBonus: 6,
+    desc: '赵王府武库所藏，双拳相击铮然作响，空手拳掌伤害 +12%。',
+  },
+  fumo_staff: {
+    id: 'fumo_staff',
+    name: '伏魔大铁杖',
+    slot: 'WEAPON',
+    tier: 'purple',
+    reqStat: { key: 'str', val: 25, label: '臂力 ≥ 25' },
+    atkBonus: 118,
+    signatureOwner: '柯镇恶 / 江南七怪',
+    signatureEffect: '【降魔辟邪】对阵侠义 < 0 的邪派敌人，最终伤害提升 30%！',
+    desc: '六十斤重的伏魔铁杖当头砸落，风声恶厉，震得地面青砖寸寸碎裂。',
+  },
+  yangjia_spear: {
+    id: 'yangjia_spear',
+    name: '杨家精钢烂银枪',
+    slot: 'WEAPON',
+    tier: 'purple',
+    reqStat: { key: 'str', val: 30, label: '臂力 ≥ 30' },
+    atkBonus: 108,
+    critBonus: 8,
+    signatureOwner: '杨铁心 / 穆念慈',
+    signatureEffect: '【回马破甲】施展外功后有 25% 概率触发回马枪，造成 120% 穿刺伤害！',
+    desc: '杨家祖传的烂银枪，枪出如银龙出水。',
+  },
+  xuantie_feizhua: {
+    id: 'xuantie_feizhua',
+    name: '玄铁飞抓',
+    slot: 'WEAPON',
+    tier: 'purple',
+    reqStat: { key: 'agi', val: 28, label: '身法 ≥ 28' },
+    atkBonus: 100,
+    critBonus: 12,
+    signatureOwner: '梅超风',
+    signatureEffect: '【索命盘绕】命中时有 30% 概率缠住敌方，使其下回合无法闪避！',
+    desc: '梅超风成名兵刃，银鞭如毒蛇出洞，悄无声息地卷向敌方后心要害。',
+  },
+  baituo_fan: {
+    id: 'baituo_fan',
+    name: '白驼山描金折扇',
+    slot: 'WEAPON',
+    tier: 'purple',
+    reqStat: { key: 'intStat', val: 30, label: '悟性 ≥ 30' },
+    atkBonus: 98,
+    critBonus: 10,
+    signatureOwner: '欧阳克 / 白驼山传人',
+    signatureEffect: '【扇骨暗箭】每回合行动结束，扇骨机括自动激发三枚喂毒钢针！',
+    desc: '风流儒雅的描金折扇，笑吟吟间猛地一按扇柄，三道乌光自扇骨中激射而出。',
+  },
+  lingshe_zhang: {
+    id: 'lingshe_zhang',
+    name: '西毒·怪蛇灵蛇杖',
+    slot: 'WEAPON',
+    tier: 'orange',
+    reqStat: { key: 'con', val: 36, label: '根骨 ≥ 36' },
+    atkBonus: 205,
+    critBonus: 14,
+    signatureOwner: '欧阳锋 / 白驼山传人',
+    signatureEffect: '【双蛇噬魂】每次普攻或受击，杖头毒蛇自动咬击敌方，叠加两层剧毒！',
+    desc: '杖头盘踞两条活毒蛇，欧阳锋纵横西域的成名兵刃。',
+  },
+  tiancan_glove: {
+    id: 'tiancan_glove',
+    name: '天蚕金丝掌套',
+    slot: 'WEAPON',
+    tier: 'orange',
+    reqStat: { key: 'con', val: 34, label: '根骨 ≥ 34' },
+    atkBonus: 185,
+    critBonus: 12,
+    signatureEffect: '【空手夺白刃】拳掌类武学最终伤害 +30%，受刀剑攻击有 35% 概率格挡并震麻对手！',
+    desc: '铁掌峰密室所藏，以天蚕金丝织就，面对劈面而来的利刃，戴着它的肉掌可直接抓住剑锋。',
+  },
+  jiudai_baina: {
+    id: 'jiudai_baina',
+    name: '九袋百衲丐衣',
+    slot: 'ARMOR',
+    tier: 'purple',
+    defBonus: 90,
+    hpBonus: 1500,
+    desc: '丐帮长老方可穿着的百衲衣，每受一击额外积攒怒气，受暴击伤害降低 25%。',
+  },
+  baituo_jinsi: {
+    id: 'baituo_jinsi',
+    name: '白驼金丝锦袍',
+    slot: 'ARMOR',
+    tier: 'purple',
+    defBonus: 85,
+    hpBonus: 1400,
+    desc: '熏制西域奇香的金丝锦袍，免疫普通蛇虫毒雾，受毒属性伤害降低 60%。',
+  },
+  ruanwei_shard: {
+    id: 'ruanwei_shard',
+    name: '软猬甲残片',
+    slot: 'ACC',
+    tier: 'blue',
+    hpBonus: 500,
+    desc: '黄蓉所赠的软猬甲一角，满是细密倒刺，贴身佩戴可稍御外力。',
+  },
+  shuangdiao_arrow: {
+    id: 'shuangdiao_arrow',
+    name: '双雕白羽箭',
+    slot: 'ACC',
+    tier: 'purple',
+    critBonus: 12,
+    hpBonus: 800,
+    desc: '郭靖一箭双雕所用的白羽箭，百步穿杨，暴击率 +12%。',
+  },
+  dadiao_jindao: {
+    id: 'dadiao_jindao',
+    name: '大漠金刀',
+    slot: 'ACC',
+    tier: 'orange',
+    reqStat: { key: 'str', val: 32, label: '臂力 ≥ 32' },
+    critBonus: 10,
+    hpBonus: 1800,
+    signatureEffect: '【草原雄鹰】对阵金国、蒙古军团及骑兵 Boss，全队伤害提升 35%！',
+    desc: '成吉思汗亲赐的镶宝金刀，封"金刀驸马"的信物。',
+  },
 }
 
 for (const item of TRIAL_ITEMS) ITEMS[item.id] = item
@@ -1611,13 +1864,38 @@ export const SHAOSHI_RAID = {
   rewardSilver: 5200,
 } as const
 
+export interface CompanionForm {
+  tier: TierColor
+  title: string
+  assistSkillName: string
+  assistDesc: string
+  baseHp: number
+  baseAtk: number
+}
+
+export type CompanionGrade = '下' | '中' | '上'
+/** 橙品资质的属性系数（第12册 §二） */
+export const GRADE_MULT: Record<CompanionGrade, number> = { 下: 0.88, 中: 1.0, 上: 1.12 }
+
 export interface CompanionConfig {
   id: string
   name: string
   title: string
   tier: TierColor
-  role: 'LEFT' | 'RIGHT'
+  /** EITHER：左右翼皆可编入（如周伯通，可与洪七公组成「射雕三绝」） */
+  role: 'LEFT' | 'RIGHT' | 'EITHER'
+  /** 获取路线：STORY 剧情直接入队 / AFFINITY 剧情结识后靠好感养成 / GACHA 客栈结缘抽取（第12册） */
+  route: 'STORY' | 'AFFINITY' | 'GACHA'
+  /** 好感线橙品的资质（下/中/上），影响属性系数；其余为 undefined */
+  grade?: '下' | '中' | '上'
+  /** 觉醒形态（需好感 ≥600 + 伙伴信物）；基础形态由本配置的顶层字段给出 */
+  awakened?: CompanionForm
+  awakenTokens?: number
+  /** 入队除好感 ≥100 外还需此剧情标记（如洪七公须先呈齐「十道绝味」）；付费获得不受限 */
+  recruitFlag?: string
   portraitStyle: PortraitStyle
+  /** 尚未结识时，客栈卡片上显示的结识线索 */
+  meetHint?: string
   poem: string
   favGift: string
   teachSkillId: string // 好感度达到600(生死之交)传授给主角的绝学
@@ -1634,6 +1912,7 @@ export const COMPANIONS: Record<string, CompanionConfig> = {
     title: '飞天蝙蝠',
     tier: 'blue',
     role: 'RIGHT',
+    route: 'STORY',
     portraitStyle: 'assassin',
     poem: '双目虽盲心如铁，伏魔杖下斩邪魔。',
     favGift: '嘉兴黄酒',
@@ -1649,6 +1928,7 @@ export const COMPANIONS: Record<string, CompanionConfig> = {
     title: '铁尸·黑风孤影',
     tier: 'purple',
     role: 'LEFT',
+    route: 'STORY',
     portraitStyle: 'meichaofeng',
     poem: '桃花岛畔负师恩，大漠荒山泣断魂。',
     favGift: '人皮残卷线索',
@@ -1661,78 +1941,494 @@ export const COMPANIONS: Record<string, CompanionConfig> = {
   guojing: {
     id: 'guojing',
     name: '郭靖',
-    title: '北侠·侠之大者',
-    tier: 'orange',
+    title: '憨厚少年',
+    tier: 'purple',
     role: 'LEFT',
+    route: 'STORY',
     portraitStyle: 'guojing',
     poem: '弯弓射雕大漠北，赤胆忠魂守襄阳。',
     favGift: '蒙古马奶酒',
     teachSkillId: 'xianglong_18',
-    assistSkillName: '双龙取水',
-    assistDesc: '紧跟你的招式，补上一记降龙掌。',
-    baseHp: 7500,
-    baseAtk: 680,
+    assistSkillName: '降龙初式',
+    assistDesc: '憨厚而坚韧的前排：主角受重创时跨步挡刀，并以刚猛掌法追击。',
+    baseHp: 4800,
+    baseAtk: 470,
+    awakenTokens: 30,
+    awakened: {
+      tier: 'orange',
+      title: '北侠·侠之大者',
+      assistSkillName: '双龙取水',
+      assistDesc: '紧跟你的招式，补上一记降龙掌。',
+      baseHp: 7500,
+      baseAtk: 680,
+    },
   },
   huangrong: {
     id: 'huangrong',
     name: '黄蓉',
-    title: '桃花仙子·丐帮女侠',
-    tier: 'orange',
+    title: '小乞儿·黄蓉',
+    tier: 'purple',
     role: 'RIGHT',
+    route: 'STORY',
     portraitStyle: 'huangrong',
     poem: '白衣金带摇竹杖，巧笑嫣然破千军。',
     favGift: '八宝肥鸭',
     teachSkillId: 'dagou_bangfa',
-    assistSkillName: '打狗绊字诀',
-    assistDesc: '见对手攻来，用打狗棒替你挡下一部分伤害。',
-    baseHp: 5200,
-    baseAtk: 560,
+    assistSkillName: '绊字诀',
+    assistDesc: '灵动奇策：偶尔布下奇门阵略增全队闪避，并以竹杖绊住敌方一人。',
+    baseHp: 3900,
+    baseAtk: 430,
+    awakenTokens: 30,
+    awakened: {
+      tier: 'orange',
+      title: '桃花仙子·丐帮女侠',
+      assistSkillName: '打狗绊字诀',
+      assistDesc: '见对手攻来，用打狗棒替你挡下一部分伤害。',
+      baseHp: 5200,
+      baseAtk: 560,
+    },
   },
   hongqigong: {
     id: 'hongqigong',
     name: '洪七公',
+    recruitFlag: 'hong_feast_done',
     title: '北丐·九指神丐',
-    tier: 'red',
+    tier: 'orange',
+    grade: '下',
     role: 'LEFT',
+    route: 'AFFINITY',
     portraitStyle: 'hongqigong',
     poem: '朱红酒葫绿玉杖，神龙摆尾傲苍穹。',
     favGift: '荷叶叫花鸡',
     teachSkillId: 'kanglong_youhui',
-    assistSkillName: '神龙摆尾',
-    assistDesc: '看准时机，用降龙掌跟进追击。',
-    baseHp: 9600,
-    baseAtk: 920,
+    assistSkillName: '神龙摆尾·初',
+    assistDesc: '刚猛破阵：高频掌风连击，小幅提升全队外功伤害。',
+    baseHp: 7600,
+    baseAtk: 740,
+    awakenTokens: 60,
+    awakened: {
+      tier: 'red',
+      title: '北丐·九指神丐',
+      assistSkillName: '神龙摆尾',
+      assistDesc: '看准时机，用降龙掌跟进追击。',
+      baseHp: 9600,
+      baseAtk: 920,
+    },
   },
   huangyaoshi: {
     id: 'huangyaoshi',
     name: '黄药师',
     title: '东邪·桃花岛主',
-    tier: 'red',
+    tier: 'orange',
+    grade: '下',
     role: 'RIGHT',
+    route: 'AFFINITY',
     portraitStyle: 'huangyaoshi',
     poem: '桃花影落飞神剑，碧海潮生按玉箫。',
     favGift: '广陵散古谱',
     teachSkillId: 'bihai_chaosheng',
-    assistSkillName: '弹指神通',
-    assistDesc: '弹指打偏对手的招式，替你挡下一部分伤害。',
-    baseHp: 7800,
-    baseAtk: 890,
+    assistSkillName: '弹指神通·初',
+    assistDesc: '奇策压制：削弱敌方出手速度，凌空弹指点杀残血目标。',
+    baseHp: 6400,
+    baseAtk: 720,
+    awakenTokens: 60,
+    awakened: {
+      tier: 'red',
+      title: '东邪·桃花岛主',
+      assistSkillName: '弹指神通',
+      assistDesc: '弹指打偏对手的招式，替你挡下一部分伤害。',
+      baseHp: 7800,
+      baseAtk: 890,
+    },
   },
   zhoubotong: {
     id: 'zhoubotong',
     name: '周伯通',
     title: '老顽童',
-    tier: 'red',
-    role: 'LEFT',
+    tier: 'orange',
+    grade: '下',
+    role: 'EITHER',
+    route: 'AFFINITY',
     portraitStyle: 'zhoubotong',
     poem: '左手画方右画圆，清音洞里乐忘年。',
     favGift: '大将军促织(蟋蟀)',
     teachSkillId: 'kongming_quan',
-    assistSkillName: '双手互搏连击',
-    assistDesc: '使出双手互搏，在你出招后跟进。',
-    baseHp: 8900,
-    baseAtk: 860,
+    assistSkillName: '双手互搏·初',
+    assistDesc: '老顽童的连击：协战偶尔连出两拳，免疫心神混乱。',
+    baseHp: 7200,
+    baseAtk: 700,
+    awakenTokens: 60,
+    awakened: {
+      tier: 'red',
+      title: '老顽童',
+      assistSkillName: '双手互搏连击',
+      assistDesc: '使出双手互搏，在你出招后跟进。',
+      baseHp: 8900,
+      baseAtk: 860,
+    },
   },
+  munianci: {
+    id: 'munianci',
+    name: '穆念慈',
+    title: '红衣女侠·杨家后人',
+    tier: 'purple',
+    role: 'LEFT',
+    route: 'STORY',
+    portraitStyle: 'munianci',
+    meetHint: '通关主线「2-1 比武招亲」后入队',
+    poem: '红衣劲装柳叶刀，三分英气七分愁。',
+    favGift: '牛家村桂花酿',
+    teachSkillId: 'yangjia_qiang',
+    assistSkillName: '逍遥铁掌',
+    assistDesc: '替主角分摊 30% 单体伤害，并反击敌方前排。',
+    baseHp: 4600,
+    baseAtk: 480,
+  },
+  ouyangfeng: {
+    id: 'ouyangfeng',
+    name: '欧阳锋',
+    title: '西毒·白驼山主',
+    tier: 'orange',
+    grade: '下',
+    role: 'LEFT',
+    route: 'AFFINITY',
+    portraitStyle: 'ouyangfeng',
+    meetHint: '救下欧阳克（折扇支线）结交，或击败「5-3 华山绝巅」后重逢',
+    poem: '灵蛇出洞风云变，一式蛤蟆震八荒。',
+    favGift: '西域蛇胆酒',
+    teachSkillId: 'hama_gong',
+    assistSkillName: '蛤蟆劲·初',
+    assistDesc: '蓄势三层后下一击翻倍，震退敌方前排。',
+    baseHp: 7600,
+    baseAtk: 730,
+    awakenTokens: 60,
+    awakened: {
+      tier: 'red',
+      title: '西毒·白驼山主',
+      assistSkillName: '蛤蟆劲',
+      assistDesc: '蓄势三层后下一击伤害翻倍，震退敌方前排，攻击附带蛇毒。',
+      baseHp: 9200,
+      baseAtk: 900,
+    },
+  },
+  // ───────── 第一批扩充：五绝补全 / 全真 / 大漠 / 杨家 / 桃花等（第12册 §三） ─────────
+  yideng: {
+    id: 'yideng',
+    name: '一灯大师',
+    title: '南帝·大理段皇爷',
+    tier: 'red',
+    role: 'RIGHT',
+    route: 'GACHA',
+    portraitStyle: 'yideng',
+    meetHint: '客栈「结缘」抽取；或完成「一灯大师的慈悲」后重逢',
+    poem: '一指洞明千重甲，枯荣禅里见真空。',
+    favGift: '桃源山泉清茗',
+    teachSkillId: 'kurong_chan',
+    assistSkillName: '一阳回春',
+    assistDesc: '顶级疗伤奇策：每回合为全队回复气血，并以一阳指点穴封住敌方主力。',
+    baseHp: 8400,
+    baseAtk: 820,
+  },
+  wangchongyang: {
+    id: 'wangchongyang',
+    name: '王重阳',
+    title: '中神通·重阳祖师（遗泽）',
+    tier: 'red',
+    role: 'LEFT',
+    route: 'GACHA',
+    portraitStyle: 'wangchongyang',
+    meetHint: '客栈「结缘」限定抽取（祖师已仙逝，以遗泽残影相助）',
+    poem: '先天一炁贯终南，华山论剑第一人。',
+    favGift: '终南古松茶',
+    teachSkillId: 'xiantian_gong',
+    assistSkillName: '先天遗泽',
+    assistDesc: '遗泽残影替主角承受首次致命一击，并清除全队中毒与封穴。',
+    baseHp: 10200,
+    baseAtk: 980,
+  },
+  qiuchuji: {
+    id: 'qiuchuji',
+    name: '丘处机',
+    title: '长春子·全真七子',
+    tier: 'orange',
+    role: 'LEFT',
+    route: 'AFFINITY',
+    grade: '下',
+    portraitStyle: 'daoist',
+    meetHint: '通关主线「2-3 终南金雁」后结识，客栈养好感',
+    poem: '一剑江湖四十载，侠名长在牛家村。',
+    favGift: '嘉兴黄酒',
+    teachSkillId: 'tonggui_jian',
+    assistSkillName: '长春剑阵',
+    assistDesc: '侠义满格的前排输出：对邪派敌人伤害提升，并为主角挡下一次重击。',
+    baseHp: 7000,
+    baseAtk: 650,
+  },
+  qiuqianren: {
+    id: 'qiuqianren',
+    name: '裘千仞',
+    title: '铁掌水上漂',
+    tier: 'orange',
+    role: 'LEFT',
+    route: 'AFFINITY',
+    grade: '下',
+    portraitStyle: 'qiuqianren',
+    meetHint: '通关主线「4-3 铁掌孤峰」后结识，客栈养好感',
+    poem: '铁掌横绝湘西路，一念回头是旧恩。',
+    favGift: '湘西腊肉',
+    teachSkillId: 'tiezhang_gong',
+    assistSkillName: '铁掌连环',
+    assistDesc: '重伤前排：命中使敌方 3 回合内受到的疗伤效果大幅降低。',
+    baseHp: 7400,
+    baseAtk: 700,
+  },
+  yangkang: {
+    id: 'yangkang',
+    name: '杨康',
+    title: '金国小王爷',
+    tier: 'orange',
+    role: 'LEFT',
+    route: 'AFFINITY',
+    grade: '下',
+    portraitStyle: 'wanyankang',
+    meetHint: '通关主线「4-2 牛家密室」后结识，客栈养好感',
+    poem: '一身兼得全真与白骨，半是侠名半是奸。',
+    favGift: '赵王府贡酒',
+    teachSkillId: 'jiuyin_baiguzhua',
+    assistSkillName: '白骨双爪',
+    assistDesc: '高暴击刺客：以全真剑法起手，白骨爪收尾，专取残血目标。',
+    baseHp: 6600,
+    baseAtk: 640,
+  },
+  zhebie: {
+    id: 'zhebie',
+    name: '哲别',
+    title: '蒙古神箭手',
+    tier: 'orange',
+    role: 'EITHER',
+    route: 'GACHA',
+    portraitStyle: 'zhebie',
+    meetHint: '客栈「结缘」抽取；通关「5-1 铁骑西征」后概率更高',
+    poem: '一箭穿云三百步，草原万里认神箭。',
+    favGift: '蒙古马奶酒',
+    teachSkillId: 'lianzhu_shenjian',
+    assistSkillName: '连珠神箭',
+    assistDesc: '远程输出：每回合追加数箭，优先射杀敌方后排与残血单位。',
+    baseHp: 6800,
+    baseAtk: 680,
+  },
+  lingzhi: {
+    id: 'lingzhi',
+    name: '灵智上人',
+    title: '密宗大手印',
+    tier: 'orange',
+    role: 'RIGHT',
+    route: 'GACHA',
+    portraitStyle: 'monk',
+    meetHint: '客栈「结缘」抽取',
+    poem: '雪域梵音生杀意，一印可碎百重甲。',
+    favGift: '雪山酥油茶',
+    teachSkillId: 'dashouyin',
+    assistSkillName: '大手印',
+    assistDesc: '密宗控场：重掌震散敌方护体罡气，使其下回合防御大减。',
+    baseHp: 6400,
+    baseAtk: 620,
+  },
+  yinggu: {
+    id: 'yinggu',
+    name: '瑛姑',
+    title: '神算子',
+    tier: 'orange',
+    role: 'RIGHT',
+    route: 'AFFINITY',
+    grade: '下',
+    portraitStyle: 'yinggu',
+    meetHint: '完成支线「瑛姑的算术题」后结识，客栈养好感',
+    poem: '九宫立方算不尽，一生痴恨一生情。',
+    favGift: '黑沼莲子羹',
+    teachSkillId: 'niqiu_gong',
+    assistSkillName: '九宫推演',
+    assistDesc: '奇门算术：推演敌方出手顺序，使其本回合最强一击落空。',
+    baseHp: 5400,
+    baseAtk: 560,
+  },
+  mayu: {
+    id: 'mayu',
+    name: '马钰',
+    title: '丹阳子·全真七子之首',
+    tier: 'purple',
+    role: 'RIGHT',
+    route: 'STORY',
+    portraitStyle: 'daoist',
+    meetHint: '通关主线「2-3 终南金雁」后入队',
+    poem: '清静无为守玄关，一路春风度弟子。',
+    favGift: '终南山泉',
+    teachSkillId: 'quanzhen_tuna',
+    assistSkillName: '丹阳调息',
+    assistDesc: '玄门疗伤：每回合为主角回复气血，并化解一次封穴。',
+    baseHp: 4800,
+    baseAtk: 430,
+  },
+  tanchuduan: {
+    id: 'tanchuduan',
+    name: '谭处端',
+    title: '长真子',
+    tier: 'purple',
+    role: 'LEFT',
+    route: 'STORY',
+    portraitStyle: 'daoist',
+    meetHint: '击败「2-3 终南金雁」中的谭处端后入队',
+    poem: '剑出中正不偏锋，守得云开见月明。',
+    favGift: '终南松子',
+    teachSkillId: 'jinyan_gong',
+    assistSkillName: '长真剑',
+    assistDesc: '稳健前排：替主角分担伤害，并以剑势稳稳压住对手。',
+    baseHp: 4900,
+    baseAtk: 470,
+  },
+  wangchuyi: {
+    id: 'wangchuyi',
+    name: '王处一',
+    title: '玉阳子·铁脚仙',
+    tier: 'purple',
+    role: 'RIGHT',
+    route: 'AFFINITY',
+    portraitStyle: 'daoist',
+    meetHint: '通关主线「2-3 终南金雁」后结识，客栈养好感；或客栈「结缘」抽取',
+    poem: '铁脚踏破千重岭，一身是胆不言倦。',
+    favGift: '山野蜂蜜',
+    teachSkillId: 'pikong_zhang',
+    assistSkillName: '铁脚横扫',
+    assistDesc: '近身奇策：低扫腿招打乱敌方站位，使其前排本回合行动受阻。',
+    baseHp: 4700,
+    baseAtk: 450,
+  },
+  sunbuer: {
+    id: 'sunbuer',
+    name: '孙不二',
+    title: '清静散人',
+    tier: 'purple',
+    role: 'RIGHT',
+    route: 'GACHA',
+    portraitStyle: 'sunbuer',
+    meetHint: '客栈「结缘」抽取',
+    poem: '清静无为女冠子，剑底一缕冷香浮。',
+    favGift: '桂花糕',
+    teachSkillId: 'yuenv_jian',
+    assistSkillName: '清静剑',
+    assistDesc: '灵巧奇策：以快剑封住敌方腕脉，使其暴击率下降。',
+    baseHp: 4400,
+    baseAtk: 500,
+  },
+  ouyangke: {
+    id: 'ouyangke',
+    name: '欧阳克',
+    title: '白驼山少主',
+    tier: 'purple',
+    role: 'RIGHT',
+    route: 'AFFINITY',
+    portraitStyle: 'ouyangke',
+    meetHint: '完成支线「白驼山少主的折扇」后结识，客栈养好感',
+    poem: '折扇轻摇风流客，一朝蛇毒付东流。',
+    favGift: '西域葡萄酒',
+    teachSkillId: 'lingshe_quan',
+    assistSkillName: '扇骨毒针',
+    assistDesc: '毒系辅助：每回合射出喂毒钢针，使敌方持续损耗气血。',
+    baseHp: 4200,
+    baseAtk: 480,
+  },
+  yangtiexin: {
+    id: 'yangtiexin',
+    name: '杨铁心',
+    title: '穆易·杨家后人',
+    tier: 'purple',
+    role: 'EITHER',
+    route: 'STORY',
+    portraitStyle: 'yangtiexin',
+    meetHint: '支线「铁枪庙旧事」选择救治后入队',
+    poem: '一杆烂银枪在手，不负汴京旧时月。',
+    favGift: '临安桂花酿',
+    teachSkillId: 'yangjia_qiang',
+    assistSkillName: '回马枪',
+    assistDesc: '稳健破阵：佯败回身一枪，强力破甲，并与穆念慈同队时互相庇护。',
+    baseHp: 4900,
+    baseAtk: 500,
+  },
+  luchengfeng: {
+    id: 'luchengfeng',
+    name: '陆乘风',
+    title: '归云庄主·桃花岛门人',
+    tier: 'purple',
+    role: 'LEFT',
+    route: 'STORY',
+    portraitStyle: 'luchengfeng',
+    meetHint: '通关主线「3-2 归云庄主」后入队',
+    poem: '太湖云水归庄晚，一掌桃花是故人。',
+    favGift: '太湖银鱼',
+    teachSkillId: 'luoying_zhang',
+    assistSkillName: '归云掌',
+    assistDesc: '桃花门下稳健前排：落英掌法削弱敌方命中，为主角分担伤害。',
+    baseHp: 4600,
+    baseAtk: 460,
+  },
+  zhuziliu: {
+    id: 'zhuziliu',
+    name: '朱子柳',
+    title: '读书人·一灯弟子',
+    tier: 'purple',
+    role: 'RIGHT',
+    route: 'STORY',
+    portraitStyle: 'zhuziliu',
+    meetHint: '通关主线「4-3 铁掌孤峰」后（渔樵耕读之“读”）入队',
+    poem: '一支判官笔，写尽江湖字字锋。',
+    favGift: '松烟墨锭',
+    teachSkillId: 'yiyang_zhi',
+    assistSkillName: '书法点穴',
+    assistDesc: '以笔代指：一笔点向敌方要穴，使其下一回合出招迟滞。',
+    baseHp: 4300,
+    baseAtk: 440,
+  },
+}
+
+/** 伙伴运行时形态（存档里只存 form / grade，其余由配置推导） */
+export interface CompanionStateLike {
+  form?: 'base' | 'awakened'
+  grade?: CompanionGrade | null
+}
+
+/** 战斗与界面实际使用的伙伴视图：已套用形态与资质系数 */
+export interface CompanionView {
+  id: string
+  name: string
+  title: string
+  tier: TierColor
+  grade: CompanionGrade | null
+  form: 'base' | 'awakened'
+  portraitStyle: PortraitStyle
+  assistSkillName: string
+  assistDesc: string
+  baseHp: number
+  baseAtk: number
+}
+
+export function companionView(cfg: CompanionConfig, st?: CompanionStateLike): CompanionView {
+  const awakened = st?.form === 'awakened' && !!cfg.awakened
+  const f: CompanionForm = awakened ? cfg.awakened! : cfg
+  const grade = awakened ? null : f.tier === 'orange' ? (st?.grade ?? cfg.grade ?? '中') : null
+  const mult = grade ? GRADE_MULT[grade] : 1
+  return {
+    id: cfg.id,
+    name: cfg.name,
+    title: f.title,
+    tier: f.tier,
+    grade,
+    form: awakened ? 'awakened' : 'base',
+    portraitStyle: cfg.portraitStyle,
+    assistSkillName: f.assistSkillName,
+    assistDesc: f.assistDesc,
+    baseHp: Math.round(f.baseHp * mult),
+    baseAtk: Math.round(f.baseAtk * mult),
+  }
 }
 
 /** 1主+2副 经典三人行羁绊共鸣 */
@@ -1758,7 +2454,142 @@ export const TRIO_SYNERGIES = [
     rightId: 'huangrong',
     bonusText: '周伯通跟进出拳，黄蓉替你挡招。',
   },
+  {
+    id: 'dong_xi',
+    name: '东邪西毒',
+    leftId: 'ouyangfeng',
+    rightId: 'huangyaoshi',
+    bonusText: '正邪逆乱：敌方每回合既承受【碧海内伤】又承受【灵蛇奇毒】，两种状态叠满三层引爆，造成其最大气血 25% 的真实伤害！',
+  },
+  {
+    id: 'she_diao_san_jue',
+    name: '射雕三绝',
+    leftId: 'hongqigong',
+    rightId: 'zhoubotong',
+    bonusText: '猜拳连击：全队每回合行动后有 35% 概率触发老顽童与北丐的“猜拳连击”，无消耗再打一轮外功！',
+  },
+  {
+    id: 'chong_yang_yi_ze',
+    name: '重阳遗泽',
+    leftId: 'wangchongyang',
+    rightId: 'mayu',
+    bonusText: '师徒传承：遗泽残影与马钰同守玄关，全队首次受到致命伤时免死，并回复 30% 气血！',
+  },
+  {
+    id: 'fu_nv_tong_xin',
+    name: '父女同心',
+    leftId: 'munianci',
+    rightId: 'yangtiexin',
+    bonusText: '杨家枪与柳叶刀并肩：两人互相庇护，任一人受到致命伤时由另一人代为承受一次！',
+  },
+  {
+    id: 'nan_bei',
+    name: '南帝北丐',
+    leftId: 'hongqigong',
+    rightId: 'yideng',
+    bonusText: '五绝之二同阵：降龙掌破阵、一阳指回春，全队每回合回复 6% 气血，外功伤害 +20%！',
+  },
+  {
+    id: 'yi_sheng_chi_chan',
+    name: '一生痴缠',
+    leftId: 'zhoubotong',
+    rightId: 'yinggu',
+    bonusText: '老顽童与神算子半生纠葛：全队免疫心神混乱，瑛姑的九宫推演必定命中！',
+  },
+  {
+    id: 'she_diao_shuang_xiong',
+    name: '射雕双雄',
+    leftId: 'guojing',
+    rightId: 'zhebie',
+    bonusText: '大漠双箭：哲别的连珠神箭追加次数 +1，郭靖降龙掌破甲后必定触发合击！',
+  },
+  {
+    id: 'wang_fu_shuang_bi',
+    name: '王府双璧',
+    leftId: 'yangkang',
+    rightId: 'ouyangke',
+    bonusText: '赵王府座上宾：毒针与白骨爪交织，敌方每层毒伤都令白骨爪暴击率 +8%！',
+  },
 ]
+
+/** 左右翼可互换（周伯通为 EITHER），按无序配对查找羁绊 */
+export function findTrioSynergy(leftId: string | null, rightId: string | null) {
+  if (!leftId || !rightId) return null
+  return (
+    TRIO_SYNERGIES.find(
+      (s) => (s.leftId === leftId && s.rightId === rightId) || (s.leftId === rightId && s.rightId === leftId)
+    ) ?? null
+  )
+}
+
+/** 收集羁绊：拥有（已入队）该套装 N 位成员即获得全局加成，档位叠加取最高一档 */
+export interface CompanionSetTier {
+  count: number
+  label: string
+  hpPct?: number
+  atkPct?: number
+  idleQiPct?: number
+}
+export interface CompanionSetConfig {
+  id: string
+  name: string
+  desc: string
+  memberIds: string[]
+  /** 尚未登场的成员（后续批次），仅用于展示“还差几位”，不参与计数 */
+  plannedMembers?: string[]
+  tiers: CompanionSetTier[]
+}
+
+export const COMPANION_SETS: CompanionSetConfig[] = [
+  {
+    id: 'quanzhen_qizi',
+    name: '全真七子',
+    desc: '终南全真教七位真人。集齐北斗七星，可布「天罡北斗阵」。',
+    memberIds: ['qiuchuji', 'mayu', 'tanchuduan', 'wangchuyi', 'sunbuer'],
+    plannedMembers: ['刘处玄', '郝大通'],
+    tiers: [
+      { count: 3, label: '三才初成', idleQiPct: 10 },
+      { count: 5, label: '五行归元', idleQiPct: 20, hpPct: 5 },
+      { count: 7, label: '天罡北斗阵', idleQiPct: 30, hpPct: 10, atkPct: 8 },
+    ],
+  },
+  {
+    id: 'wu_jue',
+    name: '天下五绝',
+    desc: '东邪、西毒、南帝、北丐、中神通。五绝齐聚，华山论剑之资。',
+    memberIds: ['huangyaoshi', 'ouyangfeng', 'yideng', 'hongqigong', 'wangchongyang'],
+    tiers: [
+      { count: 2, label: '二绝并立', atkPct: 4 },
+      { count: 3, label: '三足鼎立', atkPct: 8, hpPct: 4 },
+      { count: 5, label: '五绝争辉', atkPct: 15, hpPct: 10 },
+    ],
+  },
+  {
+    id: 'yang_jia',
+    name: '杨门忠烈',
+    desc: '牛家村杨氏一脉：杨铁心、穆念慈、杨康，骨肉分合，家国情长。',
+    memberIds: ['yangtiexin', 'munianci', 'yangkang'],
+    tiers: [
+      { count: 2, label: '骨肉相认', hpPct: 4 },
+      { count: 3, label: '杨门忠烈', hpPct: 8, atkPct: 6 },
+    ],
+  },
+]
+
+/** 当前已激活的收集羁绊（每套取已达成的最高一档） */
+export function activeSetBonuses(isOwned: (companionId: string) => boolean) {
+  return COMPANION_SETS.map((set) => {
+    const owned = set.memberIds.filter(isOwned).length
+    const tier = [...set.tiers].reverse().find((t) => owned >= t.count) ?? null
+    return { set, owned, tier }
+  })
+}
+
+/** 拜师门槛判定所需的上下文：六维 + 持有信物 + 剧情标记 */
+export interface SectCheckCtx {
+  hasBagua: boolean
+  flags: string[]
+}
 
 export interface SectConfig {
   id: string
@@ -1767,10 +2598,16 @@ export interface SectConfig {
   chiefPlayerName: string // 当前本服真实玩家【首席大弟子】
   chiefPower: number
   reqDesc: string
-  checkReq: (stats: { str: number; con: number; agi: number; intStat: number; karma: number }, hasBagua: boolean) => { ok: boolean; reason?: string }
+  checkReq: (stats: { str: number; con: number; agi: number; intStat: number; karma: number }, ctx: SectCheckCtx) => { ok: boolean; reason?: string }
   perkDesc: string
   ranks: string[]
-  signatureSkills: string[]
+  /** 按阶位授武：下标 = 阶位 - 1，第 1 阶在拜师时传授；null 表示该阶无新武学 */
+  signatureSkills: (string | null)[]
+  /** 晋升到指定阶位时额外赠予的装备（阶位 → 装备ID） */
+  signatureItems?: Record<number, string>
+  /** 持有此剧情标记入门，起始门派贡献额外 +introBonus */
+  introFlag?: string
+  introBonus?: number
 }
 
 export const SECTS: SectConfig[] = [
@@ -1780,11 +2617,14 @@ export const SECTS: SectConfig[] = [
     alignment: 'RIGHTEOUS',
     chiefPlayerName: '萧峰传人·乔北冥',
     chiefPower: 148200,
-    reqDesc: '侠义至少 0 点',
+    reqDesc: '侠义至少 0 点；持丐帮引荐信入门可多得 150 点贡献',
     checkReq: (s) => (s.karma >= 0 ? { ok: true } : { ok: false, reason: '侠义至少要有 0 点，才能拜入丐帮。' }),
     perkDesc: '拜师可学混天气功。通过晋升考核，还能学打狗棒法和降龙十八掌。',
     ranks: ['一袋弟子', '三袋弟子', '六袋精锐', '九袋护法长老', '神丐衣钵传人'],
-    signatureSkills: ['huntian_qigong', 'dagou_bangfa', 'xianglong_18'],
+    signatureSkills: ['huntian_qigong', 'fengmo_zhang', 'xiaoyao_you', 'dagou_bangfa', 'xianglong_18'],
+    signatureItems: { 4: 'jiudai_baina' },
+    introFlag: 'gaibang_letter',
+    introBonus: 150,
   },
   {
     id: 'quanzhen',
@@ -1799,7 +2639,7 @@ export const SECTS: SectConfig[] = [
         : { ok: false, reason: '拜入全真教需要根骨至少 22 点，侠义至少 20 点。' },
     perkDesc: '全真弟子修行多得 25% 真气。拜师先学全真吐纳功，晋升后可学金雁功。',
     ranks: ['知客道童', '四代弟子', '三代精锐', '北斗护法真人', '玄门掌教候选'],
-    signatureSkills: ['quanzhen_tuna', 'jinyan_gong'],
+    signatureSkills: ['quanzhen_tuna', 'jinyan_gong', 'tonggui_jian', null, 'xiantian_gong'],
   },
   {
     id: 'taohua',
@@ -1807,14 +2647,14 @@ export const SECTS: SectConfig[] = [
     alignment: 'NEUTRAL',
     chiefPlayerName: '桃花首座·陆乘云',
     chiefPower: 162400,
-    reqDesc: '悟性至少 28 点，身法至少 24 点，背包里有曲三铁八卦',
-    checkReq: (s, hasBagua) =>
-      s.intStat >= 28 && s.agi >= 24 && hasBagua
+    reqDesc: '悟性至少 28 点，身法至少 24 点，持曲三铁八卦或桃花岛信物',
+    checkReq: (s, ctx) =>
+      s.intStat >= 28 && s.agi >= 24 && (ctx.hasBagua || ctx.flags.includes('taohua_token'))
         ? { ok: true }
-        : { ok: false, reason: '拜师要有 28 点悟性、24 点身法，还要带上曲三铁八卦。' },
+        : { ok: false, reason: '需悟性≥28、身法≥24 并持有【曲三铁八卦】或桃花岛信物方可破桃花阵登岛' },
     perkDesc: '拜入黄药师门下先学落英神剑掌，晋升后可学碧海潮生曲。',
     ranks: ['候补扫花童', '记名弟子', '入室师兄', '桃花岛真传', '东邪衣钵传人'],
-    signatureSkills: ['luoying_zhang', 'bihai_chaosheng'],
+    signatureSkills: ['luoying_zhang', 'lanhua_fuxue', null, 'tanzhi_shentong', 'bihai_chaosheng'],
   },
   {
     id: 'baituo',
@@ -1829,7 +2669,48 @@ export const SECTS: SectConfig[] = [
         : { ok: false, reason: '拜师需要根骨至少 24 点，侠义不高于 0 点。' },
     perkDesc: '欧阳锋的门下，拜师可学蛤蟆功。来鬼市鉴宝也可以不戴蒙面巾。',
     ranks: ['捕蛇杂役', '饲毒使者', '白衣护卫', '白驼副总管', '西毒少庄主'],
-    signatureSkills: ['hama_gong'],
+    signatureSkills: ['hama_gong', 'lingshe_quan', 'shunxi_qianli', null, 'nizhuan_jiuyin'],
+    signatureItems: { 3: 'baituo_jinsi' },
+  },
+  {
+    id: 'jiangnan_wuguan',
+    name: '江南武馆',
+    alignment: 'NEUTRAL',
+    chiefPlayerName: '武馆总教头·铁拳张',
+    chiefPower: 31800,
+    reqDesc: '无任何条件，新手随时可入，可随时无损出师转投名门',
+    checkReq: () => ({ ok: true }),
+    perkDesc: '基础属性均衡成长，适合新手过渡；馆中教头会倾囊传授入门武学，出师后绝不追究。',
+    ranks: ['打杂学徒', '记名弟子', '入室弟子', '武馆教头', '馆主衣钵'],
+    signatureSkills: ['kaishan_zhang', 'fengmo_zhang', 'yuenv_jian', null, null],
+    signatureItems: { 2: 'qimei_stick' },
+  },
+  {
+    id: 'tiezhang',
+    name: '湘西铁掌帮',
+    alignment: 'NEUTRAL',
+    chiefPlayerName: '铁掌少帮主·裘千尺',
+    chiefPower: 98400,
+    reqDesc: '无善恶限制，需【臂力 ≥ 20】',
+    checkReq: (s) => (s.str >= 20 ? { ok: true } : { ok: false, reason: '需臂力 ≥ 20 方能硬接铁掌帮的入门三掌' }),
+    perkDesc: '刚猛霸道，专精破甲与内伤；适合走纯粹暴力输出流的玩家。',
+    ranks: ['挑水杂役', '外堂弟子', '内堂掌刑', '铁掌堂主', '帮主衣钵'],
+    signatureSkills: ['tiezhang_gong', 'shuishang_piao', null, 'yinyang_mo', null],
+  },
+  {
+    id: 'yideng',
+    name: '大理一灯居',
+    alignment: 'RIGHTEOUS',
+    chiefPlayerName: '渡厄居士·段无涯',
+    chiefPower: 66800,
+    reqDesc: '高门槛：需【根骨 ≥ 30】【侠义 ≥ 80】，并已通过「渔樵耕读」四关（通关主线 4-3）',
+    checkReq: (s, ctx) =>
+      s.con >= 30 && s.karma >= 80 && ctx.flags.includes('yuqiao_gengdu')
+        ? { ok: true }
+        : { ok: false, reason: '需根骨≥30、侠义≥80，且通关「4-3 铁掌孤峰」通过渔樵耕读四关' },
+    perkDesc: '指力化气，无视敌方铁布衫等外功防御；兼具极强的点穴封招与疗伤能力。',
+    ranks: ['洒扫沙弥', '樵子弟子', '渔隐弟子', '耕读高徒', '南帝衣钵传人'],
+    signatureSkills: ['kurong_chan', null, 'yiyang_zhi', null, null],
   },
 ]
 
@@ -1841,6 +2722,9 @@ export interface MapZoneConfig {
   baseQiPerHour: number
   onlineCount: number
   ambientDesc: string
+  /** 需已通关的主线节点ID（maxChapterId > reqCleared 即解锁）；缺省表示开局可达 */
+  reqCleared?: number
+  unlockHint?: string
 }
 
 export const MAPS: MapZoneConfig[] = [
@@ -1880,9 +2764,46 @@ export const MAPS: MapZoneConfig[] = [
     onlineCount: 24,
     ambientDesc: '黑沼常年起雾。这里真气攒得最快，遇上押镖的人也能出手拦截。',
   },
+  {
+    id: 'guiyun_lake',
+    name: '太湖·归云庄',
+    volumeLabel: '射雕·江南',
+    safety: 'PEACE',
+    baseQiPerHour: 3600,
+    onlineCount: 36,
+    ambientDesc: '太湖烟波浩渺，归云庄的白墙黛瓦倒映湖心，陆庄主门下弟子常在水榭中论剑清修。',
+    reqCleared: 7,
+    unlockHint: '通关主线「3-1 松林长啸」后开启',
+  },
+  {
+    id: 'taohua_isle',
+    name: '东海·桃花岛',
+    volumeLabel: '射雕·东海',
+    safety: 'PEACE',
+    baseQiPerHour: 5600,
+    onlineCount: 27,
+    ambientDesc: '桃花万株，奇门遍布，海风里隐隐传来碧海潮生的箫声；闲人莫入，入者须自求出路。',
+    reqCleared: 8,
+    unlockHint: '通关主线「3-2 归云庄主」获赠海船后开启',
+  },
+  {
+    id: 'huashan_peak',
+    name: '华山·论剑绝顶',
+    volumeLabel: '纷争·华山',
+    safety: 'CONTESTED',
+    baseQiPerHour: 7400,
+    onlineCount: 19,
+    ambientDesc: '【限定纷争区】云海翻涌，群峰如剑；每二十五年一度的华山论剑，使这里成了天下高手觊觎之所。灵脉收益 +40%。',
+    reqCleared: 15,
+    unlockHint: '通关主线「5-2 烟雨重逢」后开启',
+  },
 ]
 
-export interface StoryChapterConfig {
+/** 地图是否已对当前主线进度开放 */
+export const isMapUnlocked = (m: MapZoneConfig, maxChapterId: number) => m.reqCleared === undefined || maxChapterId > m.reqCleared
+export const ONLINE_MAPS = MAPS.filter((map) => map.reqCleared === undefined)
+
+export interface OnlineStoryChapterConfig {
   id: number
   volume: string
   code: string
@@ -1901,7 +2822,7 @@ export interface StoryChapterConfig {
   dropSkillId?: string
 }
 
-export const STORY_CHAPTERS: StoryChapterConfig[] = [
+export const ONLINE_STORY_CHAPTERS: OnlineStoryChapterConfig[] = [
   {
     id: 1,
     volume: '第一卷·射雕篇',
@@ -1991,12 +2912,15 @@ export const STORY_CHAPTERS: StoryChapterConfig[] = [
   },
 ]
 
-export function getChapterDrops(chapter: StoryChapterConfig) {
+export function getChapterDrops(chapter: { dropItemIds?: string[]; dropSkillId?: string; dropSkillIds?: string[] }) {
   const items = (chapter.dropItemIds ?? []).map((id) => ITEMS[id]).filter(Boolean)
-  const skill = chapter.dropSkillId ? SKILLS[chapter.dropSkillId] : undefined
+  const skillIds = chapter.dropSkillIds ?? (chapter.dropSkillId ? [chapter.dropSkillId] : [])
   const drops: { id: string; name: string; tier: TierColor; kind: 'item' | 'skill' }[] =
     items.map(({ id, name, tier }) => ({ id, name, tier, kind: 'item' }))
-  if (skill) drops.push({ id: skill.id, name: skill.name, tier: skill.tier, kind: 'skill' })
+  for (const id of skillIds) {
+    const skill = SKILLS[id]
+    if (skill) drops.push({ id: skill.id, name: skill.name, tier: skill.tier, kind: 'skill' })
+  }
   return drops
 }
 

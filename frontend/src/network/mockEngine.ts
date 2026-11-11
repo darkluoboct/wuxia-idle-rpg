@@ -1,5 +1,16 @@
-import type { GhostMarketListingDTO, PendingAdventureDTO, RoomPlayerDTO, UniqueArtifactStatusDTO } from './protocol'
+import type { GachaDrawDTO, GhostMarketListingDTO, RoomPlayerDTO, UniqueArtifactStatusDTO } from './protocol'
 import { ITEMS } from '@/config/gameData'
+import {
+  AWAKENABLE_IDS,
+  GACHA_BASE_RATES,
+  GACHA_HARD_PITY,
+  GACHA_ORANGE_TOP_GRADE_RATE,
+  GACHA_POOL,
+  GACHA_SOFT_PITY_START,
+  GACHA_SOFT_PITY_STEP,
+  type GachaEntry,
+  type GachaTier,
+} from '@/config/gachaData'
 
 export { calcNextLevelQi, computeDerivedStats, evaluateStanceAdvantage, simulateServerBattle } from '../../../shared/battle.ts'
 
@@ -26,6 +37,24 @@ export function generateRoomPlayers(mapId: string): RoomPlayerDTO[] {
       { id: 'rp_9', nickname: '塞外孤狼', sectName: '逍遥散人', realmName: '略有小成', level: 29, combatPower: 12800, stance: 'AGILE', isBetrayerBounty: false, isEscortingDart: true },
     ]
   }
+  if (mapId === 'guiyun_lake') {
+    return [
+      { id: 'rp_12', nickname: '归云庄少庄主', sectName: '东海桃花岛', realmName: '融会贯通', level: 36, combatPower: 17200, stance: 'AGILE', isBetrayerBounty: false, isEscortingDart: false },
+      { id: 'rp_13', nickname: '太湖渔隐', sectName: '逍遥散人', realmName: '融会贯通', level: 39, combatPower: 19800, stance: 'TAICHI', isBetrayerBounty: false, isEscortingDart: false },
+    ]
+  }
+  if (mapId === 'taohua_isle') {
+    return [
+      { id: 'rp_14', nickname: '哑仆（桃花岛）', sectName: '东海桃花岛', realmName: '炉火纯青', level: 50, combatPower: 30500, stance: 'AGILE', isBetrayerBounty: false, isEscortingDart: false },
+      { id: 'rp_15', nickname: '试剑亭客', sectName: '逍遥散人', realmName: '炉火纯青', level: 47, combatPower: 27400, stance: 'FIERCE', isBetrayerBounty: false, isEscortingDart: false },
+    ]
+  }
+  if (mapId === 'huashan_peak') {
+    return [
+      { id: 'rp_16', nickname: '论剑台守擂人', sectName: '终南全真教', realmName: '一代宗师', level: 66, combatPower: 58200, stance: 'TAICHI', isBetrayerBounty: false, isEscortingDart: false },
+      { id: 'rp_17', nickname: '西毒门徒·白衣客', sectName: '西域白驼山庄', realmName: '一代宗师', level: 64, combatPower: 55400, stance: 'FIERCE', isBetrayerBounty: true, isEscortingDart: false },
+    ]
+  }
   return [
     { id: 'rp_10', nickname: '湘西赶尸人', sectName: '西域白驼山庄', realmName: '炉火纯青', level: 47, combatPower: 27900, stance: 'AGILE', isBetrayerBounty: false, isEscortingDart: false },
     { id: 'rp_11', nickname: '陆乘云', sectName: '东海桃花岛', realmName: '一代宗师', level: 65, combatPower: 71000, stance: 'AGILE', isBetrayerBounty: false, isEscortingDart: true, holdingUniqueArtifact: '真·桃花岛软猬甲' },
@@ -50,33 +79,67 @@ export const INITIAL_GHOST_LISTINGS: GhostMarketListingDTO[] = [
   { id: 'mk_6', maskedSeller: '走镖人', itemId: 'deerskin_boots', itemName: ITEMS.deerskin_boots.name, tier: ITEMS.deerskin_boots.tier, listingType: 'FIXED', currency: 'SILVER', price: 4800, desc: ITEMS.deerskin_boots.desc },
 ]
 
-/** 随机奇遇事件模板池 */
-export const ADVENTURE_POOL: Omit<PendingAdventureDTO, 'id'>[] = [
-  {
-    title: '赵王府药房·宝蛇异香',
-    location: '中都赵王府后院',
-    description: '你溜进梁子翁的药房，一条红蛇突然从竹篓里蹿出来。这条蛇吃了二十年的灵药，听说它的血能助人练功。',
-    options: [
-      { key: 'A', label: '抓住宝蛇，饮下蛇血', requirementText: '根骨 +4，真气 +3,500', canSelect: true },
-      { key: 'B', label: '放走宝蛇，取走桌上的银两', requirementText: '侠义 +30，纹银 +2,500', canSelect: true },
-    ],
-  },
-  {
-    title: '昆仑翠谷·苍猿腹痛',
-    location: '断崖百丈幽谷',
-    description: '你采药时跌进山谷。一只老白猿慢慢走过来，指着肚子上的旧伤，像在求你帮忙。',
-    options: [
-      { key: 'A', label: '给白猿处理旧伤', requirementText: '学会《九阳神功》', canSelect: true },
-      { key: 'B', label: '喂白猿吃些止痛草药', requirementText: '侠义 +50，福缘 +3', canSelect: true },
-    ],
-  },
-  {
-    title: '桃花清音洞·画方画圆',
-    location: '桃花岛石洞',
-    description: '老顽童周伯通拉住你，笑道：“好兄弟，来试试左手画方，右手画圆！”',
-    options: [
-      { key: 'A', label: '试试一手画方，一手画圆', requirementText: '身法 +3，学会《空明拳》', canSelect: true },
-      { key: 'B', label: '陪老顽童斗蟋蟀', requirementText: '周伯通好感 +120，真气 +4,000', canSelect: true },
-    ],
-  },
-]
+/**
+ * 客栈结缘抽取（模拟服务端）：基础概率 + 软保底 + 硬保底 + 十连保底。
+ * pity = 距上次神品已累计的抽数；返回本批结果与更新后的 pity。rng 可注入以便测试。
+ */
+export function rollGacha(params: { count: number; pity: number; pullsSoFar: number; rng?: () => number }): {
+  draws: GachaDrawDTO[]
+  pity: number
+} {
+  const rng = params.rng ?? Math.random
+  let pity = params.pity
+  const draws: GachaDrawDTO[] = []
+
+  const pickEntry = (tier: GachaTier): GachaEntry => {
+    const pool = GACHA_POOL[tier]
+    let r = rng() * pool.reduce((s, e) => s + e.weight, 0)
+    for (const e of pool) {
+      r -= e.weight
+      if (r < 0) return e
+    }
+    return pool[pool.length - 1]
+  }
+  const toDraw = (tier: GachaTier, e: GachaEntry, pullNo: number, pityTriggered: boolean): GachaDrawDTO => {
+    const d: GachaDrawDTO = { pullNo, tier, kind: 'PILL', pityTriggered: pityTriggered || undefined }
+    switch (e.kind) {
+      case 'COMPANION':
+        Object.assign(d, { kind: 'COMPANION', refId: e.id })
+        if (tier === 'orange') d.grade = rng() * 100 < GACHA_ORANGE_TOP_GRADE_RATE ? '上' : '中'
+        break
+      case 'SKILL':
+      case 'ITEM':
+        Object.assign(d, { kind: e.kind, refId: e.id })
+        break
+      case 'TOKEN':
+        Object.assign(d, { kind: 'TOKEN', refId: e.id, qty: e.qty })
+        break
+      case 'TOKEN_RANDOM':
+        Object.assign(d, { kind: 'TOKEN', refId: AWAKENABLE_IDS[Math.floor(rng() * AWAKENABLE_IDS.length)], qty: e.qty })
+        break
+      default:
+        Object.assign(d, { kind: e.kind, qty: e.qty })
+    }
+    return d
+  }
+
+  for (let i = 0; i < params.count; i++) {
+    const n = pity + 1 // 本抽是距上次神品的第 n 抽
+    const redRate =
+      n >= GACHA_HARD_PITY ? 100 : n >= GACHA_SOFT_PITY_START ? GACHA_BASE_RATES.red + GACHA_SOFT_PITY_STEP * (n - GACHA_SOFT_PITY_START + 1) : GACHA_BASE_RATES.red
+    const roll = rng() * 100
+    // 软保底抬高的红品概率从蓝档里扣，橙 / 紫概率不变
+    const tier: GachaTier =
+      roll < redRate ? 'red' : roll < redRate + GACHA_BASE_RATES.orange ? 'orange' : roll < redRate + GACHA_BASE_RATES.orange + GACHA_BASE_RATES.purple ? 'purple' : 'blue'
+    const pityTriggered = tier === 'red' && n >= GACHA_SOFT_PITY_START
+    pity = tier === 'red' ? 0 : pity + 1
+    draws.push(toDraw(tier, pickEntry(tier), params.pullsSoFar + i + 1, pityTriggered))
+  }
+
+  // 十连保底：十抽中至少一个上品（紫）及以上，否则把最后一抽改为上品
+  if (params.count >= 10 && draws.every((d) => d.tier === 'blue')) {
+    const last = draws[draws.length - 1]
+    draws[draws.length - 1] = toDraw('purple', pickEntry('purple'), last.pullNo, true)
+  }
+  return { draws, pity }
+}

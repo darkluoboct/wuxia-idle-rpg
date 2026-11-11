@@ -1,5 +1,5 @@
 import type { BattleEventDTO, BattleReportDTO, CombatUnitDTO, LoadoutPresetDTO, PlayerDTO, RichSegment, StanceType } from './protocol.ts'
-import { COMPANIONS, ITEMS, REALMS, SECTS, SHAOSHI_RAID, SKILLS, TRIO_SYNERGIES } from './gameData.ts'
+import { COMPANIONS, companionView, findTrioSynergy, ITEMS, REALMS, SECTS, SHAOSHI_RAID, SKILLS, type CompanionView, type SkillConfig } from './gameData.ts'
 import { EQUIP_SLOT_META, STANCE_META, stanceRelation } from './combatMeta.ts'
 import { skillPowerAtMastery } from './skillMastery.ts'
 
@@ -32,8 +32,13 @@ export function evaluateStanceAdvantage(ally: StanceType, enemy: StanceType): {
   }
 }
 
+interface CollectionBonus {
+  hpPct?: number
+  atkPct?: number
+}
+
 /** 计算玩家二级战斗面板（严格对应第06册公式） */
-export function computeDerivedStats(player: PlayerDTO, loadout: LoadoutPresetDTO) {
+export function computeDerivedStats(player: PlayerDTO, loadout: LoadoutPresetDTO, bonus: CollectionBonus = {}) {
   const realm = REALMS.find((r) => r.tier === player.realmTier) ?? REALMS[0]
   const m = realm.multiplier
   const s = player.stats
@@ -54,9 +59,11 @@ export function computeDerivedStats(player: PlayerDTO, loadout: LoadoutPresetDTO
     gear.dodge += item.dodgeBonus ?? 0
   }
 
-  const maxHp = Math.round((320 + player.level * 85 + s.con * 46) * m * (inner?.id === 'jiuyin_zonggang' ? 1.25 : 1.08) + gear.hp)
+  const hpBonusMult = (1 + (player.bonusHpPct ?? 0) / 100) * (1 + (bonus.hpPct ?? 0) / 100)
+  const atkBonusMult = 1 + (bonus.atkPct ?? 0) / 100
+  const maxHp = Math.round((320 + player.level * 85 + s.con * 46) * m * (inner?.id === 'jiuyin_zonggang' ? 1.25 : 1.08) * hpBonusMult + gear.hp)
   const maxMp = Math.round((120 + player.level * 32 + s.con * 26 + s.intStat * 12) * m)
-  const atk = Math.round((45 + player.level * 13 + s.str * 8.5 + s.agi * 2.5) * m + gear.atk)
+  const atk = Math.round(((45 + player.level * 13 + s.str * 8.5 + s.agi * 2.5) * m + gear.atk) * atkBonusMult)
   const def = Math.round((22 + player.level * 6 + s.con * 5.5 + s.str * 2.0) * m + gear.def)
   const speed = Math.round(100 + s.agi * 3.2 + (light?.speedBonus ?? 0))
   const dodge = Math.min(65, Math.round((s.agi / (s.agi + 180 + player.level * 4)) * 45 + (light?.dodgeBonus ?? 0) + gear.dodge))
@@ -102,6 +109,15 @@ export function calcBattleEnrageRound(enemyHp: number, mode?: BattleReportDTO['m
   return 12
 }
 
+const BARE_HANDS: SkillConfig = {
+  id: 'bare_hands', name: '寻常拳脚', slot: 'OUTER', tier: 'green', source: '无师自通', powerRatio: 1,
+  desc: '未习得任何外功时的寻常拳脚。', castNarrative: '挥拳直取敌方要害。',
+}
+const NO_LIGHT_SKILL: SkillConfig = {
+  id: 'no_light', name: '腾挪闪躲', slot: 'LIGHT', tier: 'green', source: '无师自通', powerRatio: 1,
+  desc: '未习得轻功时凭身法闪躲。', castNarrative: '侧身一让，险险避开。',
+}
+
 /** 服务端权威确定性战斗推演生成器（支持 1主+2副 及 3人真实玩家结义组队） */
 export function simulateServerBattle(params: {
   sceneTitle: string
@@ -113,12 +129,21 @@ export function simulateServerBattle(params: {
   enemyGuards?: { name: string; title: string; portrait: CombatUnitDTO['portraitStyle']; hp: number; atk: number }[]
   coopPlayers?: { leftPlayer: { name: string; sect: string; hp: number; atk: number }; rightPlayer: { name: string; sect: string; hp: number; atk: number } }
   rewards?: BattleReportDTO['rewards']
+  bonus?: CollectionBonus
+  companionOf?: (id: string) => CompanionView | undefined
   /** 生存战：撑过该回合且主角仍存活即判胜 */
   surviveRounds?: number
 }): BattleReportDTO {
-  const { sceneTitle, mode, player, loadout, learnedSkills, enemyMain, enemyGuards, coopPlayers, rewards, surviveRounds } = params
-  const pDerived = computeDerivedStats(player, loadout)
+  const { sceneTitle, mode, player, loadout, learnedSkills, enemyMain, enemyGuards, coopPlayers, rewards, surviveRounds, bonus } = params
+  const pDerived = computeDerivedStats(player, loadout, bonus)
   const stanceInfo = evaluateStanceAdvantage(loadout.stance, enemyMain.stance)
+  const companionOf = params.companionOf ?? ((id: string) => {
+    const config = COMPANIONS[id]
+    // 联机沿用原有伙伴数值，对应试玩中的觉醒形态。
+    return config ? companionView(config, { form: 'awakened' }) : undefined
+  })
+  const leftCompanion = loadout.leftCompanionId ? companionOf(loadout.leftCompanionId) : undefined
+  const rightCompanion = loadout.rightCompanionId ? companionOf(loadout.rightCompanionId) : undefined
 
   const units: CombatUnitDTO[] = []
 
@@ -137,8 +162,8 @@ export function simulateServerBattle(params: {
       rage: 40,
       weaponName: '乌金重剑',
     })
-  } else if (loadout.leftCompanionId && COMPANIONS[loadout.leftCompanionId]) {
-    const c = COMPANIONS[loadout.leftCompanionId]
+  } else if (leftCompanion) {
+    const c = leftCompanion
     const hp = Math.round(c.baseHp * (1 + player.level * 0.04))
     units.push({
       slot: 'ALLY_LEFT',
@@ -170,8 +195,8 @@ export function simulateServerBattle(params: {
       rage: 40,
       weaponName: '东邪碧玉箫',
     })
-  } else if (loadout.rightCompanionId && COMPANIONS[loadout.rightCompanionId]) {
-    const c = COMPANIONS[loadout.rightCompanionId]
+  } else if (rightCompanion) {
+    const c = rightCompanion
     const hp = Math.round(c.baseHp * (1 + player.level * 0.038))
     units.push({
       slot: 'ALLY_RIGHT',
@@ -238,9 +263,9 @@ export function simulateServerBattle(params: {
   }
 
   const events: BattleEventDTO[] = []
-  const outerSkill = (loadout.outerSkillId && SKILLS[loadout.outerSkillId]) || SKILLS.yuenv_jian
-  const ultSkill = (loadout.ultSkillId && SKILLS[loadout.ultSkillId]) || SKILLS.kanglong_youhui
-  const lightSkill = (loadout.lightSkillId && SKILLS[loadout.lightSkillId]) || SKILLS.jinyan_gong
+  const outerSkill = (loadout.outerSkillId && SKILLS[loadout.outerSkillId]) || BARE_HANDS
+  const ultSkill = loadout.ultSkillId ? SKILLS[loadout.ultSkillId] : undefined
+  const lightSkill = (loadout.lightSkillId && SKILLS[loadout.lightSkillId]) || NO_LIGHT_SKILL
 
   // 内力深浅压制系数 K_mp
   const kMp = innerPressure(pDerived.maxMp, enemyMain.mp)
@@ -258,9 +283,7 @@ export function simulateServerBattle(params: {
     ],
   })
 
-  const trioSynergy = TRIO_SYNERGIES.find(
-    (syn) => syn.leftId === loadout.leftCompanionId && syn.rightId === loadout.rightCompanionId
-  )
+  const trioSynergy = findTrioSynergy(loadout.leftCompanionId, loadout.rightCompanionId)
 
   const enrageStartRound = calcBattleEnrageRound(enemyMain.hp, mode)
   const maxRounds = enrageStartRound + 4
@@ -288,18 +311,15 @@ export function simulateServerBattle(params: {
 
     // 挑选当前存活的敌方目标
     const targetSlot: CombatUnitDTO['slot'] =
-      (hpState.ENEMY_LEFT ?? 0) > 0 && round % 2 === 1
+      (hpState.ENEMY_LEFT ?? 0) > 0 && (round % 2 === 1 || hpState.ENEMY_MAIN <= 0)
         ? 'ENEMY_LEFT'
-        : hpState.ENEMY_MAIN > 0
-          ? 'ENEMY_MAIN'
-          : (hpState.ENEMY_RIGHT ?? 0) > 0
-            ? 'ENEMY_RIGHT'
-            : 'ENEMY_MAIN'
+        : hpState.ENEMY_MAIN > 0 ? 'ENEMY_MAIN' : 'ENEMY_RIGHT'
     const targetUnit = units.find((u) => u.slot === targetSlot)!
 
     // 1. 我方主角出手（满100怒气放绝技，否则放外功）
-    const isUlt = rageState.ALLY_MAIN >= 100
-    const castSkill = isUlt ? ultSkill : outerSkill
+    const castUlt = rageState.ALLY_MAIN >= 100 ? ultSkill : undefined
+    const isUlt = !!castUlt
+    const castSkill = castUlt ?? outerSkill
     const isCrit = ((round * 37 + player.stats.agi) % 100) < pDerived.crit
     const power = skillPowerAtMastery(castSkill, learnedSkills?.[castSkill.id])
     const dmg = strikeDamage(pDerived.atk, power, stanceMultAlly, kMp, isCrit, round)
@@ -340,7 +360,7 @@ export function simulateServerBattle(params: {
     if (leftUnit && hpState[targetSlot] > 0 && (round % 2 === 1 || !!trioSynergy || !!coopPlayers)) {
       const assistDmg = Math.round(pDerived.atk * 0.78 * stanceMultAlly)
       hpState[targetSlot] = Math.max(0, hpState[targetSlot] - assistDmg)
-      const compCfg = loadout.leftCompanionId ? COMPANIONS[loadout.leftCompanionId] : undefined
+      const compCfg = leftCompanion
       events.push({
         round,
         type: 'ASSIST_ATTACK',
@@ -363,7 +383,9 @@ export function simulateServerBattle(params: {
     }
 
     // 3. 敌方主将反扑
-    const enemyActorSlot: CombatUnitDTO['slot'] = hpState.ENEMY_MAIN > 0 ? 'ENEMY_MAIN' : 'ENEMY_LEFT'
+    const enemyActorSlot: CombatUnitDTO['slot'] = hpState.ENEMY_MAIN > 0
+      ? 'ENEMY_MAIN'
+      : (hpState.ENEMY_LEFT ?? 0) > 0 ? 'ENEMY_LEFT' : 'ENEMY_RIGHT'
     const enemyActor = units.find((u) => u.slot === enemyActorSlot)!
 
     // 狂暴增伤系数（每回合递增 +35% 复合增伤）
@@ -404,7 +426,7 @@ export function simulateServerBattle(params: {
     if (rightUnit && round % 2 === 0) {
       const reducedDmg = Math.round(rawEnemyDmg * 0.48)
       hpState.ALLY_MAIN = Math.max(0, hpState.ALLY_MAIN - reducedDmg)
-      const rComp = loadout.rightCompanionId ? COMPANIONS[loadout.rightCompanionId] : undefined
+      const rComp = rightCompanion
       events.push({
         round,
         type: 'GUARD_BLOCK',

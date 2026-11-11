@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { ChevronRight, Circle, CircleCheck, Diamond, Store, Swords } from 'lucide-vue-next'
 import { useGameStore } from '@/stores/gameStore'
-import { MAPS, STORY_CHAPTERS } from '@/config/gameData'
+import { isMapUnlocked, MAPS, ONLINE_STORY_CHAPTERS, STORY_CHAPTERS } from '@/config/gameData'
 import { IS_MOCK_MODE } from '@/network/apiClient'
 import RichLogStream from './RichLogStream.vue'
 
@@ -11,9 +11,10 @@ const panes = [
   { key: 'TASKS', label: '任务' }, { key: 'EVENTS', label: '活动' }, { key: 'SOCIAL', label: '附近' },
 ] as const
 const pane = ref<(typeof panes)[number]['key']>(IS_MOCK_MODE ? 'TASKS' : 'SOCIAL')
-const chapter = computed(() => STORY_CHAPTERS.find((ch) => ch.id === store.player.maxChapterId))
-const cleared = computed(() => Math.min(STORY_CHAPTERS.length, store.player.maxChapterId - 1))
-const lastCleared = computed(() => STORY_CHAPTERS[cleared.value - 1])
+const chapters = IS_MOCK_MODE ? STORY_CHAPTERS : ONLINE_STORY_CHAPTERS
+const chapter = computed(() => chapters.find((ch) => ch.id === store.player.maxChapterId))
+const cleared = computed(() => Math.min(chapters.length, store.player.maxChapterId - 1))
+const lastCleared = computed(() => chapters[cleared.value - 1])
 const news = computed(() => {
   const groups = new Map<string, string[]>()
   for (const full of store.marqueeBulletin.split('　　·　　')) {
@@ -31,15 +32,26 @@ const chatInput = ref('')
 const chatFilter = ref<'ALL' | 'RUMOR' | 'WORLD'>('ALL')
 const unread = ref(false)
 
-type Dir = '北' | '西' | '东' | '南'
+type Dir = '北' | '西' | '东' | '南' | '西北' | '东北' | '东南'
 const COMPASS: { id: string; dir: Dir; cls: string }[] = [
   { id: 'zhongnan_forest', dir: '北', cls: 'col-start-2 row-start-1' },
   { id: 'damo_caravan', dir: '西', cls: 'col-start-1 row-start-2' },
   { id: 'jiaxing_suburb', dir: '东', cls: 'col-start-3 row-start-2' },
   { id: 'heizhao_swamp', dir: '南', cls: 'col-start-2 row-start-3' },
+  { id: 'huashan_peak', dir: '西北', cls: 'col-start-1 row-start-1' },
+  { id: 'guiyun_lake', dir: '东北', cls: 'col-start-3 row-start-1' },
+  { id: 'taohua_isle', dir: '东南', cls: 'col-start-3 row-start-3' },
 ]
-const nodes = computed(() => COMPASS.map((c) => ({ ...c, map: MAPS.find((m) => m.id === c.id)! })))
-const SHORT: Record<string, string> = { zhongnan_forest: '终南后山', damo_caravan: '大漠商道', jiaxing_suburb: '嘉兴烟雨', heizhao_swamp: '湘西黑沼' }
+const nodes = computed(() =>
+  COMPASS.map((c) => {
+    const map = MAPS.find((m) => m.id === c.id)!
+    return { ...c, map, locked: !isMapUnlocked(map, store.player.maxChapterId) }
+  }).filter(({ map }) => IS_MOCK_MODE || map.reqCleared === undefined)
+)
+const SHORT: Record<string, string> = {
+  zhongnan_forest: '终南后山', damo_caravan: '大漠商道', jiaxing_suburb: '嘉兴烟雨', heizhao_swamp: '湘西黑沼',
+  huashan_peak: '华山绝顶', guiyun_lake: '太湖归云', taohua_isle: '桃花岛',
+}
 
 const channels = [
   { k: 'ALL', l: '全部' },
@@ -162,7 +174,7 @@ const coCultivationTimeLeft = computed(() => {
 
       <div v-if="lastCleared" class="quest-row quest-done">
         <span class="quest-mark"><CircleCheck :size="18" aria-hidden="true" /></span>
-        <span class="quest-copy"><strong><em>已通关</em> {{ lastCleared.title }}</strong><small>射雕主线已过 {{ cleared }} / {{ STORY_CHAPTERS.length }} 关</small></span>
+        <span class="quest-copy"><strong><em>已通关</em> {{ lastCleared.title }}</strong><small>射雕主线已过 {{ cleared }} / {{ chapters.length }} 关</small></span>
       </div>
     </div>
 
@@ -208,7 +220,7 @@ const coCultivationTimeLeft = computed(() => {
             v-for="n in nodes" :key="n.id"
             class="well well-hover relative z-10 flex min-w-0 flex-col items-center justify-center px-1 py-1.5 text-center"
             :class="[n.cls, store.player.currentMapId === n.id ? '!border-gold bg-[var(--gold-soft)]' : '']"
-            :title="`前往「${n.map.name}」，每小时基础收益 ${n.map.baseQiPerHour.toLocaleString()} 真气${IS_MOCK_MODE ? `，${n.map.onlineCount} 人在线` : ''}`"
+            :title="n.locked ? n.map.unlockHint : `前往「${n.map.name}」，每小时基础收益 ${n.map.baseQiPerHour.toLocaleString()} 真气${IS_MOCK_MODE ? `，${n.map.onlineCount} 人在线` : ''}`"
             :disabled="store.onlineActionBusy"
             @click="store.currentMap.id !== n.id && store.moveMap(n.id)"
           >

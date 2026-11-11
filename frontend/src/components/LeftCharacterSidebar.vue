@@ -2,7 +2,6 @@
 import { computed } from 'vue'
 import { Backpack, ChevronRight, Sparkles, Swords, UsersRound } from 'lucide-vue-next'
 import { useGameStore } from '@/stores/gameStore'
-import { COMPANIONS } from '@/config/gameData'
 import { PLAYER_AVATARS } from '@/config/uiMeta'
 
 const store = useGameStore()
@@ -14,7 +13,7 @@ const party = computed(() => {
   const members = [{ id: p.value.id, name: p.value.nickname, detail: `Lv.${p.value.level}`, role: '主角', art: 'player' }]
   const l = store.currentLoadout
   for (const [id, role] of [[l.leftCompanionId, '追击'], [l.rightCompanionId, '挡招']] as const) {
-    const companion = id ? COMPANIONS[id] : undefined
+    const companion = id ? store.companionOf(id) : undefined
     if (companion) members.push({ id: companion.id, name: companion.name, detail: companion.title, role, art: PORTRAITS[companion.id] })
   }
   return members.map((m) => {

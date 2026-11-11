@@ -51,6 +51,7 @@ export interface PlayerDTO {
   wearingMask: boolean              // 是否佩戴夜行蒙面巾(正派入鬼市用)
   activePresetIdx: 1 | 2 | 3
   trial: TrialStateDTO
+  bonusHpPct?: number               // 奇遇获得的永久气血上限加成(%)，如《药蛇宝血》+15
 }
 
 /** 第一卷 30 关历练与巡历状态 */
@@ -200,6 +201,7 @@ export interface GameLogEntry {
 /** 待抉择江湖奇遇 DTO */
 export interface PendingAdventureDTO {
   id: string
+  templateId?: string       // 奇遇模板ID（服务端据此结算选项效果）
   title: string
   location: string
   description: string
@@ -231,7 +233,10 @@ export interface CombatUnitDTO {
   id: string
   name: string
   title: string
-  portraitStyle: 'hero_sword' | 'guojing' | 'huangrong' | 'hongqigong' | 'huangyaoshi' | 'ouyangfeng' | 'meichaofeng' | 'zhoubotong' | 'monk' | 'assassin'
+  portraitStyle:
+    | 'hero_sword' | 'guojing' | 'huangrong' | 'hongqigong' | 'huangyaoshi' | 'ouyangfeng' | 'meichaofeng' | 'zhoubotong' | 'monk' | 'assassin'
+    | 'munianci' | 'ouyangke' | 'wanyankang' | 'qiuqianren' | 'daoist' | 'chenxuanfeng' | 'bandit'
+    | 'wangchongyang' | 'yideng' | 'zhebie' | 'yinggu' | 'yangtiexin' | 'sunbuer' | 'luchengfeng' | 'zhuziliu'
   avatarId?: PlayerAvatarId
   isPlayer: boolean
   maxHp: number
@@ -331,3 +336,14 @@ export type WsServerEvent =
   | { event: 'WORLD_CHAT'; data: { id: string; channel: 'WORLD' | 'SECT' | 'RUMOR'; sender: string; sect: string; content: string; time: string } }
   | { event: 'SECT_BOUNTY_ISSUED'; data: { traitorName: string; sectName: string; stolenSkill: string; rewardSilver: number } }
   | { event: 'UNIQUE_ARTIFACT_CHANGED'; data: { artifactName: string; newOwner: string } }
+
+/** 客栈结缘：单抽结果（真实环境由服务端产出并记审计日志，客户端只负责展示） */
+export interface GachaDrawDTO {
+  pullNo: number // 账号累计第几抽
+  tier: 'red' | 'orange' | 'purple' | 'blue'
+  kind: 'COMPANION' | 'SKILL' | 'ITEM' | 'TOKEN' | 'PILL' | 'SILVER' | 'QI'
+  refId?: string
+  qty?: number
+  grade?: '下' | '中' | '上' // 橙品伙伴资质
+  pityTriggered?: boolean // 本抽由保底（软/硬/十连）带出
+}

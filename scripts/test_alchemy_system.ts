@@ -1,8 +1,8 @@
-import { HERBS, PILL_RECIPES, MEDICINES, getMapHerbs, MAPS } from '../shared/gameData.ts'
+import { HERBS, PILL_RECIPES, MEDICINES, getMapHerbs, ONLINE_MAPS } from '../shared/gameData.ts'
 import { createStarterCharacter } from '../shared/player.ts'
 
 console.log('=== [1] 验证草药矩阵与地图绑定完整性 ===')
-for (const map of MAPS) {
+for (const map of ONLINE_MAPS) {
   const herbs = getMapHerbs(map.id)
   console.log(`地图【${map.name}】(${map.id}) 产出 ${herbs.length} 味草药:`)
   for (const h of herbs) {

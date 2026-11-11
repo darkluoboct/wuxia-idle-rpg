@@ -8,7 +8,9 @@
     "dev:online": "vite --mode online",
     "build": "vue-tsc -b && vite build",
     "build:online": "vue-tsc -b && vite build --mode online",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "lucide-vue-next": "^0.475.0",
@@ -22,6 +24,7 @@
     "tailwindcss": "^4.0.9",
     "typescript": "~5.7.3",
     "vite": "^6.2.0",
+    "vitest": "^3.0.9",
     "vue-tsc": "^2.2.4"
   },
   "pnpm": {

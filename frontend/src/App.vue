@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch, type Component } from 'vue'
-import { Compass, Landmark, LogOut, Mountain, Settings, Store, Swords, UserRound } from 'lucide-vue-next'
+import { Compass, House, Landmark, LogOut, Mountain, Settings, Store, Swords, UserRound } from 'lucide-vue-next'
 import { useGameStore, type MainTab } from '@/stores/gameStore'
 import { IS_GUEST_ENTRY, IS_MOCK_MODE } from '@/network/apiClient'
 import { TIER_META } from '@/config/uiMeta'
@@ -9,6 +9,7 @@ import JianghuQuestScroll from '@/components/JianghuQuestScroll.vue'
 import RightJianghuSidebar from '@/components/RightJianghuSidebar.vue'
 import OnlineEntry from '@/components/OnlineEntry.vue'
 import CharacterSelect from '@/components/CharacterSelect.vue'
+import GachaOverlay from '@/components/GachaOverlay.vue'
 import CultivateView from '@/views/CultivateView.vue'
 import JianghuView from '@/views/JianghuView.vue'
 import ArsenalView from '@/views/ArsenalView.vue'
@@ -19,6 +20,7 @@ const store = useGameStore()
 const showingLocalEntry = ref(IS_MOCK_MODE && !IS_GUEST_ENTRY)
 const choosingCharacter = ref(true)
 const hasEnteredJianghu = ref(false)
+const currentSave = computed(() => store.savedGame?.playerId === store.player.id ? store.savedGame : null)
 
 function enterJianghu() {
   choosingCharacter.value = false
@@ -60,6 +62,7 @@ const toggleDrawer = (d: 'CHAR' | 'WORLD') => (store.mobileDrawer = store.mobile
 /* ---------- 键盘 ---------- */
 function handleKeydown(e: KeyboardEvent) {
   if (store.onlinePhase !== 'ready' || choosingCharacter.value) return
+  if (IS_MOCK_MODE && (!store.gameMode || store.gachaReveal)) return
   if (e.key === 'Escape') {
     if (store.confirmDialog) store.resolveConfirm(false)
     else if (store.inspectModal) store.inspectModal = null
@@ -80,6 +83,12 @@ function handleKeydown(e: KeyboardEvent) {
 }
 
 onMounted(() => {
+  const mode = new URLSearchParams(window.location.search).get('mode')
+  if (IS_MOCK_MODE && (mode === 'new' || mode === 'demo')) {
+    store.startGame(mode === 'new' ? 'NEW' : 'DEMO')
+    showingLocalEntry.value = false
+    enterJianghu()
+  }
   document.documentElement.classList.toggle('theme-midnight', store.isMidnightTheme)
   window.addEventListener('keydown', handleKeydown)
   void store.resumeOnline()
@@ -132,6 +141,7 @@ const TOAST_GLYPH = { gold: '喜', danger: '警', info: '讯' } as const
             <b class="sm:hidden">{{ compact(store.player.goldIngot) }}</b><b class="hidden sm:inline">{{ store.player.goldIngot.toLocaleString() }}</b>
           </span>
         </div>
+        <button v-if="IS_MOCK_MODE" class="wuxia-icon" aria-label="存档并返回开局" title="存档并返回开局" @click="store.backToTitle()"><House /></button>
         <button class="wuxia-icon" aria-label="选择角色" title="选择角色" @click="chooseCharacter"><UserRound /></button>
         <button v-if="!IS_MOCK_MODE" class="wuxia-icon" aria-label="退出登录" title="退出登录" :disabled="store.authBusy" @click="store.logout()"><LogOut /></button>
         <button class="wuxia-icon md:hidden" aria-label="查看角色" title="查看角色" aria-controls="character-rail" :aria-expanded="store.mobileDrawer === 'CHAR'" @click="toggleDrawer('CHAR')"><UserRound /></button>
@@ -228,6 +238,53 @@ const TOAST_GLYPH = { gold: '喜', danger: '警', info: '讯' } as const
         </div>
       </div>
     </Transition>
+
+    <!-- ==================== 客栈结缘揭晓动画 ==================== -->
+    <GachaOverlay v-if="IS_MOCK_MODE" />
+
+    <!-- ==================== 开局选择 ==================== -->
+    <div
+      v-if="IS_MOCK_MODE && !store.gameMode" class="fixed inset-0 z-[80] flex items-center justify-center overflow-y-auto bg-[var(--scrim)] p-4 backdrop-blur-sm"
+      role="dialog" aria-modal="true" aria-label="选择开局"
+    >
+      <div class="panel anim-modal w-full max-w-2xl space-y-4 p-5 md:p-6">
+        <div class="text-center">
+          <h2 class="font-brush text-4xl leading-tight text-gold">金庸群侠 · 问道武林</h2>
+          <p class="hint mt-1">请选择你的江湖开局</p>
+        </div>
+        <!-- 继续上次的存档 -->
+        <div v-if="currentSave" class="well flex flex-wrap items-center justify-between gap-3 p-4 !border-gold">
+          <div>
+            <b class="font-brush text-2xl leading-none text-gold">继续江湖</b>
+            <p class="mt-1 text-sm text-ink2">
+              {{ currentSave.mode === 'NEW' ? '新游戏' : '演武模式' }} · Lv.{{ currentSave.level }} · 主线 {{ currentSave.node }} ·
+              {{ new Date(currentSave.savedAt).toLocaleString() }}
+            </p>
+          </div>
+          <div class="flex gap-2">
+            <button class="btn btn-sm" title="删除本地存档" @click="store.deleteSave()">删除存档</button>
+            <button class="btn btn-seal" @click="store.continueGame()">继续</button>
+          </div>
+        </div>
+        <p v-if="store.savedGame" class="text-center text-xs text-cinnabar">开始新的游戏或演武模式，将覆盖浏览器中的试玩存档。</p>
+        <div class="grid gap-3 sm:grid-cols-2">
+          <button class="well well-hover flex flex-col gap-2 p-4 text-left" @click="store.startGame('NEW')">
+            <span class="flex items-center gap-2"><span class="seal h-8 w-8 text-lg">新</span><b class="font-brush text-2xl leading-none">新游戏</b></span>
+            <span class="text-sm leading-relaxed text-ink2">
+              Lv.1 白衣散人，孤身入世。伙伴靠剧情结识、在客栈以诚相交，好感随章节推进抬高上限，送礼每日有数。
+            </span>
+            <span class="chip chip-gold self-start">正式规则</span>
+          </button>
+          <button class="well well-hover flex flex-col gap-2 p-4 text-left" @click="store.startGame('DEMO')">
+            <span class="flex items-center gap-2"><span class="seal h-8 w-8 text-lg">演</span><b class="font-brush text-2xl leading-none">演武模式</b></span>
+            <span class="text-sm leading-relaxed text-ink2">
+              Lv.32，七位伙伴已就位，无送礼与好感限制，可直接体验武库、门派、市井全部玩法。
+            </span>
+            <span class="chip self-start">体验用 · 后续版本移除</span>
+          </button>
+        </div>
+      </div>
+    </div>
 
     <!-- ==================== 二次确认 ==================== -->
     <Transition enter-active-class="transition-opacity duration-150" enter-from-class="opacity-0" leave-active-class="transition-opacity duration-150" leave-to-class="opacity-0">

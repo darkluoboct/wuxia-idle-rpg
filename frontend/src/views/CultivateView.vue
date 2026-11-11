@@ -1,6 +1,7 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { ChevronDown, ChevronLeft, ChevronRight, MapPin } from 'lucide-vue-next'
-import { MAPS } from '@/config/gameData'
+import { isMapUnlocked, MAPS, ONLINE_MAPS } from '@/config/gameData'
 import { MAP_MOOD_LABEL } from '@/config/uiMeta'
 import { useGameStore } from '@/stores/gameStore'
 import { IS_MOCK_MODE } from '@/network/apiClient'
@@ -9,14 +10,15 @@ import StageHeaderArena from '@/components/StageHeaderArena.vue'
 import CultivateConsole from '@/components/CultivateConsole.vue'
 
 const store = useGameStore()
+const maps = computed(() => IS_MOCK_MODE ? MAPS.filter((map) => isMapUnlocked(map, store.player.maxChapterId)) : ONLINE_MAPS)
 
 const signs: Record<string, string> = {
   jiaxing_suburb: '嘉兴南湖', zhongnan_forest: '终南后山', damo_caravan: '大漠商道', heizhao_swamp: '湘西黑沼',
 }
 
 function stepMap(direction: number) {
-  const current = MAPS.findIndex((map) => map.id === store.currentMap.id)
-  store.moveMap(MAPS[(current + direction + MAPS.length) % MAPS.length].id)
+  const current = maps.value.findIndex((map) => map.id === store.currentMap.id)
+  store.moveMap(maps.value[(current + direction + maps.value.length) % maps.value.length].id)
 }
 </script>
 
@@ -35,7 +37,7 @@ function stepMap(direction: number) {
             class="font-brush" aria-label="选择地图" :value="store.currentMap.id" :disabled="store.onlineActionBusy"
             @change="store.moveMap(($event.target as HTMLSelectElement).value)"
           >
-            <option v-for="map in MAPS" :key="map.id" :value="map.id">{{ map.name.replace(/（.*?）/, '') }}</option>
+            <option v-for="map in maps" :key="map.id" :value="map.id">{{ map.name.replace(/（.*?）/, '') }}</option>
           </select>
           <ChevronDown aria-hidden="true" />
         </div>
@@ -51,7 +53,7 @@ function stepMap(direction: number) {
       </div>
     </div>
 
-    <div class="scenic-banner font-brush" aria-hidden="true">{{ signs[store.currentMap.id] }}<i>江湖</i></div>
+    <div class="scenic-banner font-brush" aria-hidden="true">{{ signs[store.currentMap.id] ?? store.currentMap.name }}<i>江湖</i></div>
 
     <CultivateConsole />
   </div>
