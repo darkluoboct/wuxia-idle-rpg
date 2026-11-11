@@ -204,3 +204,14 @@ export type WsServerEvent =
   | { event: 'WORLD_CHAT'; data: { id: string; channel: 'WORLD' | 'SECT' | 'RUMOR'; sender: string; sect: string; content: string; time: string } }
   | { event: 'SECT_BOUNTY_ISSUED'; data: { traitorName: string; sectName: string; stolenSkill: string; rewardSilver: number } }
   | { event: 'UNIQUE_ARTIFACT_CHANGED'; data: { artifactName: string; newOwner: string } }
+
+/** 客栈结缘：单抽结果（真实环境由服务端产出并记审计日志，客户端只负责展示） */
+export interface GachaDrawDTO {
+  pullNo: number // 账号累计第几抽
+  tier: 'red' | 'orange' | 'purple' | 'blue'
+  kind: 'COMPANION' | 'SKILL' | 'ITEM' | 'TOKEN' | 'PILL' | 'SILVER' | 'QI'
+  refId?: string
+  qty?: number
+  grade?: '下' | '中' | '上' // 橙品伙伴资质
+  pityTriggered?: boolean // 本抽由保底（软/硬/十连）带出
+}

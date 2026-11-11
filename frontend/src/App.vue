@@ -7,6 +7,7 @@ import { TIER_META } from '@/config/uiMeta'
 import InkBackdrop from '@/components/InkBackdrop.vue'
 import LeftCharacterSidebar from '@/components/LeftCharacterSidebar.vue'
 import RightJianghuSidebar from '@/components/RightJianghuSidebar.vue'
+import GachaOverlay from '@/components/GachaOverlay.vue'
 import CultivateView from '@/views/CultivateView.vue'
 import JianghuView from '@/views/JianghuView.vue'
 import ArsenalView from '@/views/ArsenalView.vue'
@@ -245,6 +246,9 @@ const TOAST_GLYPH = { gold: '喜', danger: '警', info: '讯' } as const
         </div>
       </div>
     </Transition>
+
+    <!-- ==================== 客栈结缘揭晓动画 ==================== -->
+    <GachaOverlay />
 
     <!-- ==================== 开局选择 ==================== -->
     <div

@@ -3,6 +3,18 @@ import { ref } from 'vue'
 import { useGameStore } from '@/stores/gameStore'
 import { COMPANIONS, GHOST_APPRAISE_COST, GRADE_MULT, INN_GIFT_COST, INN_TEA_COST, SKILLS } from '@/config/gameData'
 import { STANCE_META, TIER_META } from '@/config/uiMeta'
+import {
+  GACHA_DUP_TOKENS,
+  GACHA_HARD_PITY,
+  GACHA_ORANGE_TOP_GRADE_RATE,
+  GACHA_SINGLE_COST,
+  GACHA_SOFT_PITY_START,
+  GACHA_SOFT_PITY_STEP,
+  GACHA_TEN_COST,
+  gachaEffectiveRedRate,
+  gachaRateTable,
+  REUNION_TICKET_COST,
+} from '@/config/gachaData'
 import type { StanceType } from '@/network/protocol'
 import InkFigure from '@/components/InkFigure.vue'
 
@@ -15,6 +27,12 @@ function enterGhostMarket() {
 }
 
 const canAfford = (cost: number) => store.player.silver >= cost
+
+/* ---------- 醉仙楼·结缘 ---------- */
+const showRates = ref(false)
+const showHistory = ref(false)
+const RATE_TABLE = gachaRateTable()
+const fmtRate = (r: number) => (r >= 1 ? r.toFixed(2) : r.toFixed(3)) + '%'
 /** 伙伴当前形态视图（形态 / 资质已套用） */
 const view = (id: string) => store.companionOf(id)!
 /** 送礼按钮是否可点：银两、今日次数、好感封顶三者都要满足 */
@@ -77,12 +95,62 @@ function challengeFiveGreats(p: (typeof fiveGreats)[0]) {
         </div>
         <span class="flex items-center gap-1.5 text-xs text-ink3">
           纹银 <b class="text-sm tabular-nums text-ink">{{ store.player.silver.toLocaleString() }}</b>
-          <template v-if="sub === 'GHOST'"> · 元宝 <b class="text-sm tabular-nums text-gold">{{ store.player.goldIngot }}</b></template>
+          <template v-if="sub === 'GHOST' || sub === 'INN'"> · 元宝 <b class="text-sm tabular-nums text-gold">{{ store.player.goldIngot }}</b></template>
         </span>
       </div>
 
       <!-- ============ 醉仙客栈 ============ -->
       <div v-if="sub === 'INN'" class="view-scroll -mr-1 space-y-3 pr-1">
+        <!-- 醉仙楼·结缘（抽卡入口） -->
+        <article class="well relative overflow-hidden p-4" style="background-image: radial-gradient(ellipse at 100% 0, color-mix(in srgb, var(--tier-red) 14%, transparent), transparent 60%)">
+          <div class="relative grid items-center gap-3 md:grid-cols-[1fr_auto]">
+            <div class="min-w-0">
+              <div class="flex items-center gap-2.5">
+                <span class="seal h-9 w-9 text-xl">缘</span>
+                <h4 class="font-brush text-2xl leading-none">醉仙楼 · 结缘</h4>
+              </div>
+              <p class="hint mt-1.5">雅间焚香求签，结识江湖名宿、偶得神兵秘籍。神品 1.5% · 绝品 8% · 上品 30%；第 {{ GACHA_HARD_PITY }} 抽必出神品，十连必出上品及以上。</p>
+              <div class="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
+                <span class="chip tabular-nums">已结缘 {{ store.gacha.pulls }} 次</span>
+                <span class="chip chip-gold tabular-nums">距神品保底 {{ GACHA_HARD_PITY - store.gacha.pity }} 抽</span>
+                <button class="chip underline-offset-2 hover:underline" @click="showRates = true">概率公示</button>
+                <button class="chip underline-offset-2 hover:underline" :aria-expanded="showHistory" @click="showHistory = !showHistory">结缘记录</button>
+              </div>
+            </div>
+            <div class="grid grid-cols-2 gap-2 md:flex">
+              <button class="btn !min-h-[2.8rem] flex-col !gap-0 md:min-w-[7rem]" :disabled="store.player.goldIngot < GACHA_SINGLE_COST" @click="store.pullGacha(1)">
+                <span>结缘 ×1</span><span class="text-[0.7rem] text-ink3">{{ GACHA_SINGLE_COST }} 元宝</span>
+              </button>
+              <button class="btn btn-seal !min-h-[2.8rem] flex-col !gap-0 md:min-w-[7rem]" :disabled="store.player.goldIngot < GACHA_TEN_COST" @click="store.pullGacha(10)">
+                <span>结缘 ×10</span><span class="text-[0.7rem] opacity-80">{{ GACHA_TEN_COST }} 元宝</span>
+              </button>
+            </div>
+          </div>
+          <ol v-if="showHistory" class="relative mt-3 max-h-48 space-y-1 overflow-y-auto border-t border-line pt-2 text-xs">
+            <li v-if="!store.gacha.history.length" class="py-2 text-center text-ink3">尚未结缘。</li>
+            <li v-for="h in store.gacha.history" :key="h.draw.pullNo" class="flex items-center gap-2" :class="TIER_META[h.draw.tier].cls">
+              <span class="w-12 shrink-0 tabular-nums text-ink3">第{{ h.draw.pullNo }}抽</span>
+              <span class="chip tier-chip !py-0 !text-[0.62rem]">{{ TIER_META[h.draw.tier].label }}</span>
+              <b class="truncate">{{ h.name }}</b>
+              <span class="truncate text-ink3">{{ h.detail }}</span>
+            </li>
+          </ol>
+        </article>
+
+        <!-- 故人重逢令：错过的剧情伙伴（固定价格、不随机） -->
+        <article v-if="store.reunionCandidates.length" class="well space-y-2 p-3.5">
+          <div class="flex items-center gap-2"><span class="seal h-7 w-7 text-base">逢</span><b class="font-brush text-xl">故人重逢</b></div>
+          <p class="hint">这些故人曾与你擦肩而过。以一枚「故人重逢令」相邀，便可重续前缘、即刻同行。</p>
+          <div class="flex flex-wrap gap-2">
+            <button
+              v-for="id in store.reunionCandidates" :key="id" class="btn btn-sm btn-gold"
+              :disabled="store.player.goldIngot < REUNION_TICKET_COST" @click="store.redeemReunionTicket(id)"
+            >
+              重逢 {{ COMPANIONS[id].name }} · {{ REUNION_TICKET_COST }} 元宝
+            </button>
+          </div>
+        </article>
+
         <p class="hint">
           好感满 <b class="text-ink">100</b> 可编入左右翼；满 <b class="text-gold">600（生死之交）</b>无论门派皆触发「倾囊传功」，亲授看家绝学。
         </p>
@@ -250,5 +318,42 @@ function challengeFiveGreats(p: (typeof fiveGreats)[0]) {
         </div>
       </div>
     </section>
+
+    <!-- 概率公示 -->
+    <div
+      v-if="showRates" class="fixed inset-0 z-[70] flex items-center justify-center bg-[var(--scrim)] p-4 backdrop-blur-[2px]"
+      role="dialog" aria-modal="true" aria-label="醉仙楼结缘概率公示" @click.self="showRates = false"
+    >
+      <div class="panel anim-modal flex max-h-[85vh] w-full max-w-lg flex-col gap-3 p-5">
+        <div class="flex items-center justify-between">
+          <h4 class="font-brush text-2xl text-gold">结缘概率公示</h4>
+          <button class="btn btn-sm" @click="showRates = false">关闭</button>
+        </div>
+        <ul class="space-y-1 text-xs leading-relaxed text-ink2">
+          <li>· 单抽 {{ GACHA_SINGLE_COST }} 元宝，十连 {{ GACHA_TEN_COST }} 元宝。</li>
+          <li>· 软保底：距上次神品第 {{ GACHA_SOFT_PITY_START }} 抽起，神品概率每抽 +{{ GACHA_SOFT_PITY_STEP }}%（提升部分从良品档扣除）。</li>
+          <li>· 硬保底：第 {{ GACHA_HARD_PITY }} 抽必出神品，出神品后计数清零；保底为随机，不定向。</li>
+          <li>· 含保底的神品<b class="text-ink">综合出率约 {{ gachaEffectiveRedRate().toFixed(2) }}%</b>（平均约 {{ Math.round(100 / gachaEffectiveRedRate()) }} 抽一次）。</li>
+          <li>· 十连保底：十连至少一个上品及以上。</li>
+          <li>· 绝品伙伴资质：上 {{ GACHA_ORANGE_TOP_GRADE_RATE }}% / 中 {{ 100 - GACHA_ORANGE_TOP_GRADE_RATE }}%。</li>
+          <li>· 已拥有的伙伴转为其信物（神品 ×{{ GACHA_DUP_TOKENS.red }}、绝品 ×{{ GACHA_DUP_TOKENS.orange }}、上品 ×{{ GACHA_DUP_TOKENS.purple }}）；已有装备折算纹银，已会武学参悟 +1 重。</li>
+          <li>· 剧情送的伙伴不进入卡池。</li>
+        </ul>
+        <div class="min-h-0 space-y-3 overflow-y-auto pr-1">
+          <section v-for="t in RATE_TABLE" :key="t.tier" :class="TIER_META[t.tier].cls">
+            <div class="mb-1 flex items-center justify-between border-b border-line pb-1">
+              <b class="font-brush text-lg" style="color: var(--tc)">{{ t.label }}</b>
+              <span class="tabular-nums text-sm">{{ fmtRate(t.rate) }}</span>
+            </div>
+            <ul class="grid grid-cols-2 gap-x-3 text-xs">
+              <li v-for="e in t.entries" :key="e.name" class="flex justify-between gap-2 py-0.5">
+                <span class="truncate">{{ e.name }}</span><span class="tabular-nums text-ink3">{{ fmtRate(e.rate) }}</span>
+              </li>
+            </ul>
+          </section>
+        </div>
+        <p class="text-[0.7rem] text-ink3">以上为单抽基础概率；演示版由本地模拟，正式版以服务端结果为准。</p>
+      </div>
+    </div>
   </div>
 </template>

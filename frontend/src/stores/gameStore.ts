@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import type {
   BattleReportDTO,
   CombatUnitDTO,
+  GachaDrawDTO,
   GameLogEntry,
   GhostMarketListingDTO,
   LoadoutPresetDTO,
@@ -20,6 +21,7 @@ import {
   generateRoomPlayers,
   INITIAL_GHOST_LISTINGS,
   INITIAL_UNIQUE_ARTIFACTS,
+  rollGacha,
   simulateServerBattle,
 } from '@/network/mockEngine'
 import {
@@ -50,6 +52,26 @@ import {
   type Reward,
 } from '@/config/gameData'
 import { EQUIP_SLOT_META, shichenIdxFromDate, SKILL_SLOT_META } from '@/config/uiMeta'
+import {
+  GACHA_DUP_SILVER,
+  GACHA_DUP_TOKENS,
+  GACHA_SINGLE_COST,
+  GACHA_TEN_COST,
+  REUNION_AFTER,
+  REUNION_TICKET_COST,
+  validateGachaData,
+} from '@/config/gachaData'
+import type { PortraitStyle } from '@/config/typesHelper'
+
+/** 抽卡揭晓卡片：服务端结果 + 本地结算后的展示信息 */
+export interface GachaResultView {
+  draw: GachaDrawDTO
+  name: string
+  detail: string
+  isNew: boolean
+  portrait?: PortraitStyle // 伙伴用水墨人像
+  glyph: string // 其余用印章字
+}
 
 const SHICHEN_LABELS = ['子时·夜半', '寅时·平旦', '辰时·烟雨', '午时·日正', '申时·斜阳', '戌时·黄昏']
 
@@ -57,7 +79,7 @@ export type MainTab = 'CULTIVATE' | 'JIANGHU' | 'ARSENAL' | 'SECT' | 'MARKET'
 
 export const useGameStore = defineStore('wuxiaGame', () => {
   if (import.meta.env.DEV) {
-    const errs = validateGameData()
+    const errs = [...validateGameData(), ...validateGachaData()]
     if (errs.length) console.warn('[gameData] 数据引用校验失败：\n' + errs.join('\n'))
   }
 
@@ -1374,6 +1396,149 @@ export const useGameStore = defineStore('wuxiaGame', () => {
     })
   }
 
+  // ==================== 客栈「醉仙楼·结缘」抽卡（第12册 §七、§八） ====================
+  const gacha = ref({ pulls: 0, pity: 0, history: [] as GachaResultView[] })
+  /** 当前待播放的揭晓动画；为 null 时不显示 */
+  const gachaReveal = ref<{ key: number; results: GachaResultView[] } | null>(null)
+  const GRADE_RANK: Record<CompanionGrade, number> = { 下: 1, 中: 2, 上: 3 }
+
+  /** 结算一抽：新得入手 / 重复转化，并生成展示信息 */
+  function applyGachaDraw(d: GachaDrawDTO): GachaResultView {
+    const p = player.value
+    switch (d.kind) {
+      case 'COMPANION': {
+        const cfg = COMPANIONS[d.refId!]
+        const st = companionAffinity.value[d.refId!]
+        if (!st.recruited) {
+          st.met = true
+          st.recruited = true
+          st.affinity = Math.max(st.affinity, 100)
+          // 神品档抽到“好感线”大侠：直接以觉醒形态入队（等于跳过免费线）
+          if (d.tier === 'red' && cfg.awakened) st.form = 'awakened'
+          if (d.grade) st.grade = d.grade
+          const formTxt = st.form === 'awakened' ? `觉醒形态「${cfg.awakened!.title}」` : '已入队'
+          return { draw: d, name: cfg.name, detail: `新结缘 · ${formTxt}${d.grade ? ` · 橙·${d.grade}` : ''}`, isNew: true, portrait: cfg.portraitStyle, glyph: '缘' }
+        }
+        const tokens = GACHA_DUP_TOKENS[d.tier] ?? 10
+        st.tokens += tokens
+        const parts = [`重复 → 信物 ×${tokens}`]
+        if (d.grade && (!st.grade || GRADE_RANK[d.grade] > GRADE_RANK[st.grade])) {
+          st.grade = d.grade
+          parts.push(`资质提升至「${d.grade}」`)
+        }
+        if (!cfg.awakened && st.affinity < affinityCap.value) {
+          const gain = Math.min(60, affinityCap.value - st.affinity)
+          st.affinity += gain
+          parts.push(`好感 +${gain}`)
+        }
+        return { draw: d, name: cfg.name, detail: parts.join('，'), isNew: false, portrait: cfg.portraitStyle, glyph: '缘' }
+      }
+      case 'SKILL': {
+        const sk = SKILLS[d.refId!]
+        const lv = learnedSkills.value[sk.id] ?? 0
+        const base = { draw: d, name: `《${sk.name}》`, glyph: SKILL_SLOT_META[sk.slot].glyph }
+        if (lv <= 0) {
+          learnSkill(sk.id)
+          return { ...base, detail: `习得${SKILL_SLOT_META[sk.slot].label}`, isNew: true }
+        }
+        if (lv < 10) {
+          learnedSkills.value[sk.id] = lv + 1
+          return { ...base, detail: `已会 → 参悟至第 ${lv + 1} 重`, isNew: false }
+        }
+        p.silver += GACHA_DUP_SILVER[sk.tier]
+        return { ...base, detail: `已臻圆满 → 纹银 +${GACHA_DUP_SILVER[sk.tier]}`, isNew: false }
+      }
+      case 'ITEM': {
+        const it = ITEMS[d.refId!]
+        const base = { draw: d, name: `【${it.name}】`, glyph: EQUIP_SLOT_META[it.slot].glyph }
+        if (!ownedItemIds.value.includes(it.id)) {
+          gainItem(it.id)
+          return { ...base, detail: `入手${EQUIP_SLOT_META[it.slot].label}`, isNew: true }
+        }
+        p.silver += GACHA_DUP_SILVER[it.tier]
+        return { ...base, detail: `重复 → 纹银 +${GACHA_DUP_SILVER[it.tier]}`, isNew: false }
+      }
+      case 'TOKEN': {
+        const cfg = COMPANIONS[d.refId!]
+        companionAffinity.value[d.refId!].tokens += d.qty ?? 0
+        return { draw: d, name: `${cfg.name}信物`, detail: `×${d.qty}（觉醒进阶用）`, isNew: false, glyph: '信' }
+      }
+      case 'PILL':
+        pillCount.value += d.qty ?? 1
+        return { draw: d, name: '九花玉露丸', detail: `×${d.qty}（冲穴成功率 +25%）`, isNew: false, glyph: '丹' }
+      case 'SILVER':
+        p.silver += d.qty ?? 0
+        return { draw: d, name: '纹银', detail: `+${(d.qty ?? 0).toLocaleString()} 两`, isNew: false, glyph: '银' }
+      case 'QI':
+        p.qiExp += d.qty ?? 0
+        return { draw: d, name: '真气', detail: `+${(d.qty ?? 0).toLocaleString()}`, isNew: false, glyph: '气' }
+    }
+  }
+
+  function pullGacha(count: 1 | 10) {
+    if (gachaReveal.value) return
+    const cost = count === 10 ? GACHA_TEN_COST : GACHA_SINGLE_COST
+    if (player.value.goldIngot < cost) {
+      showToast(`元宝不足：结缘 ${count} 次需 ${cost} 元宝`, 'danger')
+      return
+    }
+    player.value.goldIngot -= cost
+    const { draws, pity } = rollGacha({ count, pity: gacha.value.pity, pullsSoFar: gacha.value.pulls })
+    gacha.value.pity = pity
+    gacha.value.pulls += count
+    const results = draws.map(applyGachaDraw)
+    gacha.value.history = [...results.slice().reverse(), ...gacha.value.history].slice(0, 60)
+    gachaReveal.value = { key: Date.now(), results }
+
+    const notable = results.filter((r) => r.draw.tier !== 'blue')
+    const segs: RichSegment[] = []
+    for (const r of notable) {
+      const tier = r.draw.tier
+      segs.push({ type: 'text', text: ' ' })
+      if (r.draw.kind === 'COMPANION') segs.push({ type: 'actor', name: r.name, isAlly: true })
+      else if (r.draw.kind === 'SKILL') segs.push({ type: 'skill', id: r.draw.refId!, name: r.name, tier })
+      else if (r.draw.kind === 'ITEM') segs.push({ type: 'item', id: r.draw.refId!, name: r.name, tier })
+      else segs.push({ type: 'text', text: r.name })
+    }
+    appendLog('JIANGHU', [
+      { type: 'tag', text: '醉仙结缘', tone: results.some((r) => r.draw.tier === 'red') ? 'gold' : 'purple' },
+      { type: 'text', text: ` 你于醉仙楼雅间焚香求签，结缘 ${count} 次（−${cost} 元宝）${notable.length ? '，得：' : '，皆是寻常机缘。'}` },
+      ...segs,
+    ])
+  }
+
+  function closeGachaReveal() {
+    gachaReveal.value = null
+  }
+
+  /** 已错过、可用重逢令补救的剧情送伙伴 */
+  const reunionCandidates = computed(() =>
+    Object.entries(REUNION_AFTER)
+      .filter(([id, adv]) => resolvedAdventureIds.value.includes(adv) && !companionAffinity.value[id]?.recruited)
+      .map(([id]) => id)
+  )
+
+  function redeemReunionTicket(compId: string) {
+    const c = COMPANIONS[compId]
+    if (!c || !reunionCandidates.value.includes(compId)) return
+    if (player.value.goldIngot < REUNION_TICKET_COST) {
+      showToast(`元宝不足：故人重逢令需 ${REUNION_TICKET_COST} 元宝`, 'danger')
+      return
+    }
+    player.value.goldIngot -= REUNION_TICKET_COST
+    const st = companionAffinity.value[compId]
+    st.met = true
+    st.recruited = true
+    st.affinity = Math.max(st.affinity, 100)
+    appendLog('JIANGHU', [
+      { type: 'tag', text: '故人重逢', tone: 'gold' },
+      { type: 'text', text: ' 醉仙楼的伙计递来一封旧信，你循着信中所约来到渡口——' },
+      { type: 'actor', name: c.name, isAlly: true },
+      { type: 'text', text: '已在那里等你多时。前尘往事，一笑而过，从此同行。' },
+    ])
+    showToast(`故人重逢：【${c.name}】已入队`, 'gold')
+  }
+
   // ==================== 开局模式 ====================
   /**
    * 选择开局。DEMO 沿用 store 初始化时的“全伙伴 Lv.32”状态（后续版本移除）；
@@ -1420,6 +1585,8 @@ export const useGameStore = defineStore('wuxiaGame', () => {
       companionAffinity.value = blankCompanionStates()
       innDay.value = ''
       innGiftsToday.value = {}
+      gacha.value = { pulls: 0, pity: 0, history: [] }
+      gachaReveal.value = null
       const blank = (idx: 1 | 2 | 3, name: string, stance: StanceType): LoadoutPresetDTO => ({
         presetIdx: idx,
         name,
@@ -1514,6 +1681,12 @@ export const useGameStore = defineStore('wuxiaGame', () => {
     giftsLeft,
     companionOf,
     awakenCompanion,
+    gacha,
+    gachaReveal,
+    pullGacha,
+    closeGachaReveal,
+    reunionCandidates,
+    redeemReunionTicket,
     setBonusStates,
     collectionBonus,
     effectiveQiPerHour,
