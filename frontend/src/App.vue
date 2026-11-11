@@ -64,6 +64,10 @@ function handleKeydown(e: KeyboardEvent) {
 }
 
 onMounted(() => {
+  // 开发便利：?mode=new / ?mode=demo 跳过开局选择
+  const qm = new URLSearchParams(window.location.search).get('mode')
+  if (qm === 'new') store.startGame('NEW')
+  else if (qm === 'demo') store.startGame('DEMO')
   document.documentElement.classList.toggle('theme-midnight', store.isMidnightTheme)
   window.addEventListener('keydown', handleKeydown)
   bulletinTimer = setInterval(() => {
@@ -241,6 +245,35 @@ const TOAST_GLYPH = { gold: '喜', danger: '警', info: '讯' } as const
         </div>
       </div>
     </Transition>
+
+    <!-- ==================== 开局选择 ==================== -->
+    <div
+      v-if="!store.gameMode" class="fixed inset-0 z-[80] flex items-center justify-center overflow-y-auto bg-[var(--scrim)] p-4 backdrop-blur-sm"
+      role="dialog" aria-modal="true" aria-label="选择开局"
+    >
+      <div class="panel anim-modal w-full max-w-2xl space-y-4 p-5 md:p-6">
+        <div class="text-center">
+          <h2 class="font-brush text-4xl leading-tight text-gold">金庸群侠 · 问道武林</h2>
+          <p class="hint mt-1">请选择你的江湖开局</p>
+        </div>
+        <div class="grid gap-3 sm:grid-cols-2">
+          <button class="well well-hover flex flex-col gap-2 p-4 text-left" @click="store.startGame('NEW')">
+            <span class="flex items-center gap-2"><span class="seal h-8 w-8 text-lg">新</span><b class="font-brush text-2xl leading-none">新游戏</b></span>
+            <span class="text-sm leading-relaxed text-ink2">
+              Lv.1 白衣散人，孤身入世。伙伴靠剧情结识、在客栈以诚相交，好感随章节推进抬高上限，送礼每日有数。
+            </span>
+            <span class="chip chip-gold self-start">正式规则</span>
+          </button>
+          <button class="well well-hover flex flex-col gap-2 p-4 text-left" @click="store.startGame('DEMO')">
+            <span class="flex items-center gap-2"><span class="seal h-8 w-8 text-lg">演</span><b class="font-brush text-2xl leading-none">演武模式</b></span>
+            <span class="text-sm leading-relaxed text-ink2">
+              Lv.32，七位伙伴已就位，无送礼与好感限制，可直接体验武库、门派、市井全部玩法。
+            </span>
+            <span class="chip self-start">体验用 · 后续版本移除</span>
+          </button>
+        </div>
+      </div>
+    </div>
 
     <!-- ==================== 二次确认 ==================== -->
     <Transition enter-active-class="transition-opacity duration-150" enter-from-class="opacity-0" leave-active-class="transition-opacity duration-150" leave-to-class="opacity-0">

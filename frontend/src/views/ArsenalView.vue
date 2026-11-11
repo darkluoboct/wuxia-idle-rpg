@@ -36,7 +36,9 @@ function skillStats(id: string) {
 
 /* ---------- 编队 ---------- */
 const recruited = (role: 'LEFT' | 'RIGHT') =>
-  Object.values(COMPANIONS).filter((c) => (c.role === role || c.role === 'EITHER') && store.companionAffinity[c.id]?.recruited)
+  Object.values(COMPANIONS)
+    .filter((c) => (c.role === role || c.role === 'EITHER') && store.companionAffinity[c.id]?.recruited)
+    .map((c) => ({ ...c, ...store.companionOf(c.id)! }))
 const isRecruited = (id: string) => !!store.companionAffinity[id]?.recruited
 const isActive = (s: (typeof TRIO_SYNERGIES)[number]) => store.activeTrioSynergy?.id === s.id
 /** 选择伙伴；周伯通等「左右皆可」的伙伴若已在另一翼，则自动让位 */

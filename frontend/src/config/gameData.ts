@@ -770,6 +770,20 @@ export const ITEMS: Record<string, ItemConfig> = {
   },
 }
 
+/** 伙伴随形态变化的那部分属性 */
+export interface CompanionForm {
+  tier: TierColor
+  title: string
+  assistSkillName: string
+  assistDesc: string
+  baseHp: number
+  baseAtk: number
+}
+
+export type CompanionGrade = '下' | '中' | '上'
+/** 橙品资质的属性系数（第12册 §二） */
+export const GRADE_MULT: Record<CompanionGrade, number> = { 下: 0.88, 中: 1.0, 上: 1.12 }
+
 export interface CompanionConfig {
   id: string
   name: string
@@ -781,6 +795,9 @@ export interface CompanionConfig {
   route: 'STORY' | 'AFFINITY' | 'GACHA'
   /** 好感线橙品的资质（下/中/上），影响属性系数；其余为 undefined */
   grade?: '下' | '中' | '上'
+  /** 觉醒形态（需好感 ≥600 + 伙伴信物）；基础形态由本配置的顶层字段给出 */
+  awakened?: CompanionForm
+  awakenTokens?: number
   portraitStyle: PortraitStyle
   /** 尚未结识时，客栈卡片上显示的结识线索 */
   meetHint?: string
@@ -829,82 +846,130 @@ export const COMPANIONS: Record<string, CompanionConfig> = {
   guojing: {
     id: 'guojing',
     name: '郭靖',
-    title: '北侠·侠之大者',
-    tier: 'orange',
+    title: '憨厚少年',
+    tier: 'purple',
     role: 'LEFT',
     route: 'STORY',
     portraitStyle: 'guojing',
     poem: '弯弓射雕大漠北，赤胆忠魂守襄阳。',
     favGift: '蒙古马奶酒',
     teachSkillId: 'xianglong_18',
-    assistSkillName: '双龙取水',
-    assistDesc: '至强护卫副C：主角受重创时跨步挡刀，并以刚猛降龙掌连携追击！',
-    baseHp: 7500,
-    baseAtk: 680,
+    assistSkillName: '降龙初式',
+    assistDesc: '憨厚而坚韧的前排：主角受重创时跨步挡刀，并以刚猛掌法追击。',
+    baseHp: 4800,
+    baseAtk: 470,
+    awakenTokens: 30,
+    awakened: {
+      tier: 'orange',
+      title: '北侠·侠之大者',
+      assistSkillName: '双龙取水',
+      assistDesc: '至强护卫副C：主角受重创时跨步挡刀，并以刚猛降龙掌连携追击！',
+      baseHp: 7500,
+      baseAtk: 680,
+    },
   },
   huangrong: {
     id: 'huangrong',
     name: '黄蓉',
-    title: '桃花仙子·丐帮女侠',
-    tier: 'orange',
+    title: '小乞儿·黄蓉',
+    tier: 'purple',
     role: 'RIGHT',
     route: 'STORY',
     portraitStyle: 'huangrong',
     poem: '白衣金带摇竹杖，巧笑嫣然破千军。',
     favGift: '八宝肥鸭',
     teachSkillId: 'dagou_bangfa',
-    assistSkillName: '打狗绊字诀',
-    assistDesc: '顶级奇策控场：布奇门阵加全队闪避，每2回合精准封穴打断敌方主力。',
-    baseHp: 5200,
-    baseAtk: 560,
+    assistSkillName: '绊字诀',
+    assistDesc: '灵动奇策：偶尔布下奇门阵略增全队闪避，并以竹杖绊住敌方一人。',
+    baseHp: 3900,
+    baseAtk: 430,
+    awakenTokens: 30,
+    awakened: {
+      tier: 'orange',
+      title: '桃花仙子·丐帮女侠',
+      assistSkillName: '打狗绊字诀',
+      assistDesc: '顶级奇策控场：布奇门阵加全队闪避，每2回合精准封穴打断敌方主力。',
+      baseHp: 5200,
+      baseAtk: 560,
+    },
   },
   hongqigong: {
     id: 'hongqigong',
     name: '洪七公',
     title: '北丐·九指神丐',
-    tier: 'red',
+    tier: 'orange',
+    grade: '下',
     role: 'LEFT',
     route: 'AFFINITY',
     portraitStyle: 'hongqigong',
     poem: '朱红酒葫绿玉杖，神龙摆尾傲苍穹。',
     favGift: '荷叶叫花鸡',
     teachSkillId: 'kanglong_youhui',
-    assistSkillName: '神龙摆尾',
-    assistDesc: '神话破阵：全队刚猛外功伤害 +25%，高频触发霸道掌风连击。',
-    baseHp: 9600,
-    baseAtk: 920,
+    assistSkillName: '神龙摆尾·初',
+    assistDesc: '刚猛破阵：高频掌风连击，小幅提升全队外功伤害。',
+    baseHp: 7600,
+    baseAtk: 740,
+    awakenTokens: 60,
+    awakened: {
+      tier: 'red',
+      title: '北丐·九指神丐',
+      assistSkillName: '神龙摆尾',
+      assistDesc: '神话破阵：全队刚猛外功伤害 +25%，高频触发霸道掌风连击。',
+      baseHp: 9600,
+      baseAtk: 920,
+    },
   },
   huangyaoshi: {
     id: 'huangyaoshi',
     name: '黄药师',
     title: '东邪·桃花岛主',
-    tier: 'red',
+    tier: 'orange',
+    grade: '下',
     role: 'RIGHT',
     route: 'AFFINITY',
     portraitStyle: 'huangyaoshi',
     poem: '桃花影落飞神剑，碧海潮生按玉箫。',
     favGift: '广陵散古谱',
     teachSkillId: 'bihai_chaosheng',
-    assistSkillName: '弹指神通',
-    assistDesc: '神话奇策：压制敌方全体出手速度，凌空弹指秒杀残血目标。',
-    baseHp: 7800,
-    baseAtk: 890,
+    assistSkillName: '弹指神通·初',
+    assistDesc: '奇策压制：削弱敌方出手速度，凌空弹指点杀残血目标。',
+    baseHp: 6400,
+    baseAtk: 720,
+    awakenTokens: 60,
+    awakened: {
+      tier: 'red',
+      title: '东邪·桃花岛主',
+      assistSkillName: '弹指神通',
+      assistDesc: '神话奇策：压制敌方全体出手速度，凌空弹指秒杀残血目标。',
+      baseHp: 7800,
+      baseAtk: 890,
+    },
   },
   zhoubotong: {
     id: 'zhoubotong',
     name: '周伯通',
     title: '老顽童',
-    tier: 'red',
+    tier: 'orange',
+    grade: '下',
     role: 'EITHER',
     route: 'AFFINITY',
     portraitStyle: 'zhoubotong',
     poem: '左手画方右画圆，清音洞里乐忘年。',
     favGift: '大将军促织(蟋蟀)',
     teachSkillId: 'kongming_quan',
-    assistSkillName: '双手互搏连击',
-    assistDesc: '每次触发协战必定连出两拳，且免疫一切心神混乱状态！',
-    baseHp: 8900,
-    baseAtk: 860,
+    assistSkillName: '双手互搏·初',
+    assistDesc: '老顽童的连击：协战偶尔连出两拳，免疫心神混乱。',
+    baseHp: 7200,
+    baseAtk: 700,
+    awakenTokens: 60,
+    awakened: {
+      tier: 'red',
+      title: '老顽童',
+      assistSkillName: '双手互搏连击',
+      assistDesc: '每次触发协战必定连出两拳，且免疫一切心神混乱状态！',
+      baseHp: 8900,
+      baseAtk: 860,
+    },
   },
   munianci: {
     id: 'munianci',
@@ -927,7 +992,8 @@ export const COMPANIONS: Record<string, CompanionConfig> = {
     id: 'ouyangfeng',
     name: '欧阳锋',
     title: '西毒·白驼山主',
-    tier: 'red',
+    tier: 'orange',
+    grade: '下',
     role: 'LEFT',
     route: 'AFFINITY',
     portraitStyle: 'ouyangfeng',
@@ -935,10 +1001,19 @@ export const COMPANIONS: Record<string, CompanionConfig> = {
     poem: '灵蛇出洞风云变，一式蛤蟆震八荒。',
     favGift: '西域蛇胆酒',
     teachSkillId: 'hama_gong',
-    assistSkillName: '蛤蟆劲',
-    assistDesc: '蓄势三层后下一击伤害翻倍，震退敌方前排，攻击附带蛇毒。',
-    baseHp: 9200,
-    baseAtk: 900,
+    assistSkillName: '蛤蟆劲·初',
+    assistDesc: '蓄势三层后下一击翻倍，震退敌方前排。',
+    baseHp: 7600,
+    baseAtk: 730,
+    awakenTokens: 60,
+    awakened: {
+      tier: 'red',
+      title: '西毒·白驼山主',
+      assistSkillName: '蛤蟆劲',
+      assistDesc: '蓄势三层后下一击伤害翻倍，震退敌方前排，攻击附带蛇毒。',
+      baseHp: 9200,
+      baseAtk: 900,
+    },
   },
   // ───────── 第一批扩充：五绝补全 / 全真 / 大漠 / 杨家 / 桃花等（第12册 §三） ─────────
   yideng: {
@@ -1217,6 +1292,47 @@ export const COMPANIONS: Record<string, CompanionConfig> = {
     baseHp: 4300,
     baseAtk: 440,
   },
+}
+
+/** 伙伴运行时形态（存档里只存 form / grade，其余由配置推导） */
+export interface CompanionStateLike {
+  form?: 'base' | 'awakened'
+  grade?: CompanionGrade | null
+}
+
+/** 战斗与界面实际使用的伙伴视图：已套用形态与资质系数 */
+export interface CompanionView {
+  id: string
+  name: string
+  title: string
+  tier: TierColor
+  grade: CompanionGrade | null
+  form: 'base' | 'awakened'
+  portraitStyle: PortraitStyle
+  assistSkillName: string
+  assistDesc: string
+  baseHp: number
+  baseAtk: number
+}
+
+export function companionView(cfg: CompanionConfig, st?: CompanionStateLike): CompanionView {
+  const awakened = st?.form === 'awakened' && !!cfg.awakened
+  const f: CompanionForm = awakened ? cfg.awakened! : cfg
+  const grade = awakened ? null : f.tier === 'orange' ? (st?.grade ?? cfg.grade ?? '中') : null
+  const mult = grade ? GRADE_MULT[grade] : 1
+  return {
+    id: cfg.id,
+    name: cfg.name,
+    title: f.title,
+    tier: f.tier,
+    grade,
+    form: awakened ? 'awakened' : 'base',
+    portraitStyle: cfg.portraitStyle,
+    assistSkillName: f.assistSkillName,
+    assistDesc: f.assistDesc,
+    baseHp: Math.round(f.baseHp * mult),
+    baseAtk: Math.round(f.baseAtk * mult),
+  }
 }
 
 /** 1主+2副 经典三人行羁绊共鸣 */
@@ -1598,6 +1714,8 @@ export type { StoryNodeConfig as StoryChapterConfig, Reward, AdventureConfig, Ad
  * 数据引用自检：任何 skill / item / companion / map / 节点 id 写错，都会在这里报出来。
  * 开发期由 gameStore 初始化时调用并 console.warn；冒烟测试里断言为空。
  */
+const TIER_RANK: Record<TierColor, number> = { green: 1, blue: 2, purple: 3, orange: 4, red: 5 }
+
 export function validateGameData(): string[] {
   const errs: string[] = []
   const chk = (ok: boolean, msg: string) => {
@@ -1642,12 +1760,16 @@ export function validateGameData(): string[] {
     Object.values(s.signatureItems ?? {}).forEach((id) => chk(!!ITEMS[id], `门派 ${s.name}: 未知装备 ${id}`))
   }
   for (const m of MAPS) chk(m.reqCleared === undefined || nodeIds.includes(m.reqCleared), `地图 ${m.name}: reqCleared 不存在`)
-  // 剧情送的伙伴最多紫品（第12册 §一）。郭靖/黄蓉的橙品成熟形态待“少年/成熟”进阶机制落地后再收紧
-  const STORY_TIER_EXEMPT = ['guojing', 'huangrong']
+  // 剧情送的伙伴基础形态最多紫品（第12册 §一）；觉醒形态不受此限
   for (const c of Object.values(COMPANIONS)) {
-    if (c.route === 'STORY' && !STORY_TIER_EXEMPT.includes(c.id)) chk(c.tier === 'blue' || c.tier === 'purple' || c.tier === 'green', `伙伴 ${c.name}: 剧情送伙伴不得高于紫品`)
+    if (c.route === 'STORY') chk(['green', 'blue', 'purple'].includes(c.tier), `伙伴 ${c.name}: 剧情送伙伴基础形态不得高于紫品`)
     if (c.route === 'GACHA') chk(!!c.meetHint, `伙伴 ${c.name}: 抽卡伙伴需要 meetHint`)
     if (c.grade) chk(c.tier === 'orange', `伙伴 ${c.name}: 资质仅用于橙品`)
+    if (c.route === 'AFFINITY' && c.tier === 'orange') chk(c.grade === '下', `伙伴 ${c.name}: 好感线橙品应为「橙·下」`)
+    if (c.awakened) {
+      chk(!!c.awakenTokens && c.awakenTokens > 0, `伙伴 ${c.name}: 觉醒需要 awakenTokens`)
+      chk(TIER_RANK[c.awakened.tier] > TIER_RANK[c.tier], `伙伴 ${c.name}: 觉醒形态品质应高于基础形态`)
+    }
   }
   for (const set of COMPANION_SETS) {
     set.memberIds.forEach((id) => chk(!!COMPANIONS[id], `套装 ${set.name}: 未知伙伴 ${id}`))
@@ -1664,6 +1786,18 @@ export function validateGameData(): string[] {
 
 /** 后续资料片路线预览（对应第07册） */
 /** 市井消费定价（store 与 UI 共用，避免两处硬编码不一致） */
+/** 客栈送礼的每日次数（以子时为界刷新，仅「新游戏」生效） */
+export const INN_TEA_DAILY = 3
+export const INN_GIFT_DAILY = 1
+
+/** 好感上限随主线推进抬高：通关第 3 章 → 600，通关第 5 章 → 1000，此前 300（第12册 §六） */
+export function affinityCapFor(maxChapterId: number): number {
+  const lastNodeOf = (chapter: number) => Math.max(...STORY_CHAPTERS.filter((n) => n.chapter === chapter).map((n) => n.id))
+  if (maxChapterId > lastNodeOf(5)) return 1000
+  if (maxChapterId > lastNodeOf(3)) return 600
+  return 300
+}
+
 export const INN_TEA_COST = 300
 export const INN_GIFT_COST = 1200
 export const GHOST_APPRAISE_COST = 600

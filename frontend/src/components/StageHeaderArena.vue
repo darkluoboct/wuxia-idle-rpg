@@ -6,7 +6,7 @@
  */
 import { computed } from 'vue'
 import { useGameStore } from '@/stores/gameStore'
-import { COMPANIONS, SKILLS } from '@/config/gameData'
+import { SKILLS } from '@/config/gameData'
 import { MAP_MOOD_LABEL, TIER_META } from '@/config/uiMeta'
 import PortraitCard from './PortraitCard.vue'
 import SceneBackdrop from './SceneBackdrop.vue'
@@ -14,10 +14,10 @@ import SceneBackdrop from './SceneBackdrop.vue'
 const store = useGameStore()
 
 const leftComp = computed(() =>
-  store.currentLoadout.leftCompanionId ? COMPANIONS[store.currentLoadout.leftCompanionId] : null
+  store.currentLoadout.leftCompanionId ? (store.companionOf(store.currentLoadout.leftCompanionId) ?? null) : null
 )
 const rightComp = computed(() =>
-  store.currentLoadout.rightCompanionId ? COMPANIONS[store.currentLoadout.rightCompanionId] : null
+  store.currentLoadout.rightCompanionId ? (store.companionOf(store.currentLoadout.rightCompanionId) ?? null) : null
 )
 
 const SLOT_ORDER = ['LEFT', 'MAIN', 'RIGHT']

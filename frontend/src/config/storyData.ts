@@ -112,8 +112,8 @@ export const STORY_CHAPTERS: StoryNodeConfig[] = [
     intro: '烟雨濛濛，你在嘉兴城外一座破庙避雨，神龛后竟躺着一名身中数刀的神秘客。庙外脚步杂沓，数名黑衣人持刀追入，厉声喝问：“东西交出来！”',
     rewardQi: 900, rewardSilver: 250,
     firstClear: {
-      tag: '残卷入怀', tone: 'gold', qiExp: 800,
-      text: '黑衣人落荒而逃。忘机客气息奄奄，将一册《武库残卷》与刻着桃花暗记的铁八卦塞入你掌心，又以掌力渡入真气——你任督二脉的初脉，竟在这一刻悄然贯通。',
+      tag: '残卷入怀', tone: 'gold', qiExp: 800, items: ['iron_bagua'], skills: ['kaishan_zhang'],
+      text: '黑衣人落荒而逃。忘机客气息奄奄，将一册《武库残卷》与刻着桃花暗记的铁八卦塞入你掌心，又以掌力渡入真气——你任督二脉的初脉，竟在这一刻悄然贯通；残卷首页那一路开山掌法，你竟也看懂了。',
     },
   },
   {
@@ -123,7 +123,7 @@ export const STORY_CHAPTERS: StoryNodeConfig[] = [
     intro: '你循铁八卦的线索进了嘉兴城。醉仙楼上，江南七怪与全真丘处机正以酒碗较量内力，一个憨厚少年在旁看得出神。丘处机门下的赵志敬见你气度不凡，起身拱手：“这位朋友，可愿赐教？”',
     rewardQi: 1500, rewardSilver: 450, dropItemIds: ['qimei_stick'],
     firstClear: {
-      tag: '醉仙结缘', tone: 'jade', affinity: { guojing: 60, kezhene: 60 },
+      tag: '醉仙结缘', tone: 'jade', affinity: { guojing: 120, kezhene: 120 },
       text: '一战罢，憨厚少年郭靖拍手叫好，非要拉你入座喝酒；目不能视的柯镇恶循声而至，沉声称许你“步法稳当”。你在这座酒楼上，结识了江湖里第一批朋友。',
     },
   },
@@ -184,7 +184,7 @@ export const STORY_CHAPTERS: StoryNodeConfig[] = [
     intro: '宝应城外松林深处，黄蓉烹出一桌“玉笛谁家听落梅”，馋得一位蓬头丐者坐地大嚼。酒足饭饱，他抹抹嘴：“小娃娃，让老叫化瞧瞧你的掌力。”',
     rewardQi: 7000, rewardSilver: 2200, dropSkillIds: ['huntian_qigong'],
     firstClear: {
-      tag: '松林论掌', tone: 'gold', affinity: { hongqigong: 80 },
+      tag: '松林论掌', tone: 'gold', affinity: { hongqigong: 30 },
       text: '洪七公大笑拍腿：“好小子，不骄不躁，是块好料！”当场演示了降龙十八掌的几式刚猛掌法，掌风过处，松针如雨。',
     },
   },
@@ -206,7 +206,7 @@ export const STORY_CHAPTERS: StoryNodeConfig[] = [
     intro: '海船泊岸，桃花岛烟霞万顷。西毒欧阳锋携侄儿欧阳克登岛求亲，东邪黄药师以“箫声抗衡、奇门背诵、拆招过关”三道试题考校天下英豪。轮到你时，黄药师淡淡一笑：“且让你看看我三成功力。”',
     rewardQi: 12000, rewardSilver: 3500, dropItemIds: ['biyu_xiao'],
     firstClear: {
-      tag: '桃花三试', tone: 'gold', qiExp: 2500, affinity: { huangyaoshi: 120 },
+      tag: '桃花三试', tone: 'gold', qiExp: 2500, affinity: { huangyaoshi: 30 },
       text: '三道试题，你拆过了最后一招。黄药师收箫长笑：“好！天下英雄，今日算你一个。”桃花岛的门户，从此对你敞开。',
     },
   },
@@ -217,7 +217,7 @@ export const STORY_CHAPTERS: StoryNodeConfig[] = [
     intro: '你误入桃花岛清音洞，洞中一位须发皆白的老者蹦跳而出，拉住你不放：“好玩好玩！快陪我打一架，打赢了我教你背《九阴真经》！”',
     rewardQi: 9800, rewardSilver: 3000,
     firstClear: {
-      tag: '洞中岁月', tone: 'jade', affinity: { zhoubotong: 200 },
+      tag: '洞中岁月', tone: 'jade', affinity: { zhoubotong: 30 },
       text: '你与老顽童拆了三百招，他笑得满地打滚，硬拉你结拜为兄弟。洞中不知岁月，他口中念念有词的《九阴真经》总纲，被你听了个七七八八。',
     },
   },
@@ -252,7 +252,7 @@ export const STORY_CHAPTERS: StoryNodeConfig[] = [
     intro: '为寻《武穆遗书》抗金，并救治重伤的洪七公，你连闯湘西铁掌帮三山，终于登上铁掌峰顶。铁掌帮主裘千仞立于绝壁，双掌乌黑：“来者何人，敢闯我铁掌峰！”',
     rewardQi: 25000, rewardSilver: 6000, dropItemIds: ['wumu_yishu', 'tiancan_glove'], dropSkillIds: ['shuishang_piao'],
     firstClear: {
-      tag: '渔樵耕读', tone: 'gold', flags: ['yuqiao_gengdu'], qiExp: 5000, affinity: { hongqigong: 120, zhuziliu: 120, qiuqianren: 20 },
+      tag: '渔樵耕读', tone: 'gold', flags: ['yuqiao_gengdu'], qiExp: 5000, affinity: { hongqigong: 30, zhuziliu: 120, qiuqianren: 20 },
       text: '你击败裘千仞，从峰顶密室取得《武穆遗书》。下山后你于桃源连闯“渔、樵、耕、读”四关，终于见到了隐居的南帝一灯大师。【大理一灯居】的山门，向你敞开。',
     },
   },
@@ -464,8 +464,8 @@ export const ADVENTURES: AdventureConfig[] = [
       },
       {
         key: 'B', label: '陪老顽童斗促织，畅谈江湖趣闻',
-        requirementText: '周伯通好感 +120，真气 +4,000',
-        reward: { tag: '忘年之交', tone: 'jade', affinity: { zhoubotong: 120 }, qiExp: 4000, text: '你陪老顽童斗促织大胜三局，周伯通笑得直拍大腿，连连说“这朋友交定了”。' },
+        requirementText: '周伯通好感 +30，真气 +4,000',
+        reward: { tag: '忘年之交', tone: 'jade', affinity: { zhoubotong: 30 }, qiExp: 4000, text: '你陪老顽童斗促织大胜三局，周伯通笑得直拍大腿，连连说“这朋友交定了”。' },
       },
     ],
   },
@@ -476,13 +476,13 @@ export const ADVENTURES: AdventureConfig[] = [
     choices: [
       {
         key: 'A', label: '暗中搬开巨石，救下欧阳克',
-        requirementText: '侠义 −40，结交西毒欧阳锋（蛤蟆功传功线），得【白驼山描金折扇】',
-        reward: { tag: '结交西毒', tone: 'purple', stats: { karma: -40 }, items: ['baituo_fan'], affinity: { ouyangfeng: 150, ouyangke: 60 }, flags: ['baituo_favor'], text: '欧阳克被你救下，感激之余将描金折扇相赠；远处，欧阳锋阴恻恻的目光落在你身上：“小朋友，将来到我白驼山做客。”' },
+        requirementText: '侠义 −40，结识西毒欧阳锋（蛤蟆功传功线），得【白驼山描金折扇】',
+        reward: { tag: '结交西毒', tone: 'purple', stats: { karma: -40 }, items: ['baituo_fan'], affinity: { ouyangfeng: 60, ouyangke: 60 }, flags: ['baituo_favor'], text: '欧阳克被你救下，感激之余将描金折扇相赠；远处，欧阳锋阴恻恻的目光落在你身上：“小朋友，将来到我白驼山做客。”' },
       },
       {
         key: 'B', label: '袖手旁观，转身而去',
-        requirementText: '侠义 +30，黄蓉、洪七公好感各 +80',
-        reward: { tag: '正邪分明', tone: 'jade', stats: { karma: 30 }, affinity: { huangrong: 80, hongqigong: 80 }, text: '你冷冷瞥了一眼，转身离去。桃花林里，黄蓉与洪七公听说了此事，相视而笑。' },
+        requirementText: '侠义 +30，黄蓉、洪七公好感各 +30',
+        reward: { tag: '正邪分明', tone: 'jade', stats: { karma: 30 }, affinity: { huangrong: 30, hongqigong: 30 }, text: '你冷冷瞥了一眼，转身离去。桃花林里，黄蓉与洪七公听说了此事，相视而笑。' },
       },
     ],
   },
@@ -493,9 +493,9 @@ export const ADVENTURES: AdventureConfig[] = [
     choices: [
       {
         key: 'A', label: '凝神推演九宫，一口报出立方根',
-        requirementText: '需悟性 ≥ 36（得【黑沼·九尾灵狐】与《泥鳅功》，周伯通好感 +100）',
+        requirementText: '需悟性 ≥ 36（得【黑沼·九尾灵狐】与《泥鳅功》，周伯通好感 +30，瑛姑好感 +40）',
         require: (c) => c.stats.intStat >= 36,
-        reward: { tag: '解开九宫', tone: 'gold', items: ['jiuwei_fox'], skills: ['niqiu_gong'], affinity: { zhoubotong: 100, yinggu: 40 }, text: '瑛姑瞪着你，忽然又哭又笑，将伴她多年的九尾灵狐与泥鳅功秘籍一并送你：“多年解不开的题，今日终于……终于有人解开了。”' },
+        reward: { tag: '解开九宫', tone: 'gold', items: ['jiuwei_fox'], skills: ['niqiu_gong'], affinity: { zhoubotong: 30, yinggu: 40 }, text: '瑛姑瞪着你，忽然又哭又笑，将伴她多年的九尾灵狐与泥鳅功秘籍一并送你：“多年解不开的题，今日终于……终于有人解开了。”' },
       },
       {
         key: 'B', label: '帮她采药熬汤，陪她推演三日',

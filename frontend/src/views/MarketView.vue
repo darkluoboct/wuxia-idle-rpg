@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useGameStore } from '@/stores/gameStore'
-import { COMPANIONS, GHOST_APPRAISE_COST, INN_GIFT_COST, INN_TEA_COST, SKILLS } from '@/config/gameData'
+import { COMPANIONS, GHOST_APPRAISE_COST, GRADE_MULT, INN_GIFT_COST, INN_TEA_COST, SKILLS } from '@/config/gameData'
 import { STANCE_META, TIER_META } from '@/config/uiMeta'
 import type { StanceType } from '@/network/protocol'
 import InkFigure from '@/components/InkFigure.vue'
@@ -15,6 +15,23 @@ function enterGhostMarket() {
 }
 
 const canAfford = (cost: number) => store.player.silver >= cost
+/** 伙伴当前形态视图（形态 / 资质已套用） */
+const view = (id: string) => store.companionOf(id)!
+/** 送礼按钮是否可点：银两、今日次数、好感封顶三者都要满足 */
+function giftDisabled(id: string, favorite: boolean) {
+  const left = store.giftsLeft(id)
+  return (
+    !canAfford(favorite ? INN_GIFT_COST : INN_TEA_COST) ||
+    (favorite ? left.gift : left.tea) <= 0 ||
+    (store.companionAffinity[id]?.affinity ?? 0) >= store.affinityCap
+  )
+}
+const leftLabel = (n: number) => (Number.isFinite(n) ? `今日余 ${n}` : '')
+function canAwaken(id: string) {
+  const st = store.companionAffinity[id]
+  const need = COMPANIONS[id].awakenTokens ?? 30
+  return !!st && st.form === 'base' && st.recruited && st.affinity >= 600 && st.tokens >= need
+}
 /** 这一杯酒喝完好感是否会跨过 600（生死之交）门槛 */
 function willTrigger(id: string, gain: number) {
   const st = store.companionAffinity[id]
@@ -83,15 +100,19 @@ function challengeFiveGreats(p: (typeof fiveGreats)[0]) {
           </article>
           <article
             v-else class="well flex gap-3 p-3"
-            :class="[TIER_META[c.tier].cls]"
+            :class="[TIER_META[view(c.id).tier].cls]"
           >
             <div class="relative h-[6.2rem] w-[4.6rem] shrink-0 self-start overflow-hidden bg-[var(--bg-1)] tier-edge">
               <InkFigure :style-type="c.portraitStyle" />
             </div>
             <div class="flex min-w-0 flex-1 flex-col gap-2">
               <div class="flex items-baseline justify-between gap-2">
-                <h4 class="font-brush truncate text-xl leading-none">{{ c.name }}<span class="ml-1.5 font-sans text-xs tracking-normal text-ink3">{{ c.title }}</span></h4>
-                <span v-if="store.companionAffinity[c.id]?.taught" class="chip chip-gold shrink-0">已传功</span>
+                <h4 class="font-brush truncate text-xl leading-none">{{ c.name }}<span class="ml-1.5 font-sans text-xs tracking-normal text-ink3">{{ view(c.id).title }}</span></h4>
+                <span class="flex shrink-0 items-center gap-1">
+                  <span v-if="view(c.id).grade" class="chip !py-0 !text-[0.68rem]" :title="`橙品资质：属性系数 ×${GRADE_MULT[view(c.id).grade!]}`">橙·{{ view(c.id).grade }}</span>
+                  <span v-if="view(c.id).form === 'awakened'" class="chip chip-red !py-0 !text-[0.68rem]">觉醒</span>
+                  <span v-if="store.companionAffinity[c.id]?.taught" class="chip chip-gold">已传功</span>
+                </span>
               </div>
               <p class="text-xs italic leading-snug text-ink3">“{{ c.poem }}”</p>
 
@@ -100,10 +121,11 @@ function challengeFiveGreats(p: (typeof fiveGreats)[0]) {
                 <div class="relative">
                   <div class="bar bar-gold"><i :style="{ width: `${((store.companionAffinity[c.id]?.affinity ?? 0) / 1000) * 100}%` }" /></div>
                   <i class="absolute -top-0.5 left-[10%] h-2.5 w-px bg-ink3" /><i class="absolute -top-0.5 left-[60%] h-2.5 w-px bg-gold" />
+                  <i v-if="store.limitsEnabled && store.affinityCap < 1000" class="absolute -top-1 h-3.5 w-0.5 bg-cinnabar" :style="{ left: `${store.affinityCap / 10}%` }" :title="`当前章节好感上限 ${store.affinityCap}`" />
                 </div>
                 <div class="relative mt-0.5 flex justify-between text-[0.7rem] tabular-nums leading-none text-ink3">
                   <b class="text-gold">{{ store.companionAffinity[c.id]?.affinity ?? 0 }} / 1000</b>
-                  <span>编入 100 · 传功 600</span>
+                  <span>编入 100 · 传功 600<template v-if="store.limitsEnabled && store.affinityCap < 1000"> · <b class="text-cinnabar">上限 {{ store.affinityCap }}</b></template></span>
                 </div>
               </div>
 
@@ -114,16 +136,26 @@ function challengeFiveGreats(p: (typeof fiveGreats)[0]) {
               <p v-if="willTrigger(c.id, 80)" class="text-xs font-bold text-gold">再奉一杯爱物，即可触发「倾囊传功」！</p>
 
               <div class="mt-auto grid grid-cols-2 gap-1.5">
-                <button class="btn btn-sm !min-h-[2.4rem] flex-col !gap-0" :disabled="!canAfford(INN_TEA_COST)" @click="store.giftCompanionInInn(c.id, false)">
-                  <span>清茶</span><span class="text-[0.7rem] text-ink3">{{ INN_TEA_COST }} 两 · +20</span>
+                <button class="btn btn-sm !min-h-[2.4rem] flex-col !gap-0" :disabled="giftDisabled(c.id, false)" @click="store.giftCompanionInInn(c.id, false)">
+                  <span>清茶</span><span class="text-[0.7rem] text-ink3">{{ INN_TEA_COST }} 两 · +20 {{ leftLabel(store.giftsLeft(c.id).tea) }}</span>
                 </button>
                 <button
                   class="btn btn-sm btn-gold !min-h-[2.4rem] flex-col !gap-0" :class="willTrigger(c.id, 80) ? 'anim-pulse-glow' : ''"
-                  :disabled="!canAfford(INN_GIFT_COST)" @click="store.giftCompanionInInn(c.id, true)"
+                  :disabled="giftDisabled(c.id, true)" @click="store.giftCompanionInInn(c.id, true)"
                 >
-                  <span class="max-w-full truncate">{{ c.favGift }}</span><span class="text-[0.7rem] opacity-80">{{ INN_GIFT_COST }} 两 · +80</span>
+                  <span class="max-w-full truncate">{{ c.favGift }}</span><span class="text-[0.7rem] opacity-80">{{ INN_GIFT_COST }} 两 · +80 {{ leftLabel(store.giftsLeft(c.id).gift) }}</span>
                 </button>
               </div>
+
+              <!-- 觉醒进阶：好感 600 + 伙伴信物 -->
+              <button
+                v-if="c.awakened && store.companionAffinity[c.id]?.form === 'base'"
+                class="btn btn-sm w-full flex-col !gap-0" :class="canAwaken(c.id) ? 'btn-seal anim-pulse-glow' : ''"
+                :disabled="!canAwaken(c.id)" :title="`觉醒为「${c.awakened.title}」：好感 ≥600，消耗信物 ${c.awakenTokens ?? 30}`" @click="store.awakenCompanion(c.id)"
+              >
+                <span>觉醒 · {{ c.awakened.title }}</span>
+                <span class="text-[0.7rem] opacity-80">信物 {{ store.companionAffinity[c.id]?.tokens ?? 0 }} / {{ c.awakenTokens ?? 30 }} · 需好感 600</span>
+              </button>
             </div>
           </article>
           </template>

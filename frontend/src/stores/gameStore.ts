@@ -26,11 +26,15 @@ import {
   activeSetBonuses,
   ADVENTURES,
   adventureById,
+  affinityCapFor,
   COMPANIONS,
+  companionView,
   findTrioSynergy,
   GHOST_APPRAISE_COST,
   INN_GIFT_COST,
+  INN_GIFT_DAILY,
   INN_TEA_COST,
+  INN_TEA_DAILY,
   isMapUnlocked,
   ITEMS,
   MAPS,
@@ -41,6 +45,7 @@ import {
   STORY_CHAPTERS,
   validateGameData,
   type AdventureChoice,
+  type CompanionGrade,
   type AdventureCtx,
   type Reward,
 } from '@/config/gameData'
@@ -146,37 +151,49 @@ export const useGameStore = defineStore('wuxiaGame', () => {
   const adventureQueue = ref<string[]>([])
   const pendingAdventureId = ref<string | null>('shedu_baoxue')
 
+  // 开局模式：null=尚未选择（显示开局界面）；NEW=新游戏（正式规则）；DEMO=演武模式（旧版全伙伴 Demo，后续版本移除）
+  const gameMode = ref<'NEW' | 'DEMO' | null>(null)
+  const limitsEnabled = computed(() => gameMode.value === 'NEW')
+
   // 伙伴好感度与招募状态（met=已结识，客栈才会显示；recruited=好感≥100可编入左右翼）
-  type CompanionState = { affinity: number; recruited: boolean; taught: boolean; met: boolean }
-  const companionAffinity = ref<Record<string, CompanionState>>({
-    kezhene: { affinity: 180, recruited: true, taught: true, met: true },
-    meichaofeng: { affinity: 140, recruited: true, taught: false, met: true },
-    guojing: { affinity: 340, recruited: true, taught: false, met: true },
-    huangrong: { affinity: 360, recruited: true, taught: false, met: true },
-    hongqigong: { affinity: 540, recruited: true, taught: false, met: true }, // 差60满600即可体验请叫花鸡触发《亢龙有悔》倾囊传功！
-    huangyaoshi: { affinity: 220, recruited: true, taught: false, met: true },
-    zhoubotong: { affinity: 480, recruited: true, taught: false, met: true },
-    // 射雕篇新伙伴：通过主线 / 支线剧情结识
-    munianci: { affinity: 0, recruited: false, taught: false, met: false },
-    ouyangfeng: { affinity: 0, recruited: false, taught: false, met: false },
-    // 第一批扩充（第12册）：剧情送 / 好感线靠主线与支线结识，抽卡线待客栈「结缘」开放
-    yideng: { affinity: 0, recruited: false, taught: false, met: false },
-    wangchongyang: { affinity: 0, recruited: false, taught: false, met: false },
-    qiuchuji: { affinity: 0, recruited: false, taught: false, met: false },
-    qiuqianren: { affinity: 0, recruited: false, taught: false, met: false },
-    yangkang: { affinity: 0, recruited: false, taught: false, met: false },
-    zhebie: { affinity: 0, recruited: false, taught: false, met: false },
-    lingzhi: { affinity: 0, recruited: false, taught: false, met: false },
-    yinggu: { affinity: 0, recruited: false, taught: false, met: false },
-    mayu: { affinity: 0, recruited: false, taught: false, met: false },
-    tanchuduan: { affinity: 0, recruited: false, taught: false, met: false },
-    wangchuyi: { affinity: 0, recruited: false, taught: false, met: false },
-    sunbuer: { affinity: 0, recruited: false, taught: false, met: false },
-    ouyangke: { affinity: 0, recruited: false, taught: false, met: false },
-    yangtiexin: { affinity: 0, recruited: false, taught: false, met: false },
-    luchengfeng: { affinity: 0, recruited: false, taught: false, met: false },
-    zhuziliu: { affinity: 0, recruited: false, taught: false, met: false },
-  })
+  type CompanionState = {
+    affinity: number
+    recruited: boolean
+    taught: boolean
+    met: boolean
+    form: 'base' | 'awakened'
+    grade: CompanionGrade | null
+    tokens: number // 伙伴信物，用于觉醒进阶
+  }
+  const blankCompanionStates = (): Record<string, CompanionState> =>
+    Object.fromEntries(
+      Object.values(COMPANIONS).map((c) => [
+        c.id,
+        { affinity: 0, recruited: false, taught: false, met: false, form: 'base' as const, grade: c.grade ?? null, tokens: 0 },
+      ])
+    )
+  /** 演武模式：旧版 Demo 的“全伙伴”开局，强力伙伴直接处于觉醒形态（后续版本移除） */
+  function demoCompanionStates(): Record<string, CompanionState> {
+    const s = blankCompanionStates()
+    const set = (id: string, affinity: number, o: Partial<CompanionState> = {}) => Object.assign(s[id], { affinity, recruited: true, met: true }, o)
+    set('kezhene', 180, { taught: true })
+    set('meichaofeng', 140)
+    set('guojing', 340, { form: 'awakened' })
+    set('huangrong', 360, { form: 'awakened' })
+    set('hongqigong', 540, { form: 'awakened' }) // 差60满600即可体验请叫花鸡触发《亢龙有悔》倾囊传功！
+    set('huangyaoshi', 220, { form: 'awakened' })
+    set('zhoubotong', 480, { form: 'awakened' })
+    return s
+  }
+  const companionAffinity = ref<Record<string, CompanionState>>(demoCompanionStates())
+
+  // 客栈送礼：每日次数（以子时为界刷新，仅新游戏生效）
+  const innDay = ref('')
+  const innGiftsToday = ref<Record<string, { tea: number; gift: number }>>({})
+  const dayKey = (t = Date.now()) => {
+    const d = new Date(t + 3600_000) // 23:00 起算新的一天（子时）
+    return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`
+  }
 
   // 3套配装预设
   const presets = ref<Record<1 | 2 | 3, LoadoutPresetDTO>>({
@@ -243,6 +260,16 @@ export const useGameStore = defineStore('wuxiaGame', () => {
     return sum
   })
   const derivedStats = computed(() => computeDerivedStats(player.value, currentLoadout.value, collectionBonus.value))
+
+  /** 好感上限随主线章节推进抬高（仅新游戏）；演武模式不设限 */
+  const affinityCap = computed(() => (limitsEnabled.value ? affinityCapFor(player.value.maxChapterId) : 1000))
+  function giftsLeft(id: string) {
+    if (!limitsEnabled.value) return { tea: Infinity, gift: Infinity }
+    const used = innDay.value === dayKey() ? innGiftsToday.value[id] : undefined
+    return { tea: INN_TEA_DAILY - (used?.tea ?? 0), gift: INN_GIFT_DAILY - (used?.gift ?? 0) }
+  }
+  /** 伙伴当前形态视图（形态 / 资质已套用），界面与战斗统一读它 */
+  const companionOf = (id: string) => (COMPANIONS[id] ? companionView(COMPANIONS[id], companionAffinity.value[id]) : undefined)
 
   // 计算当前实时每小时打坐真气效率
   const effectiveQiPerHour = computed(() => {
@@ -496,6 +523,25 @@ export const useGameStore = defineStore('wuxiaGame', () => {
     }
   }
 
+  // ==================== 武学 / 装备入手（新游戏下空槽自动装配，免去新手手动穿戴） ====================
+  function learnSkill(id: string) {
+    const sk = SKILLS[id]
+    if (!sk) return
+    learnedSkills.value[id] = Math.max(1, learnedSkills.value[id] ?? 0)
+    if (!limitsEnabled.value) return
+    const key = ({ INNER: 'innerSkillId', OUTER: 'outerSkillId', LIGHT: 'lightSkillId', ULT: 'ultSkillId' } as const)[sk.slot]
+    for (const p of Object.values(presets.value)) if (!p[key]) p[key] = id
+  }
+  function gainItem(id: string) {
+    const it = ITEMS[id]
+    if (!it) return
+    if (!ownedItemIds.value.includes(id)) ownedItemIds.value.push(id)
+    if (!limitsEnabled.value) return
+    if (it.reqStat && player.value.stats[it.reqStat.key] < it.reqStat.val) return
+    const key = ({ WEAPON: 'weaponId', ARMOR: 'armorId', ACC: 'accId', RELIC: 'relicBookId' } as const)[it.slot]
+    for (const p of Object.values(presets.value)) if (!p[key]) p[key] = id
+  }
+
   // ==================== 剧情奖励 / 支线奇遇 ====================
   /** 统一结算一个 Reward（首通剧情与奇遇选项共用）：属性 / 资源 / 武学 / 装备 / 好感 / 标记，并写一条富文本日志 */
   function applyReward(r: Reward, channel: GameLogEntry['channel'] = 'ADVENTURE') {
@@ -529,7 +575,7 @@ export const useGameStore = defineStore('wuxiaGame', () => {
       const sk = SKILLS[id]
       if (!sk) continue
       const had = (learnedSkills.value[id] ?? 0) > 0
-      learnedSkills.value[id] = Math.max(1, learnedSkills.value[id] ?? 0)
+      learnSkill(id)
       if (!had) links.push({ type: 'text', text: ' 习得' }, { type: 'skill', id, name: `《${sk.name}》`, tier: sk.tier })
     }
     for (const [id, n] of Object.entries(r.skillBoost ?? {})) {
@@ -543,7 +589,7 @@ export const useGameStore = defineStore('wuxiaGame', () => {
       const it = ITEMS[id]
       if (!it) continue
       if (!ownedItemIds.value.includes(id)) {
-        ownedItemIds.value.push(id)
+        gainItem(id)
         links.push({ type: 'text', text: ' 获得' }, { type: 'item', id, name: `【${it.name}】`, tier: it.tier, isTrueUnique: it.isTrueUnique })
       }
     }
@@ -764,10 +810,10 @@ export const useGameStore = defineStore('wuxiaGame', () => {
       if (report.rewards.items) {
         for (const drop of report.rewards.items) {
           if (SKILLS[drop.id]) {
-            learnedSkills.value[drop.id] = Math.max(1, learnedSkills.value[drop.id] ?? 0)
+            learnSkill(drop.id)
             itemSegs.push({ type: 'skill', id: drop.id, name: `《${drop.name}》`, tier: drop.tier })
           } else if (ITEMS[drop.id]) {
-            if (!ownedItemIds.value.includes(drop.id)) ownedItemIds.value.push(drop.id)
+            if (!ownedItemIds.value.includes(drop.id)) gainItem(drop.id)
             itemSegs.push({ type: 'item', id: drop.id, name: `【${drop.name}】`, tier: drop.tier })
           }
         }
@@ -845,6 +891,7 @@ export const useGameStore = defineStore('wuxiaGame', () => {
 
     const report = simulateServerBattle({
       bonus: collectionBonus.value,
+      companionOf,
       sceneTitle: `${ch.code} ${ch.title}`,
       mode: 'SOLO_STORY',
       player: player.value,
@@ -873,6 +920,7 @@ export const useGameStore = defineStore('wuxiaGame', () => {
   function startThreePlayerCoopRaid() {
     const report = simulateServerBattle({
       bonus: collectionBonus.value,
+      companionOf,
       sceneTitle: '松鹤楼结义 · 少室山三渡金刚伏魔圈',
       mode: 'COOP_3P',
       player: player.value,
@@ -940,6 +988,7 @@ export const useGameStore = defineStore('wuxiaGame', () => {
 
     const report = simulateServerBattle({
       bonus: collectionBonus.value,
+      companionOf,
       sceneTitle: titlePrefix,
       mode: action === 'SPAR' ? 'PVP_HUASHAN' : 'PVP_AMBUSH',
       player: player.value,
@@ -986,7 +1035,7 @@ export const useGameStore = defineStore('wuxiaGame', () => {
     player.value.sectRank = 1
     player.value.sectContribution = 100 + (hasIntro ? (sect.introBonus ?? 0) : 0)
     const entrySkill = sect.signatureSkills[0]
-    if (entrySkill) learnedSkills.value[entrySkill] = Math.max(1, learnedSkills.value[entrySkill] ?? 0)
+    if (entrySkill) learnSkill(entrySkill)
 
     appendLog('JIANGHU', [
       { type: 'tag', text: '奉茶拜师', tone: 'gold' },
@@ -1016,6 +1065,7 @@ export const useGameStore = defineStore('wuxiaGame', () => {
     const nextRankName = currentSect.value.ranks[player.value.sectRank]
     const report = simulateServerBattle({
       bonus: collectionBonus.value,
+      companionOf,
       sceneTitle: `${currentSect.value.name}升阶大考 · 晋升「${nextRankName}」`,
       mode: 'SECT_TRIAL',
       player: player.value,
@@ -1047,12 +1097,12 @@ export const useGameStore = defineStore('wuxiaGame', () => {
       if (skillId && SKILLS[skillId]) {
         const sk = SKILLS[skillId]
         const had = (learnedSkills.value[skillId] ?? 0) > 0
-        learnedSkills.value[skillId] = Math.max(1, learnedSkills.value[skillId] ?? 0)
+        learnSkill(skillId)
         if (!had) grants.push({ type: 'text', text: '，获传绝学' }, { type: 'skill', id: skillId, name: `《${sk.name}》`, tier: sk.tier })
       }
       const itemId = sect.signatureItems?.[newRank]
       if (itemId && ITEMS[itemId] && !ownedItemIds.value.includes(itemId)) {
-        ownedItemIds.value.push(itemId)
+        gainItem(itemId)
         grants.push({ type: 'text', text: '，赐下' }, { type: 'item', id: itemId, name: `【${ITEMS[itemId].name}】`, tier: ITEMS[itemId].tier })
       }
 
@@ -1162,27 +1212,47 @@ export const useGameStore = defineStore('wuxiaGame', () => {
       showToast(`尚未结识【${c.name}】：${c.meetHint ?? '请先推进主线与支线'}`, 'danger')
       return
     }
+    // 限制一：每日次数；限制二：好感随主线章节封顶——都在扣银之前判定，被拒不花钱
+    const left = giftsLeft(compId)
+    if ((isFavorite ? left.gift : left.tea) <= 0) {
+      showToast(`今日已向【${c.name}】${isFavorite ? '赠过爱物' : '敬过清茶'}，明日子时再来`, 'danger')
+      return
+    }
+    const cap = affinityCap.value
+    if (state.affinity >= cap) {
+      showToast(`与【${c.name}】此情已满，待江湖历练更深（通关更多章节可提高上限）`, 'info')
+      return
+    }
     const cost = isFavorite ? INN_GIFT_COST : INN_TEA_COST
     if (player.value.silver < cost) {
       showToast('囊中羞涩，纹银不足以置办酒席！', 'danger')
       return
     }
     player.value.silver -= cost
-    const delta = isFavorite ? 80 : 20
-    state.affinity = Math.min(1000, state.affinity + delta)
+    if (limitsEnabled.value) {
+      if (innDay.value !== dayKey()) {
+        innDay.value = dayKey()
+        innGiftsToday.value = {}
+      }
+      const used = (innGiftsToday.value[compId] ??= { tea: 0, gift: 0 })
+      if (isFavorite) used.gift += 1
+      else used.tea += 1
+    }
+    const delta = Math.min(isFavorite ? 80 : 20, cap - state.affinity)
+    state.affinity += delta
     state.recruited = state.affinity >= 100
 
     appendLog('JIANGHU', [
       { type: 'tag', text: '醉仙煮酒', tone: 'gold' },
       { type: 'text', text: ` 你在二楼雅座奉上「${isFavorite ? c.favGift : '江南水酒'}」与` },
       { type: 'actor', name: c.name, isAlly: true },
-      { type: 'text', text: `把酒言欢，好感度 +${delta}（当前 ${state.affinity}/1000）！` },
+      { type: 'text', text: `把酒言欢，好感度 +${delta}（当前 ${state.affinity}/${cap}）！` },
     ])
 
     // 满600点【生死之交】触发倾囊传功！
     if (state.affinity >= 600 && !state.taught && SKILLS[c.teachSkillId]) {
       state.taught = true
-      learnedSkills.value[c.teachSkillId] = Math.max(1, learnedSkills.value[c.teachSkillId] ?? 0)
+      learnSkill(c.teachSkillId)
       const taughtSk = SKILLS[c.teachSkillId]
       appendLog('ADVENTURE', [
         { type: 'tag', text: '生死之交·倾囊传功', tone: 'gold' },
@@ -1195,6 +1265,34 @@ export const useGameStore = defineStore('wuxiaGame', () => {
     } else {
       showToast(`${c.name}好感度 +${delta}`, 'info')
     }
+  }
+
+  /** 觉醒进阶：好感 ≥600（生死之交）+ 消耗伙伴信物，基础形态 → 觉醒形态（第12册 §四） */
+  function awakenCompanion(compId: string) {
+    const c = COMPANIONS[compId]
+    const st = companionAffinity.value[compId]
+    if (!c?.awakened || !st) return
+    if (st.form === 'awakened') {
+      showToast(`【${c.name}】已是觉醒形态`, 'info')
+      return
+    }
+    if (!st.recruited || st.affinity < 600) {
+      showToast(`觉醒需与【${c.name}】结为生死之交（好感 ≥ 600）`, 'danger')
+      return
+    }
+    const need = c.awakenTokens ?? 30
+    if (st.tokens < need) {
+      showToast(`伙伴信物不足：需 ${need}，现有 ${st.tokens}`, 'danger')
+      return
+    }
+    st.tokens -= need
+    st.form = 'awakened'
+    appendLog('JIANGHU', [
+      { type: 'tag', text: '觉醒进阶', tone: 'gold' },
+      { type: 'actor', name: c.name, isAlly: true },
+      { type: 'text', text: `以信物为引，功力臻至新境，化作【${c.awakened.title}】！` },
+    ])
+    showToast(`【${c.name}】觉醒为「${c.awakened.title}」！`, 'gold')
   }
 
   function appraiseGhostCurio() {
@@ -1215,7 +1313,7 @@ export const useGameStore = defineStore('wuxiaGame', () => {
     player.value.silver -= GHOST_APPRAISE_COST
     const highInsight = player.value.stats.intStat >= 28 || player.value.stats.luck >= 28
     if (highInsight && !ownedItemIds.value.includes('xuantie_heavysword')) {
-      ownedItemIds.value.push('xuantie_heavysword')
+      gainItem('xuantie_heavysword')
       appendLog('ADVENTURE', [
         { type: 'tag', text: '慧眼识珠', tone: 'gold' },
         { type: 'text', text: ' 你摩挲泥污铁胎，凭过人悟性认出竟是剑冢流落的' },
@@ -1257,7 +1355,7 @@ export const useGameStore = defineStore('wuxiaGame', () => {
     if (SKILLS[listing.itemId]) {
       learnedSkills.value[listing.itemId] = 1
     } else if (ITEMS[listing.itemId] && !ownedItemIds.value.includes(listing.itemId)) {
-      ownedItemIds.value.push(listing.itemId)
+      gainItem(listing.itemId)
     }
     ghostListings.value = ghostListings.value.filter((x) => x.id !== listing.id)
     showToast(`匿名交易成功！购得 ${listing.itemName}`, 'gold')
@@ -1276,8 +1374,94 @@ export const useGameStore = defineStore('wuxiaGame', () => {
     })
   }
 
+  // ==================== 开局模式 ====================
+  /**
+   * 选择开局。DEMO 沿用 store 初始化时的“全伙伴 Lv.32”状态（后续版本移除）；
+   * NEW 则整体重置为 Lv.1、0 伙伴、从主线 1-1 起步，伙伴靠剧情与客栈逐步结识。
+   */
+  function startGame(mode: 'NEW' | 'DEMO') {
+    if (mode === 'NEW') {
+      player.value = {
+        id: 'p_10086',
+        nickname: '陆小鱼',
+        avatarId: 'hero_sword',
+        level: 1,
+        realmTier: 1,
+        realmStage: 1,
+        breakPityRate: 0,
+        qiExp: 0,
+        nextLevelQi: calcNextLevelQi(1),
+        silver: 600,
+        goldIngot: 300,
+        stats: { str: 10, con: 10, agi: 10, intStat: 10, luck: 10, karma: 0 },
+        shaQi: 0,
+        currentSectId: null,
+        sectRank: 1,
+        sectContribution: 0,
+        isGuardingLibrary: false,
+        currentMapId: 'jiaxing_suburb',
+        maxChapterId: 1,
+        qiPerHour: 600,
+        lastSettleAt: Date.now() - 1000 * 60 * 5,
+        coCultivatePartner: null,
+        bountyUntil: null,
+        wearingMask: false,
+        activePresetIdx: 1,
+      }
+      learnedSkills.value = {}
+      ownedItemIds.value = ['qinggang_sword']
+      pillCount.value = 0
+      betrayedSectIds.value = []
+      storyFlags.value = []
+      claimedNodeIds.value = []
+      resolvedAdventureIds.value = []
+      adventureQueue.value = []
+      pendingAdventureId.value = null
+      companionAffinity.value = blankCompanionStates()
+      innDay.value = ''
+      innGiftsToday.value = {}
+      const blank = (idx: 1 | 2 | 3, name: string, stance: StanceType): LoadoutPresetDTO => ({
+        presetIdx: idx,
+        name,
+        stance,
+        innerSkillId: null,
+        outerSkillId: null,
+        lightSkillId: null,
+        ultSkillId: null,
+        leftCompanionId: null,
+        rightCompanionId: null,
+        weaponId: 'qinggang_sword',
+        armorId: null,
+        accId: null,
+        relicBookId: null,
+      })
+      presets.value = {
+        1: blank(1, '预设壹·刚猛强攻', 'FIERCE'),
+        2: blank(2, '预设贰·太极反震', 'TAICHI'),
+        3: blank(3, '预设叁·奇门极速', 'AGILE'),
+      }
+      nearbyPlayers.value = generateRoomPlayers('jiaxing_suburb')
+      logs.value = [
+        {
+          id: 'init_new',
+          timeLabel: SHICHEN_LABELS[shichenIdx.value],
+          channel: 'JIANGHU',
+          segments: [
+            { type: 'tag', text: '江湖纪元', tone: 'gold' },
+            { type: 'text', text: ' 南宋嘉定十四年，烟雨迷蒙。你一介白衣，孤身踏入嘉兴南湖，身份是无门无派的' },
+            { type: 'tag', text: '逍遥散人', tone: 'jade' },
+            { type: 'text', text: '。囊中只有几两碎银与一柄青钢剑——江湖路远，且从前方那座破庙开始。' },
+          ],
+        },
+      ]
+      activeTab.value = 'JIANGHU'
+    }
+    gameMode.value = mode
+  }
+
   // 每5秒模拟一次在线打坐微跳与江湖时辰推进
   setInterval(() => {
+    if (!gameMode.value) return
     const tickQi = Math.max(8, Math.round(effectiveQiPerHour.value / 720))
     player.value.qiExp += tickQi
   }, 5000)
@@ -1323,6 +1507,13 @@ export const useGameStore = defineStore('wuxiaGame', () => {
     currentMap,
     currentSect,
     derivedStats,
+    gameMode,
+    limitsEnabled,
+    startGame,
+    affinityCap,
+    giftsLeft,
+    companionOf,
+    awakenCompanion,
     setBonusStates,
     collectionBonus,
     effectiveQiPerHour,
