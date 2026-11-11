@@ -49,6 +49,7 @@ export interface PlayerDTO {
   bountyUntil: number | null        // 叛师追杀令截止时间戳
   wearingMask: boolean              // 是否佩戴夜行蒙面巾(正派入鬼市用)
   activePresetIdx: 1 | 2 | 3
+  bonusHpPct?: number               // 奇遇获得的永久气血上限加成(%)，如《药蛇宝血》+15
 }
 
 /** 装备/秘宝装配与阵容预设 */
@@ -88,6 +89,7 @@ export interface GameLogEntry {
 /** 待抉择江湖奇遇 DTO */
 export interface PendingAdventureDTO {
   id: string
+  templateId?: string       // 奇遇模板ID（服务端据此结算选项效果）
   title: string
   location: string
   description: string
@@ -119,7 +121,9 @@ export interface CombatUnitDTO {
   id: string
   name: string
   title: string
-  portraitStyle: 'hero_sword' | 'guojing' | 'huangrong' | 'hongqigong' | 'huangyaoshi' | 'ouyangfeng' | 'meichaofeng' | 'zhoubotong' | 'monk' | 'assassin'
+  portraitStyle:
+    | 'hero_sword' | 'guojing' | 'huangrong' | 'hongqigong' | 'huangyaoshi' | 'ouyangfeng' | 'meichaofeng' | 'zhoubotong' | 'monk' | 'assassin'
+    | 'munianci' | 'ouyangke' | 'wanyankang' | 'qiuqianren' | 'daoist' | 'chenxuanfeng' | 'bandit'
   isPlayer: boolean
   maxHp: number
   hp: number

@@ -36,9 +36,15 @@ function skillStats(id: string) {
 
 /* ---------- 编队 ---------- */
 const recruited = (role: 'LEFT' | 'RIGHT') =>
-  Object.values(COMPANIONS).filter((c) => c.role === role && store.companionAffinity[c.id]?.recruited)
+  Object.values(COMPANIONS).filter((c) => (c.role === role || c.role === 'EITHER') && store.companionAffinity[c.id]?.recruited)
 const isRecruited = (id: string) => !!store.companionAffinity[id]?.recruited
 const isActive = (s: (typeof TRIO_SYNERGIES)[number]) => store.activeTrioSynergy?.id === s.id
+/** 选择伙伴；周伯通等「左右皆可」的伙伴若已在另一翼，则自动让位 */
+function pickCompanion(side: 'leftCompanionId' | 'rightCompanionId', id: string) {
+  const other = side === 'leftCompanionId' ? 'rightCompanionId' : 'leftCompanionId'
+  if (store.currentLoadout[other] === id) store.currentLoadout[other] = null
+  store.currentLoadout[side] = id
+}
 function applySynergy(s: (typeof TRIO_SYNERGIES)[number]) {
   store.currentLoadout.leftCompanionId = s.leftId
   store.currentLoadout.rightCompanionId = s.rightId
@@ -200,7 +206,7 @@ function itemStats(it: (typeof ITEMS)[string]) {
                 v-for="c in recruited(side.role)" :key="c.id" role="radio" :aria-checked="store.currentLoadout[side.key] === c.id"
                 class="well-hover flex w-full items-center gap-3 border p-2 text-left"
                 :class="[TIER_META[c.tier].cls, store.currentLoadout[side.key] === c.id ? 'border-gold bg-[var(--gold-soft)]' : 'border-line bg-[var(--bg-1)]']"
-                @click="store.currentLoadout[side.key] = c.id"
+                @click="pickCompanion(side.key, c.id)"
               >
                 <span class="relative h-[3.6rem] w-[3rem] shrink-0 overflow-hidden bg-raised"><InkFigure :style-type="c.portraitStyle" /></span>
                 <span class="min-w-0 flex-1">

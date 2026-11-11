@@ -4,14 +4,13 @@ import type {
   CombatUnitDTO,
   GhostMarketListingDTO,
   LoadoutPresetDTO,
-  PendingAdventureDTO,
   PlayerDTO,
   RichSegment,
   RoomPlayerDTO,
   StanceType,
   UniqueArtifactStatusDTO,
 } from './protocol'
-import { COMPANIONS, ITEMS, MAPS, REALMS, SECTS, SKILLS, STORY_CHAPTERS, TRIO_SYNERGIES } from '@/config/gameData'
+import { COMPANIONS, findTrioSynergy, ITEMS, REALMS, SECTS, SKILLS } from '@/config/gameData'
 
 export function calcNextLevelQi(level: number): number {
   return Math.round(500 * Math.pow(level, 1.55) * Math.pow(1.08, Math.floor(level / 5)))
@@ -71,7 +70,8 @@ export function computeDerivedStats(player: PlayerDTO, loadout: LoadoutPresetDTO
   const equipAtk = w?.atkBonus ?? 0
   const equipDef = (ar?.defBonus ?? 0) + (rl?.defBonus ?? 0)
 
-  const maxHp = Math.round((320 + player.level * 85 + s.con * 46) * m * (inner?.id === 'jiuyin_zonggang' ? 1.25 : 1.08) + equipHp)
+  const hpBonusMult = 1 + (player.bonusHpPct ?? 0) / 100
+  const maxHp = Math.round((320 + player.level * 85 + s.con * 46) * m * (inner?.id === 'jiuyin_zonggang' ? 1.25 : 1.08) * hpBonusMult + equipHp)
   const maxMp = Math.round((120 + player.level * 32 + s.con * 26 + s.intStat * 12) * m)
   const atk = Math.round((45 + player.level * 13 + s.str * 8.5 + s.agi * 2.5) * m + equipAtk)
   const def = Math.round((22 + player.level * 6 + s.con * 5.5 + s.str * 2.0) * m + equipDef)
@@ -114,6 +114,24 @@ export function generateRoomPlayers(mapId: string): RoomPlayerDTO[] {
       { id: 'rp_7', nickname: '威远总镖头', sectName: '丐帮', realmName: '融会贯通', level: 38, combatPower: 18500, stance: 'FIERCE', isBetrayerBounty: false, isEscortingDart: true },
       { id: 'rp_8', nickname: '西域毒皇·欧阳烈', sectName: '西域白驼山庄', realmName: '一代宗师', level: 63, combatPower: 64200, stance: 'FIERCE', isBetrayerBounty: false, isEscortingDart: false, holdingUniqueArtifact: '真·绿玉打狗棒' },
       { id: 'rp_9', nickname: '塞外孤狼', sectName: '逍遥散人', realmName: '略有小成', level: 29, combatPower: 12800, stance: 'AGILE', isBetrayerBounty: false, isEscortingDart: true },
+    ]
+  }
+  if (mapId === 'guiyun_lake') {
+    return [
+      { id: 'rp_12', nickname: '归云庄少庄主', sectName: '东海桃花岛', realmName: '融会贯通', level: 36, combatPower: 17200, stance: 'AGILE', isBetrayerBounty: false, isEscortingDart: false },
+      { id: 'rp_13', nickname: '太湖渔隐', sectName: '逍遥散人', realmName: '融会贯通', level: 39, combatPower: 19800, stance: 'TAICHI', isBetrayerBounty: false, isEscortingDart: false },
+    ]
+  }
+  if (mapId === 'taohua_isle') {
+    return [
+      { id: 'rp_14', nickname: '哑仆（桃花岛）', sectName: '东海桃花岛', realmName: '炉火纯青', level: 50, combatPower: 30500, stance: 'AGILE', isBetrayerBounty: false, isEscortingDart: false },
+      { id: 'rp_15', nickname: '试剑亭客', sectName: '逍遥散人', realmName: '炉火纯青', level: 47, combatPower: 27400, stance: 'FIERCE', isBetrayerBounty: false, isEscortingDart: false },
+    ]
+  }
+  if (mapId === 'huashan_peak') {
+    return [
+      { id: 'rp_16', nickname: '论剑台守擂人', sectName: '终南全真教', realmName: '一代宗师', level: 66, combatPower: 58200, stance: 'TAICHI', isBetrayerBounty: false, isEscortingDart: false },
+      { id: 'rp_17', nickname: '西毒门徒·白衣客', sectName: '西域白驼山庄', realmName: '一代宗师', level: 64, combatPower: 55400, stance: 'FIERCE', isBetrayerBounty: true, isEscortingDart: false },
     ]
   }
   return [
@@ -288,9 +306,7 @@ export function simulateServerBattle(params: {
     ],
   })
 
-  const trioSynergy = TRIO_SYNERGIES.find(
-    (syn) => syn.leftId === loadout.leftCompanionId && syn.rightId === loadout.rightCompanionId
-  )
+  const trioSynergy = findTrioSynergy(loadout.leftCompanionId, loadout.rightCompanionId) ?? undefined
 
   for (let round = 1; round <= 12; round++) {
     if (hpState.ALLY_MAIN <= 0 || (hpState.ENEMY_MAIN <= 0 && (hpState.ENEMY_LEFT ?? 0) <= 0 && (hpState.ENEMY_RIGHT ?? 0) <= 0)) {
@@ -494,35 +510,4 @@ export const INITIAL_GHOST_LISTINGS: GhostMarketListingDTO[] = [
   { id: 'mk_2', maskedSeller: '黑衣人·丙辰', itemId: 'wucan_baoyi', itemName: '大雪山乌蚕宝衣', tier: 'orange', listingType: 'FIXED', currency: 'SILVER', price: 8500, desc: '刀枪不入，外功减免30%。' },
   { id: 'mk_3', maskedSeller: '全真逆徒·匿名销赃', itemId: 'jiuwei_fox', itemName: '黑沼·九尾灵狐', tier: 'orange', listingType: 'FIXED', currency: 'SILVER', price: 9200, desc: '通灵白狐，速度大增并可替死一次。' },
   { id: 'mk_4', maskedSeller: '鬼市压轴官拍', itemId: 'lingbo_weibu', itemName: '《凌波微步》琅嬛帛卷', tier: 'red', listingType: 'AUCTION', currency: 'GOLD', price: 320, highestBidderMasked: '蒙面客·癸亥', desc: '21:00子时压轴竞拍！足踏六十四卦，闪避回怒神技！' },
-]
-
-/** 随机奇遇事件模板池 */
-export const ADVENTURE_POOL: Omit<PendingAdventureDTO, 'id'>[] = [
-  {
-    title: '赵王府药房·宝蛇异香',
-    location: '中都赵王府后院',
-    description: '你潜入参仙老怪梁子翁药房，竹篓中一条通体赤红的大腹宝蛇忽昂首向你扑来！蛇血乃是梁子翁以二十年名贵灵药喂养而成……',
-    options: [
-      { key: 'A', label: '眼疾手快捏住七寸，痛饮宝蛇热腾蛇血！', requirementText: '需身法 ≥ 18（永久根骨+4，真气+3500）', canSelect: true },
-      { key: 'B', label: '将宝蛇放归山林，顺手取走桌上银两', requirementText: '侠义 +30，纹银 +2500', canSelect: true },
-    ],
-  },
-  {
-    title: '昆仑翠谷·苍猿腹痛',
-    location: '断崖百丈幽谷',
-    description: '你在山崖采药失足滑入云海翠谷，一头年迈苍猿步履蹒跚走来，指着自己隆起结疤的腹部向你哀鸣求助。',
-    options: [
-      { key: 'A', label: '以玄铁匕首小心剖开旧疤，取出油布经书并缝合！', requirementText: '需悟性 ≥ 22（领悟神品《九阳神功》！）', canSelect: true },
-      { key: 'B', label: '喂食止痛草药安抚白猿', requirementText: '侠义 +50，福缘 +3', canSelect: true },
-    ],
-  },
-  {
-    title: '桃花清音洞·画方画圆',
-    location: '桃花岛石洞',
-    description: '须发皆白的老顽童周伯通拉着你不放：“好兄弟，你来试试左手画方、右手画圆！心思越杂的名门弟子越学不会！”',
-    options: [
-      { key: 'A', label: '屏弃杂念，左右双掌分使不同劲力！', requirementText: '散人额外加成（身法+3，领悟《空明拳》）', canSelect: true },
-      { key: 'B', label: '陪老顽童斗促织畅谈江湖趣闻', requirementText: '周伯通好感度 +120，真气 +4000', canSelect: true },
-    ],
-  },
 ]

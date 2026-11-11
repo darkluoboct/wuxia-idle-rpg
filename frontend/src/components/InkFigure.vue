@@ -32,6 +32,13 @@ const LOOKS: Record<PortraitStyle, Look> = {
   zhoubotong: { robe: '#46505f', robe2: '#2d3541', trim: '#d4b87c', hair: '#ece8e0', hairKind: 'beard', item: 'taiji' },
   monk: { robe: '#8a5a2b', robe2: '#5f3d1c', trim: '#e0b36a', hair: '#000', hairKind: 'bald', item: 'beads' },
   assassin: { robe: '#2c2f34', robe2: '#1a1c1f', trim: '#9298a2', hair: '#101113', hairKind: 'wrap', item: 'crutch', blind: true },
+  munianci: { robe: '#8e3a35', robe2: '#5e2523', trim: '#e3c08a', hair: '#15171a', hairKind: 'ribbons', item: 'sword', band: '#f0c9a0' },
+  ouyangke: { robe: '#d8d2c2', robe2: '#a89f8c', trim: '#7a5a8a', hair: '#15171a', hairKind: 'cap', item: 'flute' },
+  wanyankang: { robe: '#6a2f3a', robe2: '#44202a', trim: '#e0b86a', hair: '#15171a', hairKind: 'cap', item: 'sword', band: '#e0b86a' },
+  qiuqianren: { robe: '#4d4a46', robe2: '#322f2c', trim: '#a39a8c', hair: '#c9c4ba', hairKind: 'beard', item: 'palm', broad: true },
+  daoist: { robe: '#3f6a74', robe2: '#28484f', trim: '#cfe0dc', hair: '#14171a', hairKind: 'bun', item: 'sword' },
+  chenxuanfeng: { robe: '#2d2a33', robe2: '#1c1a21', trim: '#a8929b', hair: '#17151a', hairKind: 'messy', item: 'claw', broad: true },
+  bandit: { robe: '#5a4636', robe2: '#3a2c21', trim: '#9a8062', hair: '#17140f', hairKind: 'wrap', item: 'sword', band: '#8a3a2f' },
 }
 
 const props = withDefaults(

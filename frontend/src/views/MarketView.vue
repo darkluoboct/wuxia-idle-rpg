@@ -70,8 +70,19 @@ function challengeFiveGreats(p: (typeof fiveGreats)[0]) {
           好感满 <b class="text-ink">100</b> 可编入左右翼；满 <b class="text-gold">600（生死之交）</b>无论门派皆触发「倾囊传功」，亲授看家绝学。
         </p>
         <div class="grid gap-3 lg:grid-cols-2">
+          <template v-for="c in Object.values(COMPANIONS)" :key="c.id">
+          <!-- 尚未结识：只露剪影与线索 -->
+          <article v-if="!store.companionAffinity[c.id]?.met" class="well flex gap-3 p-3 opacity-75">
+            <div class="relative h-[6.2rem] w-[4.6rem] shrink-0 self-start overflow-hidden bg-[var(--bg-1)]">
+              <div class="h-full w-full opacity-40 grayscale"><InkFigure :style-type="c.portraitStyle" /></div>
+            </div>
+            <div class="flex min-w-0 flex-1 flex-col justify-center gap-1.5">
+              <h4 class="font-brush text-xl leading-none">？？？<span class="ml-1.5 font-sans text-xs tracking-normal text-ink3">{{ TIER_META[c.tier].label }} · 尚未结识</span></h4>
+              <p class="text-xs leading-snug text-ink3">{{ c.meetHint ?? '推进主线与支线可结识' }}</p>
+            </div>
+          </article>
           <article
-            v-for="c in Object.values(COMPANIONS)" :key="c.id" class="well flex gap-3 p-3"
+            v-else class="well flex gap-3 p-3"
             :class="[TIER_META[c.tier].cls]"
           >
             <div class="relative h-[6.2rem] w-[4.6rem] shrink-0 self-start overflow-hidden bg-[var(--bg-1)] tier-edge">
@@ -115,6 +126,7 @@ function challengeFiveGreats(p: (typeof fiveGreats)[0]) {
               </div>
             </div>
           </article>
+          </template>
         </div>
       </div>
 

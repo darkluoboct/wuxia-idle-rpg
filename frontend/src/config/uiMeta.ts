@@ -50,12 +50,18 @@ export const AMBIENCE_BY_MAP: Record<string, MapAmbience> = {
   zhongnan_forest: 'pine',
   damo_caravan: 'desert',
   heizhao_swamp: 'swamp',
+  guiyun_lake: 'rain',
+  taohua_isle: 'pine',
+  huashan_peak: 'pine',
 }
 export const MAP_MOOD_LABEL: Record<string, string> = {
   jiaxing_suburb: '江南烟雨',
   zhongnan_forest: '终南松云',
   damo_caravan: '塞外风沙',
   heizhao_swamp: '瘴林夜雾',
+  guiyun_lake: '太湖烟波',
+  taohua_isle: '桃岛落英',
+  huashan_peak: '华山云海',
 }
 
 /** 门派阵营色 */

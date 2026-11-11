@@ -15,7 +15,6 @@ import type {
   UniqueArtifactStatusDTO,
 } from '@/network/protocol'
 import {
-  ADVENTURE_POOL,
   calcNextLevelQi,
   computeDerivedStats,
   generateRoomPlayers,
@@ -24,17 +23,25 @@ import {
   simulateServerBattle,
 } from '@/network/mockEngine'
 import {
+  ADVENTURES,
+  adventureById,
   COMPANIONS,
+  findTrioSynergy,
   GHOST_APPRAISE_COST,
   INN_GIFT_COST,
   INN_TEA_COST,
+  isMapUnlocked,
   ITEMS,
   MAPS,
   REALMS,
   SECTS,
   SKILLS,
+  STAT_LABEL,
   STORY_CHAPTERS,
-  TRIO_SYNERGIES,
+  validateGameData,
+  type AdventureChoice,
+  type AdventureCtx,
+  type Reward,
 } from '@/config/gameData'
 import { EQUIP_SLOT_META, shichenIdxFromDate, SKILL_SLOT_META } from '@/config/uiMeta'
 
@@ -43,6 +50,11 @@ const SHICHEN_LABELS = ['子时·夜半', '寅时·平旦', '辰时·烟雨', '�
 export type MainTab = 'CULTIVATE' | 'JIANGHU' | 'ARSENAL' | 'SECT' | 'MARKET'
 
 export const useGameStore = defineStore('wuxiaGame', () => {
+  if (import.meta.env.DEV) {
+    const errs = validateGameData()
+    if (errs.length) console.warn('[gameData] 数据引用校验失败：\n' + errs.join('\n'))
+  }
+
   // 主题与响应式抽屉状态（默认启动采用燕云玄墨深色护眼主题）
   const isMidnightTheme = ref(true)
   const activeTab = ref<MainTab>('CULTIVATE')
@@ -98,7 +110,7 @@ export const useGameStore = defineStore('wuxiaGame', () => {
     sectContribution: 120,
     isGuardingLibrary: false,
     currentMapId: 'jiaxing_suburb',
-    maxChapterId: 2,
+    maxChapterId: 5, // 已通关 1-1 ~ 2-1，当前停在 2-2「赵王府夜宴」
     qiPerHour: 3650,
     lastSettleAt: Date.now() - 1000 * 60 * 42, // 默认模拟已有42分钟未领取离线真气
     coCultivatePartner: null,
@@ -126,15 +138,26 @@ export const useGameStore = defineStore('wuxiaGame', () => {
   const pillCount = ref(2) // 九花玉露丸数量（提升冲穴成功率+25%）
   const betrayedSectIds = ref<string[]>([])
 
-  // 伙伴好感度与招募状态
-  const companionAffinity = ref<Record<string, { affinity: number; recruited: boolean; taught: boolean }>>({
-    kezhene: { affinity: 180, recruited: true, taught: true },
-    meichaofeng: { affinity: 140, recruited: true, taught: false },
-    guojing: { affinity: 340, recruited: true, taught: false },
-    huangrong: { affinity: 360, recruited: true, taught: false },
-    hongqigong: { affinity: 540, recruited: true, taught: false }, // 差60满600即可体验请叫花鸡触发《亢龙有悔》倾囊传功！
-    huangyaoshi: { affinity: 220, recruited: true, taught: false },
-    zhoubotong: { affinity: 480, recruited: true, taught: false },
+  // 剧情进度：标记、已领取首通奖励的主线节点、已了结的奇遇、待决奇遇队列
+  const storyFlags = ref<string[]>([])
+  const claimedNodeIds = ref<number[]>([])
+  const resolvedAdventureIds = ref<string[]>([])
+  const adventureQueue = ref<string[]>([])
+  const pendingAdventureId = ref<string | null>('shedu_baoxue')
+
+  // 伙伴好感度与招募状态（met=已结识，客栈才会显示；recruited=好感≥100可编入左右翼）
+  type CompanionState = { affinity: number; recruited: boolean; taught: boolean; met: boolean }
+  const companionAffinity = ref<Record<string, CompanionState>>({
+    kezhene: { affinity: 180, recruited: true, taught: true, met: true },
+    meichaofeng: { affinity: 140, recruited: true, taught: false, met: true },
+    guojing: { affinity: 340, recruited: true, taught: false, met: true },
+    huangrong: { affinity: 360, recruited: true, taught: false, met: true },
+    hongqigong: { affinity: 540, recruited: true, taught: false, met: true }, // 差60满600即可体验请叫花鸡触发《亢龙有悔》倾囊传功！
+    huangyaoshi: { affinity: 220, recruited: true, taught: false, met: true },
+    zhoubotong: { affinity: 480, recruited: true, taught: false, met: true },
+    // 射雕篇新伙伴：通过主线 / 支线剧情结识
+    munianci: { affinity: 0, recruited: false, taught: false, met: false },
+    ouyangfeng: { affinity: 0, recruited: false, taught: false, met: false },
   })
 
   // 3套配装预设
@@ -205,11 +228,7 @@ export const useGameStore = defineStore('wuxiaGame', () => {
 
   // 当前激活的三人行羁绊
   const activeTrioSynergy = computed(() =>
-    TRIO_SYNERGIES.find(
-      (s) =>
-        s.leftId === currentLoadout.value.leftCompanionId &&
-        s.rightId === currentLoadout.value.rightCompanionId
-    ) ?? null
+    findTrioSynergy(currentLoadout.value.leftCompanionId, currentLoadout.value.rightCompanionId)
   )
 
   // 散人百家混搭特权判定
@@ -257,14 +276,41 @@ export const useGameStore = defineStore('wuxiaGame', () => {
     },
   ])
 
-  // 待抉择奇遇
-  const pendingAdventure = ref<PendingAdventureDTO | null>({
-    id: 'adv_init',
-    ...ADVENTURE_POOL[0],
+  // 待抉择奇遇：由模板 + 当前角色状态实时推导，选项可选性随属性 / 银两变化
+  function adventureCtx(): AdventureCtx {
+    return {
+      stats: { ...player.value.stats },
+      isWanderer: !player.value.currentSectId,
+      flags: storyFlags.value,
+      items: ownedItemIds.value,
+      silver: player.value.silver,
+    }
+  }
+  const choiceAvailable = (c: AdventureChoice, ctx: AdventureCtx) =>
+    (!c.require || c.require(ctx)) && (c.costSilver ?? 0) <= ctx.silver
+
+  const pendingAdventure = computed<PendingAdventureDTO | null>(() => {
+    const tpl = pendingAdventureId.value ? adventureById(pendingAdventureId.value) : undefined
+    if (!tpl) return null
+    const ctx = adventureCtx()
+    return {
+      id: `adv_${tpl.id}`,
+      templateId: tpl.id,
+      title: tpl.title,
+      location: tpl.location,
+      description: tpl.description,
+      options: tpl.choices.map((c) => ({
+        key: c.key,
+        label: c.label,
+        requirementText: c.requirementText,
+        canSelect: choiceAvailable(c, ctx),
+      })),
+    }
   })
 
   // 战斗回放播放器状态与破屏书法招式/飘字状态
   const activeBattle = ref<BattleReportDTO | null>(null)
+  const activeChapterId = ref<number | null>(null) // 当前战斗对应的主线节点（战斗结束才结算首通）
   const battleEventCursor = ref(0)
   const battleSpeed = ref<1 | 2>(1)
   const isBattlePlaying = ref(false)
@@ -420,82 +466,151 @@ export const useGameStore = defineStore('wuxiaGame', () => {
     }
   }
 
-  // 触发与选择奇遇
-  function triggerRandomAdventure() {
-    const tpl = ADVENTURE_POOL[Math.floor(Math.random() * ADVENTURE_POOL.length)]
-    pendingAdventure.value = {
-      id: `adv_${Date.now()}`,
-      ...tpl,
+  // ==================== 剧情奖励 / 支线奇遇 ====================
+  /** 统一结算一个 Reward（首通剧情与奇遇选项共用）：属性 / 资源 / 武学 / 装备 / 好感 / 标记，并写一条富文本日志 */
+  function applyReward(r: Reward, channel: GameLogEntry['channel'] = 'ADVENTURE') {
+    const p = player.value
+    const delta: string[] = []
+    const links: RichSegment[] = []
+    const signed = (n: number) => `${n > 0 ? '+' : '−'}${Math.abs(n).toLocaleString()}`
+
+    for (const [k, v] of Object.entries(r.stats ?? {}) as [keyof typeof STAT_LABEL, number][]) {
+      p.stats[k] += v
+      delta.push(`${STAT_LABEL[k]} ${signed(v)}`)
     }
+    if (r.bonusHpPct) {
+      p.bonusHpPct = (p.bonusHpPct ?? 0) + r.bonusHpPct
+      delta.push(`气血上限 +${r.bonusHpPct}%`)
+    }
+    if (r.qiExp) {
+      p.qiExp += r.qiExp
+      delta.push(`真气 ${signed(r.qiExp)}`)
+    }
+    if (r.silver) {
+      p.silver += r.silver
+      delta.push(`纹银 ${signed(r.silver)}`)
+    }
+    if (r.pills) {
+      pillCount.value += r.pills
+      delta.push(`九花玉露丸 +${r.pills}`)
+    }
+
+    for (const id of r.skills ?? []) {
+      const sk = SKILLS[id]
+      if (!sk) continue
+      const had = (learnedSkills.value[id] ?? 0) > 0
+      learnedSkills.value[id] = Math.max(1, learnedSkills.value[id] ?? 0)
+      if (!had) links.push({ type: 'text', text: ' 习得' }, { type: 'skill', id, name: `《${sk.name}》`, tier: sk.tier })
+    }
+    for (const [id, n] of Object.entries(r.skillBoost ?? {})) {
+      const sk = SKILLS[id]
+      if (!sk) continue
+      const next = Math.min(10, (learnedSkills.value[id] ?? 0) + n)
+      learnedSkills.value[id] = next
+      links.push({ type: 'text', text: ' ' }, { type: 'skill', id, name: `《${sk.name}》`, tier: sk.tier }, { type: 'text', text: `参悟至第 ${next} 重` })
+    }
+    for (const id of r.items ?? []) {
+      const it = ITEMS[id]
+      if (!it) continue
+      if (!ownedItemIds.value.includes(id)) {
+        ownedItemIds.value.push(id)
+        links.push({ type: 'text', text: ' 获得' }, { type: 'item', id, name: `【${it.name}】`, tier: it.tier, isTrueUnique: it.isTrueUnique })
+      }
+    }
+    for (const [id, n] of Object.entries(r.affinity ?? {})) {
+      const c = COMPANIONS[id]
+      const st = companionAffinity.value[id]
+      if (!c || !st) continue
+      const wasRecruited = st.recruited
+      st.met = true
+      st.affinity = Math.min(1000, st.affinity + n)
+      st.recruited = st.affinity >= 100
+      delta.push(`${c.name}好感 ${signed(n)}`)
+      if (st.recruited && !wasRecruited) links.push({ type: 'text', text: ' ' }, { type: 'actor', name: c.name, isAlly: true }, { type: 'text', text: '已加入你的江湖行列' })
+    }
+    for (const f of r.flags ?? []) {
+      if (!storyFlags.value.includes(f)) storyFlags.value.push(f)
+    }
+
+    appendLog(channel, [
+      { type: 'tag', text: r.tag, tone: r.tone },
+      { type: 'text', text: ` ${r.text}` },
+      ...(delta.length ? [{ type: 'text' as const, text: `（${delta.join('，')}）` }] : []),
+      ...links,
+    ])
+    showToast(r.tag, r.tone === 'red' ? 'danger' : r.tone === 'gold' ? 'gold' : 'info')
+  }
+
+  /** 主线节点首通：写叙事、发奖励，并把该节点解锁的支线排进奇遇队列 */
+  function claimNodeFirstClear(nodeId: number) {
+    if (claimedNodeIds.value.includes(nodeId)) return
+    const node = STORY_CHAPTERS.find((n) => n.id === nodeId)
+    if (!node) return
+    claimedNodeIds.value.push(nodeId)
+    applyReward(node.firstClear, 'JIANGHU')
+    queueAdventuresAfter(nodeId)
+  }
+
+  function queueAdventuresAfter(nodeId: number) {
+    for (const a of ADVENTURES) {
+      if (a.afterNodeId !== nodeId) continue
+      if (resolvedAdventureIds.value.includes(a.id) || adventureQueue.value.includes(a.id) || pendingAdventureId.value === a.id) continue
+      adventureQueue.value.push(a.id)
+    }
+    pumpAdventureQueue()
+  }
+
+  function pumpAdventureQueue() {
+    if (pendingAdventureId.value || !adventureQueue.value.length) return
+    pendingAdventureId.value = adventureQueue.value.shift()!
+    const tpl = adventureById(pendingAdventureId.value)
+    if (tpl) showToast(`触发江湖奇遇：【${tpl.title}】`, 'gold')
+  }
+
+  // 游历寻访：从“主线已推进到、且尚未了结”的支线中随机抽取
+  function triggerRandomAdventure() {
     activeTab.value = 'CULTIVATE'
+    if (pendingAdventureId.value) {
+      showToast('尚有奇遇等你抉择，请先在纪事卷轴中做出选择', 'info')
+      return
+    }
+    const pool = ADVENTURES.filter(
+      (a) =>
+        a.afterNodeId < player.value.maxChapterId &&
+        !resolvedAdventureIds.value.includes(a.id) &&
+        !adventureQueue.value.includes(a.id)
+    )
+    if (!pool.length) {
+      showToast('江湖近日风平浪静，暂无新的奇遇——推进主线可解锁更多支线', 'info')
+      return
+    }
+    const tpl = pool[Math.floor(Math.random() * pool.length)]
+    pendingAdventureId.value = tpl.id
     showToast(`触发江湖奇遇：【${tpl.title}】`, 'gold')
   }
 
   function resolveAdventure(choice: 'A' | 'B') {
-    if (!pendingAdventure.value) return
-    const adv = pendingAdventure.value
-    pendingAdventure.value = null
-
-    if (adv.title.includes('宝蛇')) {
-      if (choice === 'A') {
-        player.value.stats.con += 4
-        player.value.qiExp += 3500
-        appendLog('ADVENTURE', [
-          { type: 'tag', text: '奇遇机缘', tone: 'gold' },
-          { type: 'text', text: ' 你痛饮梁子翁二十年药蛇宝血，腹中热气蒸腾，永久【根骨 +4】，真气 +3,500！' },
-        ])
-      } else {
-        player.value.stats.karma += 30
-        player.value.silver += 2500
-        appendLog('ADVENTURE', [
-          { type: 'tag', text: '仁心侠义', tone: 'jade' },
-          { type: 'text', text: ' 你放生宝蛇，顺手取走赵王府纹银 +2,500 两，侠义 +30。' },
-        ])
-      }
-    } else if (adv.title.includes('苍猿')) {
-      if (choice === 'A') {
-        learnedSkills.value['jiuyang_shengong'] = 1
-        appendLog('ADVENTURE', [
-          { type: 'tag', text: '绝世神功', tone: 'gold' },
-          { type: 'text', text: ' 你替昆仑老白猿缝合腹伤，竟从油布包中得获失传神品心法' },
-          { type: 'skill', id: 'jiuyang_shengong', name: '《九阳神功》', tier: 'red' },
-          { type: 'text', text: '！' },
-        ])
-        showToast('奇遇顿悟神品《九阳神功》！可前往武库装配', 'gold')
-      } else {
-        player.value.stats.karma += 50
-        player.value.stats.luck += 3
-        appendLog('ADVENTURE', [
-          { type: 'tag', text: '福泽绵长', tone: 'jade' },
-          { type: 'text', text: ' 白猿向你作揖致谢，献上两枚山间朱果，福缘 +3，侠义 +50！' },
-        ])
-      }
-    } else {
-      if (choice === 'A') {
-        learnedSkills.value['kongming_quan'] = 1
-        player.value.stats.agi += 3
-        appendLog('ADVENTURE', [
-          { type: 'tag', text: '老顽童真传', tone: 'purple' },
-          { type: 'text', text: ' 周伯通拍手大笑：“妙极！你这散人心无挂碍！”当场传授你' },
-          { type: 'skill', id: 'kongming_quan', name: '《空明拳》', tier: 'orange' },
-          { type: 'text', text: '！' },
-        ])
-        showToast('习得绝品外功《空明拳》！', 'gold')
-      } else {
-        companionAffinity.value.zhoubotong.affinity = Math.min(1000, companionAffinity.value.zhoubotong.affinity + 120)
-        player.value.qiExp += 4000
-        appendLog('ADVENTURE', [
-          { type: 'tag', text: '忘年之交', tone: 'jade' },
-          { type: 'text', text: ' 你陪老顽童斗促织大胜三局，周伯通好感度 +120，真气 +4,000！' },
-        ])
-      }
+    const tpl = pendingAdventureId.value ? adventureById(pendingAdventureId.value) : undefined
+    const c = tpl?.choices.find((x) => x.key === choice)
+    if (!tpl || !c) return
+    const ctx = adventureCtx()
+    if (!choiceAvailable(c, ctx)) {
+      showToast(c.costSilver && ctx.silver < c.costSilver ? '纹银不足！' : (c.requirementText ?? '条件未满足'), 'danger')
+      return
     }
+    const reward = typeof c.reward === 'function' ? c.reward(ctx) : c.reward
+    if (c.costSilver) player.value.silver -= c.costSilver
+    resolvedAdventureIds.value.push(tpl.id)
+    pendingAdventureId.value = null
+    applyReward(reward)
+    pumpAdventureQueue()
   }
 
   // ==================== 战斗播放器引擎 ====================
-  function startBattlePlayback(report: BattleReportDTO) {
+  function startBattlePlayback(report: BattleReportDTO, storyNodeId: number | null = null) {
     if (battleTimer) clearTimeout(battleTimer)
     activeBattle.value = report
+    activeChapterId.value = storyNodeId
     battleEventCursor.value = 0
     isBattlePlaying.value = true
     slashBanner.value = null
@@ -634,6 +749,13 @@ export const useGameStore = defineStore('wuxiaGame', () => {
         ...itemSegs,
       ])
       showToast(`战果辉煌！真气 +${report.rewards.qiExp.toLocaleString()}`, 'gold')
+
+      // 主线节点：推进进度 + 首通剧情（每节点只结算一次，重复历练只拿战利）
+      const nodeId = activeChapterId.value
+      if (nodeId !== null) {
+        if (nodeId >= player.value.maxChapterId) player.value.maxChapterId = nodeId + 1
+        claimNodeFirstClear(nodeId)
+      }
     } else if (report.winner === 'ENEMY') {
       appendLog('BATTLE', [
         { type: 'tag', text: '惜败收剑', tone: 'red' },
@@ -646,6 +768,7 @@ export const useGameStore = defineStore('wuxiaGame', () => {
   function closeBattleStage() {
     if (battleTimer) clearTimeout(battleTimer)
     activeBattle.value = null
+    activeChapterId.value = null
     isBattlePlaying.value = false
     slashBanner.value = null
     floatingPopups.value = {}
@@ -653,11 +776,16 @@ export const useGameStore = defineStore('wuxiaGame', () => {
 
   // ==================== 江湖地图、章节推进与多人交互 ====================
   function moveMap(mapId: string) {
+    const m = MAPS.find((x) => x.id === mapId)
+    if (!m) return
+    if (!isMapUnlocked(m, player.value.maxChapterId)) {
+      showToast(`【${m.name}】尚未开放：${m.unlockHint ?? '请先推进主线'}`, 'danger')
+      return
+    }
     settleOfflineQi()
     player.value.currentMapId = mapId
     player.value.coCultivatePartner = null
     nearbyPlayers.value = generateRoomPlayers(mapId)
-    const m = MAPS.find((x) => x.id === mapId)!
     appendLog('JIANGHU', [
       { type: 'tag', text: m.safety === 'PEACE' ? '和平共修区' : '限定纷争区', tone: m.safety === 'PEACE' ? 'jade' : 'red' },
       { type: 'text', text: ` 你施展轻功抵达【${m.name}】。${m.ambientDesc}` },
@@ -673,12 +801,17 @@ export const useGameStore = defineStore('wuxiaGame', () => {
       return
     }
     const drops: { id: string; name: string; tier: TierColor }[] = []
-    if (ch.dropItemId && ITEMS[ch.dropItemId]) {
-      drops.push({ id: ch.dropItemId, name: ITEMS[ch.dropItemId].name, tier: ITEMS[ch.dropItemId].tier })
+    for (const id of ch.dropItemIds ?? []) {
+      if (ITEMS[id]) drops.push({ id, name: ITEMS[id].name, tier: ITEMS[id].tier })
     }
-    if (ch.dropSkillId && SKILLS[ch.dropSkillId]) {
-      drops.push({ id: ch.dropSkillId, name: SKILLS[ch.dropSkillId].name, tier: SKILLS[ch.dropSkillId].tier })
+    for (const id of ch.dropSkillIds ?? []) {
+      if (SKILLS[id]) drops.push({ id, name: SKILLS[id].name, tier: SKILLS[id].tier })
     }
+
+    appendLog('JIANGHU', [
+      { type: 'tag', text: ch.code, tone: ch.isBoss ? 'red' : 'gold' },
+      { type: 'text', text: ` ${ch.intro}` },
+    ])
 
     const report = simulateServerBattle({
       sceneTitle: `${ch.code} ${ch.title}`,
@@ -694,16 +827,15 @@ export const useGameStore = defineStore('wuxiaGame', () => {
         mp: ch.bossHp * 0.45,
         stance: ch.bossStance,
       },
+      enemyGuards: ch.guards,
       rewards: {
         qiExp: ch.rewardQi,
         silver: ch.rewardSilver,
         items: drops,
       },
     })
-    if (report.winner === 'ALLY' && chapterId >= player.value.maxChapterId) {
-      player.value.maxChapterId = chapterId + 1
-    }
-    startBattlePlayback(report)
+    // 主线进度与首通剧情在战斗演绎结束后统一结算（见 finishBattleSettlement）
+    startBattlePlayback(report, chapterId)
   }
 
   /** 松鹤楼：3名真实玩家主角实时结义组队战（破少林三渡金刚伏魔圈） */
@@ -797,6 +929,8 @@ export const useGameStore = defineStore('wuxiaGame', () => {
   }
 
   // ==================== 门派拜师、首席请安、圆满出师与强行叛师 ====================
+  const sectCheckCtx = () => ({ hasBagua: ownedItemIds.value.includes('iron_bagua'), flags: storyFlags.value })
+
   function joinSect(sectId: string) {
     if (player.value.currentSectId) {
       showToast('你已有师承在身，需先四阶【圆满出师】或【破门叛师】方可改投他派！', 'danger')
@@ -808,22 +942,23 @@ export const useGameStore = defineStore('wuxiaGame', () => {
     }
     const sect = SECTS.find((s) => s.id === sectId)
     if (!sect) return
-    const check = sect.checkReq(player.value.stats, ownedItemIds.value.includes('iron_bagua'))
+    const check = sect.checkReq(player.value.stats, sectCheckCtx())
     if (!check.ok) {
       showToast(check.reason ?? '未满足入门门槛', 'danger')
       return
     }
 
+    const hasIntro = !!sect.introFlag && storyFlags.value.includes(sect.introFlag)
     player.value.currentSectId = sect.id
     player.value.sectRank = 1
-    player.value.sectContribution = 100
-    for (const sk of sect.signatureSkills.slice(0, 1)) {
-      learnedSkills.value[sk] = Math.max(1, learnedSkills.value[sk] ?? 0)
-    }
+    player.value.sectContribution = 100 + (hasIntro ? (sect.introBonus ?? 0) : 0)
+    const entrySkill = sect.signatureSkills[0]
+    if (entrySkill) learnedSkills.value[entrySkill] = Math.max(1, learnedSkills.value[entrySkill] ?? 0)
 
     appendLog('JIANGHU', [
       { type: 'tag', text: '奉茶拜师', tone: 'gold' },
       { type: 'text', text: ` 你于祖师牌位前恭敬奉茶，正式拜入【${sect.name}】，位列「${sect.ranks[0]}」，获传入门心法！` },
+      ...(hasIntro ? [{ type: 'text' as const, text: `（凭引荐信入门，起始门派贡献 +${sect.introBonus}）` }] : []),
     ])
     showToast(`恭喜拜入【${sect.name}】！`, 'gold')
   }
@@ -869,16 +1004,30 @@ export const useGameStore = defineStore('wuxiaGame', () => {
 
     if (report.winner === 'ALLY') {
       player.value.sectRank += 1
-      const unlockedSkill = currentSect.value.signatureSkills[Math.min(currentSect.value.signatureSkills.length - 1, player.value.sectRank - 2)]
-      if (unlockedSkill && SKILLS[unlockedSkill]) {
-        learnedSkills.value[unlockedSkill] = Math.max(1, learnedSkills.value[unlockedSkill] ?? 0)
-        appendLog('JIANGHU', [
-          { type: 'tag', text: '辈分晋升', tone: 'gold' },
-          { type: 'text', text: ` 考校通过！你晋升为【${currentSect.value.name}·${nextRankName}】，获传绝学` },
-          { type: 'skill', id: unlockedSkill, name: `《${SKILLS[unlockedSkill].name}》`, tier: SKILLS[unlockedSkill].tier },
-          { type: 'text', text: '！' },
-        ])
+      const sect = currentSect.value
+      const newRank = player.value.sectRank
+      const grants: RichSegment[] = []
+
+      // 按新阶位授武 / 赠装备（signatureSkills 下标 = 阶位 - 1）
+      const skillId = sect.signatureSkills[newRank - 1]
+      if (skillId && SKILLS[skillId]) {
+        const sk = SKILLS[skillId]
+        const had = (learnedSkills.value[skillId] ?? 0) > 0
+        learnedSkills.value[skillId] = Math.max(1, learnedSkills.value[skillId] ?? 0)
+        if (!had) grants.push({ type: 'text', text: '，获传绝学' }, { type: 'skill', id: skillId, name: `《${sk.name}》`, tier: sk.tier })
       }
+      const itemId = sect.signatureItems?.[newRank]
+      if (itemId && ITEMS[itemId] && !ownedItemIds.value.includes(itemId)) {
+        ownedItemIds.value.push(itemId)
+        grants.push({ type: 'text', text: '，赐下' }, { type: 'item', id: itemId, name: `【${ITEMS[itemId].name}】`, tier: ITEMS[itemId].tier })
+      }
+
+      appendLog('JIANGHU', [
+        { type: 'tag', text: '辈分晋升', tone: 'gold' },
+        { type: 'text', text: ` 考校通过！你晋升为【${sect.name}·${nextRankName}】` },
+        ...grants,
+        { type: 'text', text: '！' },
+      ])
     }
     startBattlePlayback(report)
   }
@@ -975,6 +1124,10 @@ export const useGameStore = defineStore('wuxiaGame', () => {
     const c = COMPANIONS[compId]
     const state = companionAffinity.value[compId]
     if (!c || !state) return
+    if (!state.met) {
+      showToast(`尚未结识【${c.name}】：${c.meetHint ?? '请先推进主线与支线'}`, 'danger')
+      return
+    }
     const cost = isFavorite ? INN_GIFT_COST : INN_TEA_COST
     if (player.value.silver < cost) {
       showToast('囊中羞涩，纹银不足以置办酒席！', 'danger')
@@ -1016,7 +1169,7 @@ export const useGameStore = defineStore('wuxiaGame', () => {
       return
     }
     // 正派弟子未蒙面抓包判定
-    const isRighteousSect = player.value.currentSectId === 'quanzhen' || player.value.currentSectId === 'gaibang'
+    const isRighteousSect = currentSect.value?.alignment === 'RIGHTEOUS'
     if (isRighteousSect && !player.value.wearingMask) {
       player.value.stats.karma -= 25
       appendLog('JIANGHU', [
@@ -1146,6 +1299,10 @@ export const useGameStore = defineStore('wuxiaGame', () => {
     marqueeBulletin,
     logs,
     pendingAdventure,
+    adventureQueue,
+    resolvedAdventureIds,
+    claimedNodeIds,
+    storyFlags,
     activeBattle,
     isBattlePlaying,
     battleSpeed,

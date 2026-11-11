@@ -2,7 +2,7 @@
 /** 江湖卷：九州驿路罗盘（四方换图） + 同图侠客 / 飞鸽传书 两个页签 */
 import { computed, ref, watch } from 'vue'
 import { useGameStore } from '@/stores/gameStore'
-import { MAPS } from '@/config/gameData'
+import { isMapUnlocked, MAPS } from '@/config/gameData'
 
 const store = useGameStore()
 const tab = ref<'NEARBY' | 'CHAT'>('NEARBY')
@@ -10,15 +10,26 @@ const chatInput = ref('')
 const chatFilter = ref<'ALL' | 'RUMOR' | 'WORLD'>('ALL')
 const unread = ref(false)
 
-type Dir = '北' | '西' | '东' | '南'
+type Dir = '北' | '西' | '东' | '南' | '西北' | '东北' | '东南'
 const COMPASS: { id: string; dir: Dir; cls: string }[] = [
   { id: 'zhongnan_forest', dir: '北', cls: 'col-start-2 row-start-1' },
   { id: 'damo_caravan', dir: '西', cls: 'col-start-1 row-start-2' },
   { id: 'jiaxing_suburb', dir: '东', cls: 'col-start-3 row-start-2' },
   { id: 'heizhao_swamp', dir: '南', cls: 'col-start-2 row-start-3' },
+  { id: 'huashan_peak', dir: '西北', cls: 'col-start-1 row-start-1' },
+  { id: 'guiyun_lake', dir: '东北', cls: 'col-start-3 row-start-1' },
+  { id: 'taohua_isle', dir: '东南', cls: 'col-start-3 row-start-3' },
 ]
-const nodes = computed(() => COMPASS.map((c) => ({ ...c, map: MAPS.find((m) => m.id === c.id)! })))
-const SHORT: Record<string, string> = { zhongnan_forest: '终南后山', damo_caravan: '大漠商道', jiaxing_suburb: '嘉兴烟雨', heizhao_swamp: '湘西黑沼' }
+const nodes = computed(() =>
+  COMPASS.map((c) => {
+    const map = MAPS.find((m) => m.id === c.id)!
+    return { ...c, map, locked: !isMapUnlocked(map, store.player.maxChapterId) }
+  })
+)
+const SHORT: Record<string, string> = {
+  zhongnan_forest: '终南后山', damo_caravan: '大漠商道', jiaxing_suburb: '嘉兴烟雨', heizhao_swamp: '湘西黑沼',
+  huashan_peak: '华山绝顶', guiyun_lake: '太湖归云', taohua_isle: '桃花岛',
+}
 
 const channels = [
   { k: 'ALL', l: '综合' },
@@ -71,12 +82,13 @@ const ratio = (power: number) => power / myPower.value
         <button
           v-for="n in nodes" :key="n.id"
           class="well well-hover relative z-10 flex min-w-0 flex-col items-center justify-center px-1 py-1.5 text-center"
-          :class="[n.cls, store.player.currentMapId === n.id ? '!border-gold bg-[var(--gold-soft)]' : '']"
-          :title="`前往「${n.map.name}」· 灵脉 ${n.map.baseQiPerHour.toLocaleString()}/时 · ${n.map.onlineCount} 人在线`"
+          :class="[n.cls, store.player.currentMapId === n.id ? '!border-gold bg-[var(--gold-soft)]' : '', n.locked ? 'opacity-50' : '']"
+          :title="n.locked ? `「${n.map.name}」未开放：${n.map.unlockHint}` : `前往「${n.map.name}」· 灵脉 ${n.map.baseQiPerHour.toLocaleString()}/时 · ${n.map.onlineCount} 人在线`"
           @click="store.moveMap(n.id)"
         >
           <span class="absolute left-1 top-0.5 text-[0.68rem] leading-none text-ink3">{{ n.dir }}</span>
-          <span v-if="n.map.safety === 'CONTESTED'" class="absolute right-1 top-0.5 text-[0.68rem] leading-none text-cinnabar">争</span>
+          <span v-if="n.locked" class="absolute right-1 top-0.5 text-[0.68rem] leading-none text-ink3">锁</span>
+          <span v-else-if="n.map.safety === 'CONTESTED'" class="absolute right-1 top-0.5 text-[0.68rem] leading-none text-cinnabar">争</span>
           <span class="mt-1 truncate text-sm font-semibold leading-tight" :class="store.player.currentMapId === n.id ? 'text-gold' : ''">{{ SHORT[n.id] }}</span>
           <span class="text-[0.7rem] tabular-nums leading-tight text-ink3">{{ (n.map.baseQiPerHour / 1000).toFixed(1) }}k/时</span>
         </button>

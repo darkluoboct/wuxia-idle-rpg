@@ -7,12 +7,12 @@ import { ALIGNMENT_META } from '@/config/uiMeta'
 
 const store = useGameStore()
 
-const GLYPH: Record<string, string> = { gaibang: '丐', quanzhen: '全', taohua: '桃', baituo: '驼' }
+const GLYPH: Record<string, string> = { gaibang: '丐', quanzhen: '全', taohua: '桃', baituo: '驼', jiangnan_wuguan: '武', tiezhang: '铁', yideng: '灯' }
 const glyphOf = (s: { id: string; name: string }) => GLYPH[s.id] ?? s.name.slice(0, 1)
 
 const eligibility = (sectId: string) => {
   const s = SECTS.find((x) => x.id === sectId)!
-  return s.checkReq(store.player.stats, store.ownedItemIds.includes('iron_bagua'))
+  return s.checkReq(store.player.stats, { hasBagua: store.ownedItemIds.includes('iron_bagua'), flags: store.storyFlags })
 }
 
 const rank = computed(() => store.player.sectRank)
