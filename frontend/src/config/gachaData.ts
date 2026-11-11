@@ -1,5 +1,6 @@
 import type { TierColor } from './typesHelper'
 import { COMPANIONS, ITEMS, SKILLS } from './gameData'
+import { REUNION_QUESTS } from './questData'
 
 /**
  * 客栈「醉仙楼·结缘」抽卡配置（第 12 册 §七、§八）。
@@ -74,12 +75,10 @@ export const GACHA_POOL: Record<GachaTier, GachaEntry[]> = {
 /** 可被抽到“觉醒信物”的伙伴（拥有觉醒形态） */
 export const AWAKENABLE_IDS = Object.values(COMPANIONS).filter((c) => !!c.awakened).map((c) => c.id)
 
-/** 错过后可用重逢令补救的剧情送伙伴：其触发支线已了结、但未入队 */
-export const REUNION_AFTER: Record<string, string> = {
-  huangrong: 'xiaoqier_jiaohuaji',
-  meichaofeng: 'huangshan_bishou',
-  yangtiexin: 'tieqiangmiao',
-}
+/** 错过后可用重逢令补救的剧情送伙伴：伙伴ID → 触发支线（与免费的故人寻访同一份名单） */
+export const REUNION_AFTER: Record<string, string> = Object.fromEntries(
+  Object.values(REUNION_QUESTS).map((q) => [q.companionId, q.afterAdventure])
+)
 
 /** 条目展示名（概率公示、结果卡片共用） */
 export function gachaEntryName(e: GachaEntry): string {

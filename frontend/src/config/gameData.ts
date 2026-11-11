@@ -798,6 +798,8 @@ export interface CompanionConfig {
   /** 觉醒形态（需好感 ≥600 + 伙伴信物）；基础形态由本配置的顶层字段给出 */
   awakened?: CompanionForm
   awakenTokens?: number
+  /** 入队除好感 ≥100 外还需此剧情标记（如洪七公须先呈齐「十道绝味」）；付费获得不受限 */
+  recruitFlag?: string
   portraitStyle: PortraitStyle
   /** 尚未结识时，客栈卡片上显示的结识线索 */
   meetHint?: string
@@ -896,6 +898,7 @@ export const COMPANIONS: Record<string, CompanionConfig> = {
   hongqigong: {
     id: 'hongqigong',
     name: '洪七公',
+    recruitFlag: 'hong_feast_done',
     title: '北丐·九指神丐',
     tier: 'orange',
     grade: '下',

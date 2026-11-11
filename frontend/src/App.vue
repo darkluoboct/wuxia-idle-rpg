@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, type Component } from 'vue'
-import { Compass, Moon, Sun, UserRound } from 'lucide-vue-next'
+import { Compass, House, Moon, Sun, UserRound } from 'lucide-vue-next'
 import { useGameStore, type MainTab } from '@/stores/gameStore'
 import { IS_MOCK_MODE } from '@/network/apiClient'
 import { TIER_META } from '@/config/uiMeta'
@@ -133,6 +133,7 @@ const TOAST_GLYPH = { gold: '喜', danger: '警', info: '讯' } as const
             </span>
           </div>
 
+          <button class="btn btn-sm !px-2" aria-label="存档并返回开局" title="存档并返回开局" @click="store.backToTitle()"><House :size="16" /></button>
           <button class="btn btn-sm !px-2 md:hidden" aria-label="人物卷" @click="toggleDrawer('CHAR')"><UserRound :size="16" /></button>
           <button class="btn btn-sm !px-2 xl:hidden" aria-label="江湖卷" @click="toggleDrawer('WORLD')"><Compass :size="16" /></button>
           <button
@@ -260,6 +261,21 @@ const TOAST_GLYPH = { gold: '喜', danger: '警', info: '讯' } as const
           <h2 class="font-brush text-4xl leading-tight text-gold">金庸群侠 · 问道武林</h2>
           <p class="hint mt-1">请选择你的江湖开局</p>
         </div>
+        <!-- 继续上次的存档 -->
+        <div v-if="store.savedGame" class="well flex flex-wrap items-center justify-between gap-3 p-4 !border-gold">
+          <div>
+            <b class="font-brush text-2xl leading-none text-gold">继续江湖</b>
+            <p class="mt-1 text-sm text-ink2">
+              {{ store.savedGame.mode === 'NEW' ? '新游戏' : '演武模式' }} · Lv.{{ store.savedGame.level }} · 主线 {{ store.savedGame.node }} ·
+              {{ new Date(store.savedGame.savedAt).toLocaleString() }}
+            </p>
+          </div>
+          <div class="flex gap-2">
+            <button class="btn btn-sm" title="删除本地存档" @click="store.deleteSave()">删除存档</button>
+            <button class="btn btn-seal" @click="store.continueGame()">继续</button>
+          </div>
+        </div>
+        <p v-if="store.savedGame" class="text-center text-xs text-cinnabar">开始新的游戏或演武模式，将覆盖现有存档。</p>
         <div class="grid gap-3 sm:grid-cols-2">
           <button class="well well-hover flex flex-col gap-2 p-4 text-left" @click="store.startGame('NEW')">
             <span class="flex items-center gap-2"><span class="seal h-8 w-8 text-lg">新</span><b class="font-brush text-2xl leading-none">新游戏</b></span>

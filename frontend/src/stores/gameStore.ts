@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type {
   BattleReportDTO,
   CombatUnitDTO,
@@ -62,6 +62,19 @@ import {
   validateGachaData,
 } from '@/config/gachaData'
 import type { PortraitStyle } from '@/config/typesHelper'
+import {
+  DISHES,
+  FEAST_GATHER_MINUTES,
+  FEAST_TARGET_FLAG,
+  REUNION_CLUE_SOURCES,
+  REUNION_CLUE_TARGET,
+  REUNION_INQUIRE_COST,
+  REUNION_QUESTS,
+  REUNION_WAIT_HOURS,
+  validateQuestData,
+  type ClueSource,
+} from '@/config/questData'
+import { clearSave, LOCAL_SAVE_ENABLED, readSave, writeSave } from './persistence'
 
 /** 抽卡揭晓卡片：服务端结果 + 本地结算后的展示信息 */
 export interface GachaResultView {
@@ -79,7 +92,7 @@ export type MainTab = 'CULTIVATE' | 'JIANGHU' | 'ARSENAL' | 'SECT' | 'MARKET'
 
 export const useGameStore = defineStore('wuxiaGame', () => {
   if (import.meta.env.DEV) {
-    const errs = [...validateGameData(), ...validateGachaData()]
+    const errs = [...validateGameData(), ...validateGachaData(), ...validateQuestData()]
     if (errs.length) console.warn('[gameData] 数据引用校验失败：\n' + errs.join('\n'))
   }
 
@@ -208,6 +221,11 @@ export const useGameStore = defineStore('wuxiaGame', () => {
     return s
   }
   const companionAffinity = ref<Record<string, CompanionState>>(demoCompanionStates())
+  /** 免费入队判定：好感 ≥100，且满足伙伴的剧情门槛（如洪七公须呈齐十道绝味）。抽卡 / 重逢令不受此限 */
+  function recruitable(id: string, affinity: number) {
+    const flag = COMPANIONS[id]?.recruitFlag
+    return affinity >= 100 && (!flag || storyFlags.value.includes(flag))
+  }
 
   // 客栈送礼：每日次数（以子时为界刷新，仅新游戏生效）
   const innDay = ref('')
@@ -397,6 +415,7 @@ export const useGameStore = defineStore('wuxiaGame', () => {
   const slashBanner = ref<{ text: string; sub: string; isUlt: boolean; isAlly: boolean; key: number } | null>(null)
   const floatingPopups = ref<Record<string, { text: string; isCrit: boolean; category: string; key: number }>>({})
   let battleTimer: ReturnType<typeof setTimeout> | null = null
+  let battleOnWin: (() => void) | null = null // 非主线战斗的胜利回调（如故人重逢）
 
   function showToast(text: string, tone: ToastTone = 'info') {
     const id = ++toastSeq
@@ -468,6 +487,7 @@ export const useGameStore = defineStore('wuxiaGame', () => {
     player.value.qiExp += gainedQi
     player.value.silver += gainedSilver
     player.value.lastSettleAt = Date.now()
+    onOfflineSettled(elapsedSec)
 
     appendLog('CULTIVATE', [
       { type: 'tag', text: '闭关吐纳', tone: 'jade' },
@@ -622,7 +642,7 @@ export const useGameStore = defineStore('wuxiaGame', () => {
       const wasRecruited = st.recruited
       st.met = true
       st.affinity = Math.min(1000, st.affinity + n)
-      st.recruited = st.affinity >= 100
+      st.recruited = st.recruited || recruitable(id, st.affinity)
       delta.push(`${c.name}好感 ${signed(n)}`)
       if (st.recruited && !wasRecruited) links.push({ type: 'text', text: ' ' }, { type: 'actor', name: c.name, isAlly: true }, { type: 'text', text: '已加入你的江湖行列' })
     }
@@ -705,10 +725,11 @@ export const useGameStore = defineStore('wuxiaGame', () => {
   }
 
   // ==================== 战斗播放器引擎 ====================
-  function startBattlePlayback(report: BattleReportDTO, storyNodeId: number | null = null) {
+  function startBattlePlayback(report: BattleReportDTO, storyNodeId: number | null = null, onWin: (() => void) | null = null) {
     if (battleTimer) clearTimeout(battleTimer)
     activeBattle.value = report
     activeChapterId.value = storyNodeId
+    battleOnWin = onWin
     battleEventCursor.value = 0
     isBattlePlaying.value = true
     slashBanner.value = null
@@ -853,8 +874,15 @@ export const useGameStore = defineStore('wuxiaGame', () => {
       if (nodeId !== null) {
         if (nodeId >= player.value.maxChapterId) player.value.maxChapterId = nodeId + 1
         claimNodeFirstClear(nodeId)
+        onStoryNodeWon(nodeId)
       }
+    }
+    if (report.winner === 'ALLY') {
+      const hook = battleOnWin
+      battleOnWin = null
+      hook?.()
     } else if (report.winner === 'ENEMY') {
+      battleOnWin = null
       appendLog('BATTLE', [
         { type: 'tag', text: '惜败收剑', tone: 'red' },
         { type: 'text', text: ` 你在【${report.sceneTitle}】力战不敌，借轻功抽身退走。不妨调整【三才架势】或提升武学重数再战！` },
@@ -881,7 +909,9 @@ export const useGameStore = defineStore('wuxiaGame', () => {
       return
     }
     settleOfflineQi()
+    accrueReunionWait()
     player.value.currentMapId = mapId
+    mapArrivedAt.value = Date.now()
     player.value.coCultivatePartner = null
     nearbyPlayers.value = generateRoomPlayers(mapId)
     appendLog('JIANGHU', [
@@ -1262,7 +1292,7 @@ export const useGameStore = defineStore('wuxiaGame', () => {
     }
     const delta = Math.min(isFavorite ? 80 : 20, cap - state.affinity)
     state.affinity += delta
-    state.recruited = state.affinity >= 100
+    state.recruited = state.recruited || recruitable(compId, state.affinity)
 
     appendLog('JIANGHU', [
       { type: 'tag', text: '醉仙煮酒', tone: 'gold' },
@@ -1539,6 +1569,363 @@ export const useGameStore = defineStore('wuxiaGame', () => {
     showToast(`故人重逢：【${c.name}】已入队`, 'gold')
   }
 
+  // ==================== 故人寻访 & 北丐·十道绝味（以时间换取的免费路线，第12册 §十六） ====================
+  type ReunionStep = 'CLUES' | 'WAIT' | 'GIFT' | 'BATTLE' | 'DONE'
+  interface ReunionState {
+    clues: number
+    day: string
+    got: Record<ClueSource, number>
+    step: ReunionStep
+    waitSince: number | null // 线索集齐、开始“故地相候”的时刻
+    waitMs: number // 已在故地累计停留的毫秒（离开地图时结算）
+  }
+  const reunion = ref<Record<string, ReunionState>>({})
+  const feast = ref<{ ingredients: string[]; cooked: string[]; lastCookDay: string }>({ ingredients: [], cooked: [], lastCookDay: '' })
+  const mapArrivedAt = ref(Date.now())
+  /** 给“故地相候”进度条用的粗粒度时钟 */
+  const nowTick = ref(Date.now())
+  setInterval(() => (nowTick.value = Date.now()), 30_000)
+
+  const blankReunion = (): ReunionState => ({ clues: 0, day: '', got: { closed: 0, replay: 0, inn: 0 }, step: 'CLUES', waitSince: null, waitMs: 0 })
+  const reunionOf = (id: string) => (reunion.value[id] ??= blankReunion())
+  /** 只读视图（界面用，不会写入新键） */
+  function reunionView(id: string) {
+    const st = reunion.value[id] ?? blankReunion()
+    const today = dayKey(nowTick.value)
+    const got = st.day === today ? st.got : { closed: 0, replay: 0, inn: 0 }
+    return { ...st, got, waitRatio: waitRatio(id) }
+  }
+  function waitRatio(id: string, now = nowTick.value) {
+    const st = reunion.value[id]
+    const q = REUNION_QUESTS[id]
+    if (!st || st.step !== 'WAIT' || !q) return st && st.step !== 'CLUES' ? 1 : 0
+    const here = player.value.currentMapId === q.mapId ? Math.max(0, now - Math.max(mapArrivedAt.value, st.waitSince ?? 0)) : 0
+    return Math.min(1, (st.waitMs + here) / (REUNION_WAIT_HOURS * 3600_000))
+  }
+  /** 离开地图前，把在故地的停留时长累计进去 */
+  function accrueReunionWait() {
+    const now = Date.now()
+    for (const [id, st] of Object.entries(reunion.value)) {
+      const q = REUNION_QUESTS[id]
+      if (st.step === 'WAIT' && q && player.value.currentMapId === q.mapId) {
+        st.waitMs += Math.max(0, now - Math.max(mapArrivedAt.value, st.waitSince ?? 0))
+      }
+    }
+  }
+
+  function gainClue(id: string, source: ClueSource): number {
+    const st = reunionOf(id)
+    if (st.step !== 'CLUES') return 0
+    const today = dayKey()
+    if (st.day !== today) {
+      st.day = today
+      st.got = { closed: 0, replay: 0, inn: 0 }
+    }
+    const src = REUNION_CLUE_SOURCES[source]
+    const gain = Math.min(src.gain, src.dailyCap - st.got[source], REUNION_CLUE_TARGET - st.clues)
+    if (gain <= 0) return 0
+    st.got[source] += gain
+    st.clues += gain
+    if (st.clues >= REUNION_CLUE_TARGET) {
+      st.step = 'WAIT'
+      st.waitSince = Date.now()
+      const q = REUNION_QUESTS[id]
+      const m = MAPS.find((x) => x.id === q.mapId)
+      appendLog('ADVENTURE', [
+        { type: 'tag', text: '线索集齐', tone: 'gold' },
+        { type: 'text', text: ` 关于` },
+        { type: 'actor', name: COMPANIONS[id].name, isAlly: true },
+        { type: 'text', text: `的消息终于拼凑完整。${q.waitText}（前往【${m?.name}】累计停留 ${REUNION_WAIT_HOURS} 小时，离线亦可）` },
+      ])
+      showToast(`【${COMPANIONS[id].name}】线索集齐：前往${m?.name}相候`, 'gold')
+    }
+    return gain
+  }
+
+  /** 收功时：离线 ≥1 小时为寻访攒线索；离线 ≥30 分钟在当前地图采办绝味食材 */
+  function onOfflineSettled(elapsedSec: number) {
+    if (elapsedSec >= 3600) {
+      const names = reunionCandidates.value.filter((id) => gainClue(id, 'closed') > 0).map((id) => COMPANIONS[id].name)
+      if (names.length) {
+        appendLog('ADVENTURE', [
+          { type: 'tag', text: '闭关打听', tone: 'jade' },
+          { type: 'text', text: ` 闭关时听往来客商闲谈，得了些${names.join('、')}的消息（线索 +${REUNION_CLUE_SOURCES.closed.gain}）。` },
+        ])
+      }
+    }
+    if (feastActive.value && elapsedSec >= FEAST_GATHER_MINUTES * 60) {
+      const dish = DISHES.find(
+        (d) => d.mapId === player.value.currentMapId && !feast.value.ingredients.includes(d.id) && !feast.value.cooked.includes(d.id)
+      )
+      if (dish) {
+        feast.value.ingredients.push(dish.id)
+        appendLog('ADVENTURE', [
+          { type: 'tag', text: '采办食材', tone: 'jade' },
+          { type: 'text', text: ` 你在当地寻得上好的「${dish.ingredient}」，可回客栈为洪七公烹一道【${dish.name}】。` },
+        ])
+        showToast(`采得食材：${dish.ingredient}`, 'gold')
+      }
+    }
+  }
+
+  /** 主线节点获胜：与错过伙伴相关的节点给“旧地重游”线索 */
+  function onStoryNodeWon(nodeId: number) {
+    for (const id of reunionCandidates.value) {
+      if (REUNION_QUESTS[id]?.replayNodeIds.includes(nodeId) && gainClue(id, 'replay') > 0) {
+        appendLog('ADVENTURE', [
+          { type: 'tag', text: '旧地重游', tone: 'jade' },
+          { type: 'text', text: ` 故地重来，你在旧战场寻到了${COMPANIONS[id].name}留下的痕迹（线索 +${REUNION_CLUE_SOURCES.replay.gain}）。` },
+        ])
+      }
+    }
+  }
+
+  function inquireReunion(id: string) {
+    if (!reunionCandidates.value.includes(id)) return
+    const st = reunionOf(id)
+    if (st.step !== 'CLUES') return
+    // 动作判定用实时时钟（界面时钟每 30 秒才刷新，跨子时那一刻会错判“今天”）
+    const gotToday = st.day === dayKey() ? st.got.inn : 0
+    if (gotToday >= REUNION_CLUE_SOURCES.inn.dailyCap) {
+      showToast('掌柜今日知道的都说了，明日子时再来', 'info')
+      return
+    }
+    if (player.value.silver < REUNION_INQUIRE_COST) {
+      showToast(`打听消息需 ${REUNION_INQUIRE_COST} 两纹银`, 'danger')
+      return
+    }
+    player.value.silver -= REUNION_INQUIRE_COST
+    const gain = gainClue(id, 'inn')
+    appendLog('JIANGHU', [
+      { type: 'tag', text: '客栈打听', tone: 'jade' },
+      { type: 'text', text: ` 你塞给掌柜一锭碎银，打听${COMPANIONS[id].name}的下落（线索 +${gain}）。` },
+    ])
+  }
+
+  function completeReunionWait(id: string) {
+    const st = reunion.value[id]
+    if (!st || st.step !== 'WAIT') return
+    if (waitRatio(id, Date.now()) < 1) {
+      showToast(`还需在故地多候些时辰（已候 ${Math.floor(waitRatio(id, Date.now()) * 100)}%）`, 'info')
+      return
+    }
+    accrueReunionWait()
+    st.step = 'GIFT'
+    appendLog('ADVENTURE', [
+      { type: 'tag', text: '故地相候', tone: 'gold' },
+      { type: 'text', text: ` 你终于等到了对方出没的踪迹。下一步，备一份${COMPANIONS[id].favGift}，以礼相邀。` },
+    ])
+  }
+
+  function reunionGift(id: string) {
+    const st = reunion.value[id]
+    if (!st || st.step !== 'GIFT') return
+    if (player.value.silver < INN_GIFT_COST) {
+      showToast(`备礼需 ${INN_GIFT_COST} 两纹银`, 'danger')
+      return
+    }
+    player.value.silver -= INN_GIFT_COST
+    st.step = 'BATTLE'
+    appendLog('ADVENTURE', [
+      { type: 'tag', text: '以礼相邀', tone: 'gold' },
+      { type: 'text', text: ` ${REUNION_QUESTS[id].giftText}` },
+    ])
+  }
+
+  function reunionBattle(id: string) {
+    const st = reunion.value[id]
+    const q = REUNION_QUESTS[id]
+    if (!st || !q || st.step !== 'BATTLE') return
+    // 敌人强度按主角当前等级取最近的主线节点，略打九折
+    const ref = [...STORY_CHAPTERS].reverse().find((n) => n.recLevel <= player.value.level) ?? STORY_CHAPTERS[0]
+    appendLog('JIANGHU', [{ type: 'tag', text: '了却前尘', tone: 'red' }, { type: 'text', text: ` ${q.battleIntro}` }])
+    const report = simulateServerBattle({
+      bonus: collectionBonus.value,
+      companionOf,
+      sceneTitle: `故人重逢 · ${COMPANIONS[id].name}`,
+      mode: 'SOLO_STORY',
+      player: player.value,
+      loadout: currentLoadout.value,
+      enemyMain: { ...q.enemy, hp: Math.round(ref.bossHp * 0.9), atk: Math.round(ref.bossAtk * 0.9), mp: Math.round(ref.bossHp * 0.4) },
+      rewards: { qiExp: Math.round(ref.rewardQi * 0.5), silver: 0 },
+    })
+    startBattlePlayback(report, null, () => {
+      const cs = companionAffinity.value[id]
+      cs.met = true
+      cs.recruited = true
+      cs.affinity = Math.max(cs.affinity, 100)
+      st.step = 'DONE'
+      appendLog('ADVENTURE', [
+        { type: 'tag', text: '故人重逢', tone: 'gold' },
+        { type: 'text', text: ` ${q.outro}` },
+        { type: 'actor', name: COMPANIONS[id].name, isAlly: true },
+        { type: 'text', text: '已加入你的江湖行列。' },
+      ])
+      showToast(`故人重逢：【${COMPANIONS[id].name}】已入队`, 'gold')
+    })
+  }
+
+  /** 十道绝味进行中：已结识洪七公、尚未呈齐 */
+  const feastActive = computed(() => !!companionAffinity.value.hongqigong?.met && !storyFlags.value.includes(FEAST_TARGET_FLAG))
+
+  function cookDish(dishId: string) {
+    const dish = DISHES.find((d) => d.id === dishId)
+    if (!dish || !feastActive.value) return
+    if (feast.value.cooked.includes(dishId)) return
+    if (!feast.value.ingredients.includes(dishId)) {
+      const m = MAPS.find((x) => x.id === dish.mapId)
+      showToast(`缺少「${dish.ingredient}」：在【${m?.name}】挂机 ≥${FEAST_GATHER_MINUTES} 分钟后收功即可采得`, 'danger')
+      return
+    }
+    if (feast.value.lastCookDay === dayKey()) {
+      showToast('今日已为洪七公掌过勺，明日子时再来', 'info')
+      return
+    }
+    if (player.value.silver < dish.silver) {
+      showToast(`烹制需 ${dish.silver} 两纹银`, 'danger')
+      return
+    }
+    player.value.silver -= dish.silver
+    feast.value.cooked.push(dishId)
+    feast.value.ingredients = feast.value.ingredients.filter((x) => x !== dishId)
+    feast.value.lastCookDay = dayKey()
+    const hq = companionAffinity.value.hongqigong
+    const gain = Math.max(0, Math.min(10, affinityCap.value - hq.affinity))
+    hq.affinity += gain
+    appendLog('JIANGHU', [
+      { type: 'tag', text: `绝味 ${feast.value.cooked.length}/${DISHES.length}`, tone: 'gold' },
+      { type: 'text', text: ` 你呈上一道【${dish.name}】——${dish.poem}洪七公吃得眉飞色舞${gain ? `（好感 +${gain}）` : ''}。` },
+    ])
+    if (feast.value.cooked.length === DISHES.length) {
+      storyFlags.value.push(FEAST_TARGET_FLAG)
+      hq.met = true
+      hq.recruited = true
+      hq.affinity = Math.max(hq.affinity, 100)
+      appendLog('ADVENTURE', [
+        { type: 'tag', text: '十道绝味', tone: 'gold' },
+        { type: 'actor', name: '洪七公', isAlly: true },
+        { type: 'text', text: '抹抹嘴，拍着肚皮长笑：“十道菜，道道有心思！老叫化这辈子没吃得这般痛快——走，这江湖老叫化陪你闯一闯！”洪七公已加入你的江湖行列。' },
+      ])
+      showToast('十道绝味呈齐：洪七公入队！', 'gold')
+    } else {
+      showToast(`呈上【${dish.name}】（${feast.value.cooked.length}/${DISHES.length}）`, 'gold')
+    }
+  }
+
+  // ==================== 本地存档（可用 VITE_LOCAL_SAVE=false 关闭） ====================
+  function snapshot() {
+    return {
+      gameMode: gameMode.value,
+      isMidnightTheme: isMidnightTheme.value,
+      player: player.value,
+      learnedSkills: learnedSkills.value,
+      ownedItemIds: ownedItemIds.value,
+      pillCount: pillCount.value,
+      betrayedSectIds: betrayedSectIds.value,
+      storyFlags: storyFlags.value,
+      claimedNodeIds: claimedNodeIds.value,
+      resolvedAdventureIds: resolvedAdventureIds.value,
+      adventureQueue: adventureQueue.value,
+      pendingAdventureId: pendingAdventureId.value,
+      companionAffinity: companionAffinity.value,
+      presets: presets.value,
+      innDay: innDay.value,
+      innGiftsToday: innGiftsToday.value,
+      gacha: { ...gacha.value, history: gacha.value.history.slice(0, 30) },
+      reunion: reunion.value,
+      feast: feast.value,
+      mapArrivedAt: mapArrivedAt.value,
+      logs: logs.value.slice(0, 30),
+    }
+  }
+  type SaveData = ReturnType<typeof snapshot>
+  /** 演武模式的初始状态快照：同一会话里玩过新游戏再选演武模式时，用它还原 */
+  const demoInitial: SaveData = JSON.parse(JSON.stringify(snapshot()))
+
+  /** 读档：逐项合并到默认值上，旧档缺的新字段自动补齐、已删除的伙伴自动丢弃 */
+  function applySave(d: Partial<SaveData>) {
+    const blank = blankCompanionStates()
+    if (d.player) player.value = { ...player.value, ...d.player, stats: { ...player.value.stats, ...d.player.stats } }
+    if (d.learnedSkills) learnedSkills.value = { ...d.learnedSkills }
+    if (d.ownedItemIds) ownedItemIds.value = [...d.ownedItemIds]
+    if (d.pillCount !== undefined) pillCount.value = d.pillCount
+    if (d.betrayedSectIds) betrayedSectIds.value = [...d.betrayedSectIds]
+    if (d.storyFlags) storyFlags.value = [...d.storyFlags]
+    if (d.claimedNodeIds) claimedNodeIds.value = [...d.claimedNodeIds]
+    if (d.resolvedAdventureIds) resolvedAdventureIds.value = [...d.resolvedAdventureIds]
+    if (d.adventureQueue) adventureQueue.value = [...d.adventureQueue]
+    if (d.pendingAdventureId !== undefined) pendingAdventureId.value = d.pendingAdventureId
+    if (d.companionAffinity) {
+      companionAffinity.value = Object.fromEntries(
+        Object.entries(blank).map(([id, b]) => [id, { ...b, ...(d.companionAffinity![id] ?? {}) }])
+      )
+    }
+    if (d.presets) presets.value = { ...presets.value, ...d.presets }
+    if (d.innDay !== undefined) innDay.value = d.innDay
+    if (d.innGiftsToday) innGiftsToday.value = { ...d.innGiftsToday }
+    if (d.gacha) gacha.value = Object.assign({ pulls: 0, pity: 0, history: [] as GachaResultView[] }, d.gacha) // 旧档缺字段时补默认
+    if (d.reunion) reunion.value = Object.fromEntries(Object.entries(d.reunion).map(([id, r]) => [id, { ...blankReunion(), ...r }]))
+    if (d.feast) feast.value = Object.assign({ ingredients: [] as string[], cooked: [] as string[], lastCookDay: '' }, d.feast)
+    if (d.mapArrivedAt) mapArrivedAt.value = d.mapArrivedAt
+    if (d.logs?.length) logs.value = [...d.logs]
+    if (d.isMidnightTheme !== undefined) toggleTheme(d.isMidnightTheme)
+    nearbyPlayers.value = generateRoomPlayers(player.value.currentMapId)
+  }
+
+  // 启动时读一次；是否“继续”由玩家在开局界面选择
+  const bootSave = readSave<SaveData>()
+  const savedGame = ref(
+    bootSave?.data.gameMode
+      ? {
+          mode: bootSave.data.gameMode,
+          level: bootSave.data.player?.level ?? 1,
+          node: STORY_CHAPTERS.find((n) => n.id === Math.min(bootSave.data.player?.maxChapterId ?? 1, STORY_CHAPTERS.length))?.code ?? '1-1',
+          savedAt: bootSave.savedAt,
+        }
+      : null
+  )
+
+  function continueGame() {
+    const env = readSave<SaveData>() ?? bootSave
+    if (!env?.data.gameMode) return
+    applySave(env.data)
+    gameMode.value = env.data.gameMode
+    showToast('读档成功，欢迎回到江湖', 'gold')
+  }
+
+  function saveNow() {
+    if (gameMode.value) writeSave(snapshot())
+  }
+
+  /** 回到开局界面（先存档；可“继续”回来） */
+  function backToTitle() {
+    saveNow()
+    savedGame.value = gameMode.value
+      ? { mode: gameMode.value, level: player.value.level, node: STORY_CHAPTERS.find((n) => n.id === Math.min(player.value.maxChapterId, STORY_CHAPTERS.length))?.code ?? '1-1', savedAt: Date.now() }
+      : savedGame.value
+    closeBattleStage()
+    gameMode.value = null
+  }
+
+  function deleteSave() {
+    clearSave()
+    savedGame.value = null
+  }
+
+  if (LOCAL_SAVE_ENABLED) {
+    let saveTimer: ReturnType<typeof setTimeout> | null = null
+    watch(
+      snapshot,
+      () => {
+        if (!gameMode.value) return
+        if (saveTimer) clearTimeout(saveTimer)
+        saveTimer = setTimeout(saveNow, 800)
+      },
+      { deep: true }
+    )
+    if (typeof window !== 'undefined') window.addEventListener('beforeunload', saveNow)
+  }
+
   // ==================== 开局模式 ====================
   /**
    * 选择开局。DEMO 沿用 store 初始化时的“全伙伴 Lv.32”状态（后续版本移除）；
@@ -1586,6 +1973,9 @@ export const useGameStore = defineStore('wuxiaGame', () => {
       innDay.value = ''
       innGiftsToday.value = {}
       gacha.value = { pulls: 0, pity: 0, history: [] }
+      reunion.value = {}
+      feast.value = { ingredients: [], cooked: [], lastCookDay: '' }
+      mapArrivedAt.value = Date.now()
       gachaReveal.value = null
       const blank = (idx: 1 | 2 | 3, name: string, stance: StanceType): LoadoutPresetDTO => ({
         presetIdx: idx,
@@ -1622,7 +2012,17 @@ export const useGameStore = defineStore('wuxiaGame', () => {
         },
       ]
       activeTab.value = 'JIANGHU'
+    } else {
+      applySave(demoInitial)
+      gacha.value = { pulls: 0, pity: 0, history: [] }
+      reunion.value = {}
+      feast.value = { ingredients: [], cooked: [], lastCookDay: '' }
+      innDay.value = ''
+      innGiftsToday.value = {}
+      activeTab.value = 'CULTIVATE'
     }
+    closeBattleStage()
+    gachaReveal.value = null
     gameMode.value = mode
   }
 
@@ -1683,6 +2083,19 @@ export const useGameStore = defineStore('wuxiaGame', () => {
     awakenCompanion,
     gacha,
     gachaReveal,
+    reunionView,
+    inquireReunion,
+    completeReunionWait,
+    reunionGift,
+    reunionBattle,
+    feast,
+    feastActive,
+    cookDish,
+    savedGame,
+    continueGame,
+    backToTitle,
+    deleteSave,
+    saveNow,
     pullGacha,
     closeGachaReveal,
     reunionCandidates,

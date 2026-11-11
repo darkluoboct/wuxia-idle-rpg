@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useGameStore } from '@/stores/gameStore'
-import { COMPANIONS, GHOST_APPRAISE_COST, GRADE_MULT, INN_GIFT_COST, INN_TEA_COST, SKILLS } from '@/config/gameData'
+import { COMPANIONS, GHOST_APPRAISE_COST, GRADE_MULT, INN_GIFT_COST, INN_TEA_COST, MAPS, SKILLS, STORY_CHAPTERS } from '@/config/gameData'
 import { STANCE_META, TIER_META } from '@/config/uiMeta'
 import {
   GACHA_DUP_TOKENS,
@@ -15,6 +15,15 @@ import {
   gachaRateTable,
   REUNION_TICKET_COST,
 } from '@/config/gachaData'
+import {
+  DISHES,
+  FEAST_GATHER_MINUTES,
+  REUNION_CLUE_SOURCES,
+  REUNION_CLUE_TARGET,
+  REUNION_INQUIRE_COST,
+  REUNION_QUESTS,
+  REUNION_WAIT_HOURS,
+} from '@/config/questData'
 import type { StanceType } from '@/network/protocol'
 import InkFigure from '@/components/InkFigure.vue'
 
@@ -32,6 +41,25 @@ const canAfford = (cost: number) => store.player.silver >= cost
 const showRates = ref(false)
 const showHistory = ref(false)
 const RATE_TABLE = gachaRateTable()
+/* ---------- 故人寻访 / 十道绝味 ---------- */
+const REUNION_STEPS = [
+  { k: 'CLUES', l: '打听线索' },
+  { k: 'WAIT', l: '故地相候' },
+  { k: 'GIFT', l: '以礼相邀' },
+  { k: 'BATTLE', l: '了却前尘' },
+] as const
+const stepIdx = (id: string) => REUNION_STEPS.findIndex((s) => s.k === store.reunionView(id).step)
+const daysLeft = (id: string) => {
+  const perDay = Object.values(REUNION_CLUE_SOURCES).reduce((s, x) => s + x.dailyCap, 0)
+  return Math.ceil((REUNION_CLUE_TARGET - store.reunionView(id).clues) / perDay)
+}
+const mapName = (id: string) => MAPS.find((x) => x.id === id)?.name.replace(/（.*?）/, '') ?? id
+const todayKey = () => {
+  const d = new Date(Date.now() + 3600_000)
+  return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`
+}
+const cookedToday = computed(() => store.feast.lastCookDay === todayKey())
+
 const fmtRate = (r: number) => (r >= 1 ? r.toFixed(2) : r.toFixed(3)) + '%'
 /** 伙伴当前形态视图（形态 / 资质已套用） */
 const view = (id: string) => store.companionOf(id)!
@@ -137,18 +165,93 @@ function challengeFiveGreats(p: (typeof fiveGreats)[0]) {
           </ol>
         </article>
 
-        <!-- 故人重逢令：错过的剧情伙伴（固定价格、不随机） -->
-        <article v-if="store.reunionCandidates.length" class="well space-y-2 p-3.5">
-          <div class="flex items-center gap-2"><span class="seal h-7 w-7 text-base">逢</span><b class="font-brush text-xl">故人重逢</b></div>
-          <p class="hint">这些故人曾与你擦肩而过。以一枚「故人重逢令」相邀，便可重续前缘、即刻同行。</p>
-          <div class="flex flex-wrap gap-2">
-            <button
-              v-for="id in store.reunionCandidates" :key="id" class="btn btn-sm btn-gold"
-              :disabled="store.player.goldIngot < REUNION_TICKET_COST" @click="store.redeemReunionTicket(id)"
-            >
-              重逢 {{ COMPANIONS[id].name }} · {{ REUNION_TICKET_COST }} 元宝
-            </button>
+        <!-- 故人寻访：错过的剧情伙伴。免费线约 30 天；重逢令可随时跳过 -->
+        <article v-if="store.reunionCandidates.length" class="well space-y-3 p-3.5">
+          <div class="flex items-center gap-2"><span class="seal h-7 w-7 text-base">逢</span><b class="font-brush text-xl">故人寻访</b></div>
+          <p class="hint">这些故人曾与你擦肩而过。日积月累打听线索（每日有数），集齐后赴故地相候、以礼相邀、了却前尘，便可重续前缘；也可直接以「故人重逢令」相邀。</p>
+          <div v-for="id in store.reunionCandidates" :key="id" class="space-y-2 border-t border-line pt-2.5">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <b class="font-brush text-lg">{{ COMPANIONS[id].name }}</b>
+              <button class="btn btn-sm btn-gold" :disabled="store.player.goldIngot < REUNION_TICKET_COST" @click="store.redeemReunionTicket(id)">
+                重逢令 · {{ REUNION_TICKET_COST }} 元宝
+              </button>
+            </div>
+            <!-- 四步进度 -->
+            <ol class="grid grid-cols-4 gap-1 text-center text-[0.7rem]">
+              <li
+                v-for="(s, i) in REUNION_STEPS" :key="s.k" class="rounded-sm border px-1 py-1"
+                :class="stepIdx(id) > i ? 'border-jade text-jade' : stepIdx(id) === i ? 'border-gold text-gold' : 'border-line text-ink3'"
+              >{{ s.l }}</li>
+            </ol>
+            <!-- 1 打听线索 -->
+            <template v-if="store.reunionView(id).step === 'CLUES'">
+              <div class="bar bar-gold"><i :style="{ width: `${(store.reunionView(id).clues / REUNION_CLUE_TARGET) * 100}%` }" /></div>
+              <div class="flex flex-wrap items-center justify-between gap-2 text-xs">
+                <span class="tabular-nums text-ink2">线索 <b class="text-gold">{{ store.reunionView(id).clues }}</b> / {{ REUNION_CLUE_TARGET }} · 约还需 {{ daysLeft(id) }} 天</span>
+                <span class="flex flex-wrap gap-1">
+                  <span
+                    v-for="(src, k) in REUNION_CLUE_SOURCES" :key="k" class="chip !py-0 !text-[0.65rem] tabular-nums"
+                    :class="store.reunionView(id).got[k] >= src.dailyCap ? 'chip-jade' : ''" :title="src.hint"
+                  >{{ src.label }} {{ store.reunionView(id).got[k] }}/{{ src.dailyCap }}</span>
+                </span>
+              </div>
+              <button
+                class="btn btn-sm w-full" :disabled="store.reunionView(id).got.inn >= REUNION_CLUE_SOURCES.inn.dailyCap || store.player.silver < REUNION_INQUIRE_COST"
+                @click="store.inquireReunion(id)"
+              >
+                向掌柜打听 · {{ REUNION_INQUIRE_COST }} 两（今日 {{ store.reunionView(id).got.inn }}/{{ REUNION_CLUE_SOURCES.inn.dailyCap }}）
+              </button>
+              <p class="text-[0.7rem] text-ink3">其余线索：离线 ≥1 小时后收功（闭关打听）；再次历练 {{ REUNION_QUESTS[id].replayNodeIds.map((n) => STORY_CHAPTERS[n - 1].code).join('、') }} 并获胜（旧地重游）。</p>
+            </template>
+            <!-- 2 故地相候 -->
+            <template v-else-if="store.reunionView(id).step === 'WAIT'">
+              <p class="text-xs text-ink2">{{ REUNION_QUESTS[id].waitText }}</p>
+              <div class="bar bar-gold"><i :style="{ width: `${store.reunionView(id).waitRatio * 100}%` }" /></div>
+              <div class="flex flex-wrap items-center justify-between gap-2 text-xs">
+                <span class="tabular-nums text-ink2">
+                  在【{{ mapName(REUNION_QUESTS[id].mapId) }}】累计相候 {{ Math.floor(store.reunionView(id).waitRatio * 100) }}%（共 {{ REUNION_WAIT_HOURS }} 小时，离线亦算）
+                </span>
+                <span class="flex gap-1.5">
+                  <button v-if="store.player.currentMapId !== REUNION_QUESTS[id].mapId" class="btn btn-sm" @click="store.moveMap(REUNION_QUESTS[id].mapId)">前往故地</button>
+                  <button class="btn btn-sm btn-gold" :disabled="store.reunionView(id).waitRatio < 1" @click="store.completeReunionWait(id)">赴约</button>
+                </span>
+              </div>
+            </template>
+            <!-- 3 以礼相邀 -->
+            <div v-else-if="store.reunionView(id).step === 'GIFT'" class="flex flex-wrap items-center justify-between gap-2 text-xs">
+              <span class="text-ink2">备一份「{{ COMPANIONS[id].favGift }}」相邀</span>
+              <button class="btn btn-sm btn-gold" :disabled="store.player.silver < INN_GIFT_COST" @click="store.reunionGift(id)">备礼 · {{ INN_GIFT_COST }} 两</button>
+            </div>
+            <!-- 4 了却前尘 -->
+            <div v-else-if="store.reunionView(id).step === 'BATTLE'" class="flex flex-wrap items-center justify-between gap-2 text-xs">
+              <span class="text-ink2">强敌拦路：{{ REUNION_QUESTS[id].enemy.name }}（强度随你的等级）</span>
+              <button class="btn btn-sm btn-seal" @click="store.reunionBattle(id)">拔剑相护</button>
+            </div>
           </div>
+        </article>
+
+        <!-- 北丐·十道绝味：每日一道，食材需在各地挂机采办 -->
+        <article v-if="store.feastActive" class="well space-y-2.5 p-3.5">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div class="flex items-center gap-2"><span class="seal h-7 w-7 text-base">味</span><b class="font-brush text-xl">北丐 · 十道绝味</b></div>
+            <span class="chip chip-gold tabular-nums">{{ store.feast.cooked.length }} / {{ DISHES.length }}</span>
+          </div>
+          <p class="hint">洪七公嘴刁，只认真心实意的好菜。在各地挂机 ≥{{ FEAST_GATHER_MINUTES }} 分钟后收功即可采得当地食材，每日可为他掌勺一道；十道呈齐，他便与你同行。</p>
+          <p v-if="cookedToday" class="text-xs text-jade">今日已掌勺，明日子时再来。</p>
+          <ul class="grid gap-1.5 sm:grid-cols-2">
+            <li v-for="d in DISHES" :key="d.id" class="flex items-center gap-2 border border-line px-2 py-1.5 text-xs" :class="store.feast.cooked.includes(d.id) ? 'opacity-60' : ''">
+              <span class="min-w-0 flex-1">
+                <b class="block truncate text-sm" :class="store.feast.cooked.includes(d.id) ? 'text-jade' : ''">{{ d.name }}</b>
+                <span class="block truncate text-ink3">{{ d.ingredient }} · {{ mapName(d.mapId) }}</span>
+              </span>
+              <span v-if="store.feast.cooked.includes(d.id)" class="chip chip-jade shrink-0">已呈上</span>
+              <button
+                v-else-if="store.feast.ingredients.includes(d.id)" class="btn btn-sm btn-gold shrink-0"
+                :disabled="cookedToday || store.player.silver < d.silver" @click="store.cookDish(d.id)"
+              >掌勺 · {{ d.silver }} 两</button>
+              <span v-else class="chip shrink-0" :title="`在【${mapName(d.mapId)}】挂机 ≥${FEAST_GATHER_MINUTES} 分钟后收功`">待采办</span>
+            </li>
+          </ul>
         </article>
 
         <p class="hint">
@@ -202,6 +305,9 @@ function challengeFiveGreats(p: (typeof fiveGreats)[0]) {
                 <span class="tier-chip chip ml-1 !py-0 !text-[0.68rem]" :class="TIER_META[SKILLS[c.teachSkillId].tier].cls">{{ TIER_META[SKILLS[c.teachSkillId].tier].label }}</span>
               </div>
               <p v-if="willTrigger(c.id, 80)" class="text-xs font-bold text-gold">再奉一杯爱物，即可触发「倾囊传功」！</p>
+              <p v-if="c.recruitFlag && !store.companionAffinity[c.id]?.recruited && !store.storyFlags.includes(c.recruitFlag)" class="text-xs text-cinnabar">
+                好感再高也请不动他：需先呈齐「十道绝味」，方肯同行。
+              </p>
 
               <div class="mt-auto grid grid-cols-2 gap-1.5">
                 <button class="btn btn-sm !min-h-[2.4rem] flex-col !gap-0" :disabled="giftDisabled(c.id, false)" @click="store.giftCompanionInInn(c.id, false)">
