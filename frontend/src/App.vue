@@ -101,7 +101,7 @@ const TOAST_GLYPH = { gold: '喜', danger: '警', info: '讯' } as const
             <div class="font-brush text-xl leading-none tracking-[0.1em] text-gold sm:text-[1.65rem] sm:tracking-[0.12em]">金庸群侠</div>
             <div class="mt-1 hidden items-center gap-1.5 text-xs text-ink3 lg:flex">
               <i class="inline-block h-1.5 w-1.5 rounded-full bg-jade" />
-              {{ store.shichenLabel }} · {{ IS_MOCK_MODE ? '演武模式' : '江湖在线' }}
+              {{ store.shichenLabel }} · {{ IS_MOCK_MODE ? '本地模拟' : '江湖在线' }}
             </div>
           </div>
         </div>

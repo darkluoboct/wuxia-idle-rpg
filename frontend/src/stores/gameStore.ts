@@ -1765,8 +1765,11 @@ export const useGameStore = defineStore('wuxiaGame', () => {
     })
   }
 
-  /** 十道绝味进行中：已结识洪七公、尚未呈齐 */
-  const feastActive = computed(() => !!companionAffinity.value.hongqigong?.met && !storyFlags.value.includes(FEAST_TARGET_FLAG))
+  /** 十道绝味进行中：已结识洪七公、尚未入队（抽卡 / 演武模式已得者无需再做）、尚未呈齐 */
+  const feastActive = computed(() => {
+    const hq = companionAffinity.value.hongqigong
+    return !!hq?.met && !hq.recruited && !storyFlags.value.includes(FEAST_TARGET_FLAG)
+  })
 
   function cookDish(dishId: string) {
     const dish = DISHES.find((d) => d.id === dishId)

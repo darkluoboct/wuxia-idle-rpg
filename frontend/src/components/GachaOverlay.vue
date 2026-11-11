@@ -143,8 +143,10 @@ const STICKS = [
 
     <!-- ========== 求签：签筒摇动 / 出签 ========== -->
     <div v-if="phase === 'SHAKE' || phase === 'DRAW'" class="relative flex flex-col items-center">
-      <div class="gacha-floor-glow absolute bottom-[-0.5rem] h-8 w-56 rounded-[50%]" />
-      <div class="relative h-[17rem] w-[9rem]" :class="phase === 'SHAKE' ? 'gacha-shake' : 'gacha-settle'">
+      <div class="relative h-[17rem] w-[9rem]">
+        <div class="gacha-floor-glow absolute bottom-[-1rem] left-1/2 h-8 w-56 -translate-x-1/2 rounded-[50%]" />
+      </div>
+      <div class="absolute top-0 h-[17rem] w-[9rem]" :class="phase === 'SHAKE' ? 'gacha-shake' : 'gacha-settle'">
         <img v-if="GACHA_ASSETS.tube" :src="GACHA_ASSETS.tube" alt="签筒" class="absolute inset-0 h-full w-full object-contain" />
         <svg v-else viewBox="0 0 116 220" class="absolute inset-0 h-full w-full overflow-visible" aria-hidden="true">
           <!-- 筒内竹签 -->
@@ -213,7 +215,7 @@ const STICKS = [
     </div>
 
     <!-- ========== 揭晓：十连签卡 ========== -->
-    <div v-else class="relative w-full max-w-4xl overflow-y-auto px-4 py-4">
+    <div v-else class="relative max-h-[calc(100dvh-10rem)] w-full max-w-4xl overflow-y-auto px-4 py-4">
       <div v-if="best === 'red'" class="gacha-rays pointer-events-none absolute left-1/2 top-1/2 h-[46rem] w-[46rem] -translate-x-1/2 -translate-y-1/2 opacity-60" />
       <ol class="relative grid grid-cols-3 gap-2.5 sm:grid-cols-5 sm:gap-3">
         <li
@@ -229,10 +231,10 @@ const STICKS = [
           <!-- 卡面 -->
           <div class="gacha-face gacha-front panel flex flex-col items-center overflow-hidden p-1.5 text-center" :class="isRare(r) ? 'glow-border' : ''">
             <span class="chip tier-chip !px-1.5 !py-0 !text-[0.62rem]">{{ TIER_META[r.draw.tier].label }}</span>
-            <div class="relative flex min-h-0 w-full flex-1 items-end justify-center">
+            <div class="relative flex min-h-0 w-full flex-1 justify-center" :class="r.portrait ? 'items-end' : 'items-center'">
               <img v-if="r.portrait && r.draw.refId && GACHA_ASSETS.portraits[r.draw.refId]" :src="GACHA_ASSETS.portraits[r.draw.refId]" :alt="r.name" class="h-full object-contain" />
               <InkFigure v-else-if="r.portrait" :style-type="r.portrait" />
-              <span v-else class="seal mb-2 h-10 w-10 text-2xl" :style="{ background: 'var(--tc)', boxShadow: '0 0 0 0.12rem var(--tc)' }">{{ r.glyph }}</span>
+              <span v-else class="seal h-14 w-14 text-3xl" :style="{ background: 'var(--tc)', boxShadow: '0 0 0 0.14rem var(--tc)' }">{{ r.glyph }}</span>
             </div>
             <b class="font-brush mt-0.5 w-full truncate text-base leading-tight" :style="{ color: 'var(--tc)' }">{{ r.name }}</b>
             <span class="line-clamp-2 text-[0.62rem] leading-tight text-ink3">{{ r.detail }}</span>

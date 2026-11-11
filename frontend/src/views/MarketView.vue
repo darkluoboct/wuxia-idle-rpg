@@ -121,7 +121,7 @@ function challengeFiveGreats(p: (typeof fiveGreats)[0]) {
           <button class="tab" role="tab" :aria-selected="sub === 'HUASHAN'" @click="sub = 'HUASHAN'">华山论剑</button>
           <button class="tab" role="tab" :aria-selected="sub === 'ARTIFACTS'" @click="sub = 'ARTIFACTS'">兵器谱</button>
         </div>
-        <span class="flex items-center gap-1.5 text-xs text-ink3">
+        <span class="hidden items-center gap-1.5 text-xs text-ink3 sm:flex">
           纹银 <b class="text-sm tabular-nums text-ink">{{ store.player.silver.toLocaleString() }}</b>
           <template v-if="sub === 'GHOST' || sub === 'INN'"> · 元宝 <b class="text-sm tabular-nums text-gold">{{ store.player.goldIngot }}</b></template>
         </span>
