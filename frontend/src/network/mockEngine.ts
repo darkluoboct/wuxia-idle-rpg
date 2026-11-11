@@ -53,7 +53,13 @@ export function evaluateStanceAdvantage(ally: StanceType, enemy: StanceType): {
 }
 
 /** 计算玩家二级战斗面板（严格对应第06册公式） */
-export function computeDerivedStats(player: PlayerDTO, loadout: LoadoutPresetDTO) {
+/** 收集羁绊带来的全局百分比加成（见 gameData.COMPANION_SETS） */
+export interface CollectionBonus {
+  hpPct?: number
+  atkPct?: number
+}
+
+export function computeDerivedStats(player: PlayerDTO, loadout: LoadoutPresetDTO, bonus: CollectionBonus = {}) {
   const realm = REALMS.find((r) => r.tier === player.realmTier) ?? REALMS[0]
   const m = realm.multiplier
   const s = player.stats
@@ -70,10 +76,11 @@ export function computeDerivedStats(player: PlayerDTO, loadout: LoadoutPresetDTO
   const equipAtk = w?.atkBonus ?? 0
   const equipDef = (ar?.defBonus ?? 0) + (rl?.defBonus ?? 0)
 
-  const hpBonusMult = 1 + (player.bonusHpPct ?? 0) / 100
+  const hpBonusMult = (1 + (player.bonusHpPct ?? 0) / 100) * (1 + (bonus.hpPct ?? 0) / 100)
+  const atkBonusMult = 1 + (bonus.atkPct ?? 0) / 100
   const maxHp = Math.round((320 + player.level * 85 + s.con * 46) * m * (inner?.id === 'jiuyin_zonggang' ? 1.25 : 1.08) * hpBonusMult + equipHp)
   const maxMp = Math.round((120 + player.level * 32 + s.con * 26 + s.intStat * 12) * m)
-  const atk = Math.round((45 + player.level * 13 + s.str * 8.5 + s.agi * 2.5) * m + equipAtk)
+  const atk = Math.round(((45 + player.level * 13 + s.str * 8.5 + s.agi * 2.5) * m + equipAtk) * atkBonusMult)
   const def = Math.round((22 + player.level * 6 + s.con * 5.5 + s.str * 2.0) * m + equipDef)
   const speed = Math.round(100 + s.agi * 3.2 + (light?.speedBonus ?? 0))
   const dodge = Math.min(65, Math.round((s.agi / (s.agi + 180 + player.level * 4)) * 45 + (light?.dodgeBonus ?? 0)))
@@ -150,9 +157,10 @@ export function simulateServerBattle(params: {
   enemyGuards?: { name: string; title: string; portrait: CombatUnitDTO['portraitStyle']; hp: number; atk: number }[]
   coopPlayers?: { leftPlayer: { name: string; sect: string; hp: number; atk: number }; rightPlayer: { name: string; sect: string; hp: number; atk: number } }
   rewards?: BattleReportDTO['rewards']
+  bonus?: CollectionBonus
 }): BattleReportDTO {
-  const { sceneTitle, mode, player, loadout, enemyMain, enemyGuards, coopPlayers, rewards } = params
-  const pDerived = computeDerivedStats(player, loadout)
+  const { sceneTitle, mode, player, loadout, enemyMain, enemyGuards, coopPlayers, rewards, bonus } = params
+  const pDerived = computeDerivedStats(player, loadout, bonus)
   const stanceInfo = evaluateStanceAdvantage(loadout.stance, enemyMain.stance)
 
   const units: CombatUnitDTO[] = []

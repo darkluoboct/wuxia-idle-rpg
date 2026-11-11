@@ -195,6 +195,32 @@ function itemStats(it: (typeof ITEMS)[string]) {
           </div>
         </div>
 
+        <!-- 收集羁绊：已入队成员数达标即获全局加成 -->
+        <div>
+          <div class="sec-title mb-2">收集羁绊 <span class="text-xs font-sans tracking-normal text-ink3">拥有（已入队）成员越多，加成越高，无需同队</span></div>
+          <div class="grid gap-2 md:grid-cols-3">
+            <article v-for="b in store.setBonusStates" :key="b.set.id" class="well flex flex-col gap-2 p-3" :class="b.tier ? '!border-gold' : ''">
+              <div class="flex items-center justify-between gap-2">
+                <b class="font-brush text-lg" :class="b.tier ? 'text-gold' : ''">{{ b.set.name }}</b>
+                <span class="chip tabular-nums" :class="b.tier ? 'chip-gold' : ''">{{ b.owned }} / {{ b.set.memberIds.length + (b.set.plannedMembers?.length ?? 0) }}</span>
+              </div>
+              <p class="hint">{{ b.set.desc }}</p>
+              <div class="flex flex-wrap gap-1">
+                <span
+                  v-for="id in b.set.memberIds" :key="id" class="chip !py-0 !text-[0.68rem]"
+                  :class="isRecruited(id) ? 'chip-jade' : 'opacity-60'"
+                >{{ COMPANIONS[id].name }}</span>
+                <span v-for="n in b.set.plannedMembers ?? []" :key="n" class="chip !py-0 !text-[0.68rem] opacity-40" title="后续版本登场">{{ n }}</span>
+              </div>
+              <ul class="space-y-0.5 text-xs">
+                <li v-for="t in b.set.tiers" :key="t.count" :class="b.owned >= t.count ? 'text-jade' : 'text-ink3'">
+                  {{ b.owned >= t.count ? '✓' : '·' }} {{ t.count }} 位「{{ t.label }}」：{{ [t.hpPct && `气血 +${t.hpPct}%`, t.atkPct && `攻击 +${t.atkPct}%`, t.idleQiPct && `打坐 +${t.idleQiPct}%`].filter(Boolean).join('，') }}
+                </li>
+              </ul>
+            </article>
+          </div>
+        </div>
+
         <div class="grid gap-3 lg:grid-cols-2">
           <div v-for="side in ([{ role: 'LEFT', title: '左翼 · 破阵护卫位', sub: '挡刀 / 合击', key: 'leftCompanionId' }, { role: 'RIGHT', title: '右翼 · 奇策辅助位', sub: '控场 / 卸劲', key: 'rightCompanionId' }] as const)" :key="side.role" class="well space-y-2 p-3">
             <div class="flex items-baseline justify-between">

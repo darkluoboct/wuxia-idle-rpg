@@ -124,6 +124,7 @@ export interface CombatUnitDTO {
   portraitStyle:
     | 'hero_sword' | 'guojing' | 'huangrong' | 'hongqigong' | 'huangyaoshi' | 'ouyangfeng' | 'meichaofeng' | 'zhoubotong' | 'monk' | 'assassin'
     | 'munianci' | 'ouyangke' | 'wanyankang' | 'qiuqianren' | 'daoist' | 'chenxuanfeng' | 'bandit'
+    | 'wangchongyang' | 'yideng' | 'zhebie' | 'yinggu' | 'yangtiexin' | 'sunbuer' | 'luchengfeng' | 'zhuziliu'
   isPlayer: boolean
   maxHp: number
   hp: number

@@ -171,6 +171,7 @@ export const STORY_CHAPTERS: StoryNodeConfig[] = [
     rewardQi: 4800, rewardSilver: 1500, dropSkillIds: ['tonggui_jian'],
     firstClear: {
       tag: '牛家旧案', tone: 'purple', flags: ['niujiacun_truth'], qiExp: 1500,
+      affinity: { mayu: 120, tanchuduan: 120, qiuchuji: 20, wangchuyi: 20 },
       text: '谭处端收剑称善。马钰以全真正宗心法指点你吐纳正途，丘处机则在松涛声中缓缓揭开了十八年前牛家村郭、杨两家的血案——你手中那柄玄铁匕首上的“靖”字，忽然沉甸甸的。',
     },
   },
@@ -194,7 +195,7 @@ export const STORY_CHAPTERS: StoryNodeConfig[] = [
     intro: '太湖归云庄主陆乘风被一位自称“铁掌水上漂”的裘千仞蒙骗，竟要拱手让出庄子。你看出这位“裘帮主”脚下虚浮，当场拆穿他的把戏。',
     rewardQi: 8200, rewardSilver: 2600,
     firstClear: {
-      tag: '识破骗局', tone: 'jade', flags: ['guiyun_ship'], silver: 1500,
+      tag: '识破骗局', tone: 'jade', flags: ['guiyun_ship'], silver: 1500, affinity: { luchengfeng: 120 },
       text: '假裘千丈当场跪地求饶，陆乘风又惊又愧，为谢你仗义，将庄中一艘可远航的海船相赠——从此，通往东海桃花岛的航路向你敞开。',
     },
   },
@@ -240,7 +241,7 @@ export const STORY_CHAPTERS: StoryNodeConfig[] = [
     intro: '你重返临安牛家村曲三酒馆的密室，隔墙之外，黄药师、全真七子、欧阳锋连环惊变；你屏息偷听黄蓉解析《九阴真经》梵文总纲，却被潜入的杨康撞破，对方一声冷笑，拔剑便刺。',
     rewardQi: 17000, rewardSilver: 4800,
     firstClear: {
-      tag: '梵文总纲', tone: 'purple', flags: ['jiuyin_fanwen'], qiExp: 3500,
+      tag: '梵文总纲', tone: 'purple', flags: ['jiuyin_fanwen'], qiExp: 3500, affinity: { yangkang: 20 },
       text: '杨康负伤遁走。你默记下黄蓉口述的梵文音译，只觉经文里“天之道，损有余而补不足”几句，竟与你体内真气隐隐相合。',
     },
   },
@@ -251,7 +252,7 @@ export const STORY_CHAPTERS: StoryNodeConfig[] = [
     intro: '为寻《武穆遗书》抗金，并救治重伤的洪七公，你连闯湘西铁掌帮三山，终于登上铁掌峰顶。铁掌帮主裘千仞立于绝壁，双掌乌黑：“来者何人，敢闯我铁掌峰！”',
     rewardQi: 25000, rewardSilver: 6000, dropItemIds: ['wumu_yishu', 'tiancan_glove'], dropSkillIds: ['shuishang_piao'],
     firstClear: {
-      tag: '渔樵耕读', tone: 'gold', flags: ['yuqiao_gengdu'], qiExp: 5000, affinity: { hongqigong: 120 },
+      tag: '渔樵耕读', tone: 'gold', flags: ['yuqiao_gengdu'], qiExp: 5000, affinity: { hongqigong: 120, zhuziliu: 120, qiuqianren: 20 },
       text: '你击败裘千仞，从峰顶密室取得《武穆遗书》。下山后你于桃源连闯“渔、樵、耕、读”四关，终于见到了隐居的南帝一灯大师。【大理一灯居】的山门，向你敞开。',
     },
   },
@@ -419,7 +420,7 @@ export const ADVENTURES: AdventureConfig[] = [
         key: 'A', label: '背起二人，倾注真气疗伤，护送至终南山隐居',
         requirementText: '需根骨 ≥ 25（得【杨家精钢烂银枪】与《杨家枪法》，穆念慈好感 +200）',
         require: (c) => c.stats.con >= 25,
-        reward: { tag: '护送隐居', tone: 'gold', stats: { karma: 40 }, items: ['yangjia_spear'], skills: ['yangjia_qiang'], affinity: { munianci: 200 }, text: '你以真气护住二人心脉，杀出重围。杨铁心感激涕零，将祖传的烂银枪与枪谱赠与你；而远处，穆念慈含泪遥遥一拜。' },
+        reward: { tag: '护送隐居', tone: 'gold', stats: { karma: 40 }, items: ['yangjia_spear'], skills: ['yangjia_qiang'], affinity: { munianci: 200, yangtiexin: 120 }, text: '你以真气护住二人心脉，杀出重围。杨铁心感激涕零，将祖传的烂银枪与枪谱赠与你；而远处，穆念慈含泪遥遥一拜。' },
       },
       {
         key: 'B', label: '留下干粮与伤药，含泪告别',
@@ -476,7 +477,7 @@ export const ADVENTURES: AdventureConfig[] = [
       {
         key: 'A', label: '暗中搬开巨石，救下欧阳克',
         requirementText: '侠义 −40，结交西毒欧阳锋（蛤蟆功传功线），得【白驼山描金折扇】',
-        reward: { tag: '结交西毒', tone: 'purple', stats: { karma: -40 }, items: ['baituo_fan'], affinity: { ouyangfeng: 150 }, flags: ['baituo_favor'], text: '欧阳克被你救下，感激之余将描金折扇相赠；远处，欧阳锋阴恻恻的目光落在你身上：“小朋友，将来到我白驼山做客。”' },
+        reward: { tag: '结交西毒', tone: 'purple', stats: { karma: -40 }, items: ['baituo_fan'], affinity: { ouyangfeng: 150, ouyangke: 60 }, flags: ['baituo_favor'], text: '欧阳克被你救下，感激之余将描金折扇相赠；远处，欧阳锋阴恻恻的目光落在你身上：“小朋友，将来到我白驼山做客。”' },
       },
       {
         key: 'B', label: '袖手旁观，转身而去',
@@ -494,12 +495,12 @@ export const ADVENTURES: AdventureConfig[] = [
         key: 'A', label: '凝神推演九宫，一口报出立方根',
         requirementText: '需悟性 ≥ 36（得【黑沼·九尾灵狐】与《泥鳅功》，周伯通好感 +100）',
         require: (c) => c.stats.intStat >= 36,
-        reward: { tag: '解开九宫', tone: 'gold', items: ['jiuwei_fox'], skills: ['niqiu_gong'], affinity: { zhoubotong: 100 }, text: '瑛姑瞪着你，忽然又哭又笑，将伴她多年的九尾灵狐与泥鳅功秘籍一并送你：“多年解不开的题，今日终于……终于有人解开了。”' },
+        reward: { tag: '解开九宫', tone: 'gold', items: ['jiuwei_fox'], skills: ['niqiu_gong'], affinity: { zhoubotong: 100, yinggu: 40 }, text: '瑛姑瞪着你，忽然又哭又笑，将伴她多年的九尾灵狐与泥鳅功秘籍一并送你：“多年解不开的题，今日终于……终于有人解开了。”' },
       },
       {
         key: 'B', label: '帮她采药熬汤，陪她推演三日',
         requirementText: '悟性 +2，真气 +3,000',
-        reward: { tag: '陪伴推演', tone: 'jade', stats: { intStat: 2 }, qiExp: 3000, text: '三日夜里，你陪着瑛姑在泥地上画满九宫格。虽未解出最后一题，你的运算之道却也大有进益。' },
+        reward: { tag: '陪伴推演', tone: 'jade', stats: { intStat: 2 }, qiExp: 3000, affinity: { yinggu: 30 }, text: '三日夜里，你陪着瑛姑在泥地上画满九宫格。虽未解出最后一题，你的运算之道却也大有进益。' },
       },
     ],
   },

@@ -23,6 +23,7 @@ import {
   simulateServerBattle,
 } from '@/network/mockEngine'
 import {
+  activeSetBonuses,
   ADVENTURES,
   adventureById,
   COMPANIONS,
@@ -158,6 +159,23 @@ export const useGameStore = defineStore('wuxiaGame', () => {
     // 射雕篇新伙伴：通过主线 / 支线剧情结识
     munianci: { affinity: 0, recruited: false, taught: false, met: false },
     ouyangfeng: { affinity: 0, recruited: false, taught: false, met: false },
+    // 第一批扩充（第12册）：剧情送 / 好感线靠主线与支线结识，抽卡线待客栈「结缘」开放
+    yideng: { affinity: 0, recruited: false, taught: false, met: false },
+    wangchongyang: { affinity: 0, recruited: false, taught: false, met: false },
+    qiuchuji: { affinity: 0, recruited: false, taught: false, met: false },
+    qiuqianren: { affinity: 0, recruited: false, taught: false, met: false },
+    yangkang: { affinity: 0, recruited: false, taught: false, met: false },
+    zhebie: { affinity: 0, recruited: false, taught: false, met: false },
+    lingzhi: { affinity: 0, recruited: false, taught: false, met: false },
+    yinggu: { affinity: 0, recruited: false, taught: false, met: false },
+    mayu: { affinity: 0, recruited: false, taught: false, met: false },
+    tanchuduan: { affinity: 0, recruited: false, taught: false, met: false },
+    wangchuyi: { affinity: 0, recruited: false, taught: false, met: false },
+    sunbuer: { affinity: 0, recruited: false, taught: false, met: false },
+    ouyangke: { affinity: 0, recruited: false, taught: false, met: false },
+    yangtiexin: { affinity: 0, recruited: false, taught: false, met: false },
+    luchengfeng: { affinity: 0, recruited: false, taught: false, met: false },
+    zhuziliu: { affinity: 0, recruited: false, taught: false, met: false },
   })
 
   // 3套配装预设
@@ -213,7 +231,18 @@ export const useGameStore = defineStore('wuxiaGame', () => {
   const currentRealm = computed(() => REALMS.find((r) => r.tier === player.value.realmTier) ?? REALMS[0])
   const currentMap = computed(() => MAPS.find((m) => m.id === player.value.currentMapId) ?? MAPS[0])
   const currentSect = computed(() => SECTS.find((s) => s.id === player.value.currentSectId) ?? null)
-  const derivedStats = computed(() => computeDerivedStats(player.value, currentLoadout.value))
+  // 收集羁绊：已入队成员数达标即全局加成（气血 / 攻击 / 离线打坐）
+  const setBonusStates = computed(() => activeSetBonuses((id) => !!companionAffinity.value[id]?.recruited))
+  const collectionBonus = computed(() => {
+    const sum = { hpPct: 0, atkPct: 0, idleQiPct: 0 }
+    for (const { tier } of setBonusStates.value) {
+      sum.hpPct += tier?.hpPct ?? 0
+      sum.atkPct += tier?.atkPct ?? 0
+      sum.idleQiPct += tier?.idleQiPct ?? 0
+    }
+    return sum
+  })
+  const derivedStats = computed(() => computeDerivedStats(player.value, currentLoadout.value, collectionBonus.value))
 
   // 计算当前实时每小时打坐真气效率
   const effectiveQiPerHour = computed(() => {
@@ -223,7 +252,8 @@ export const useGameStore = defineStore('wuxiaGame', () => {
     const armorBonus = (currentLoadout.value.armorId ? ITEMS[currentLoadout.value.armorId]?.idleBonus ?? 0 : 0) / 100
     const sectBonus = player.value.currentSectId === 'quanzhen' ? 0.25 : 0
     const coCultBonus = player.value.coCultivatePartner ? 0.15 : 0
-    return Math.round(base * conMult * (1 + innerBonus + armorBonus + sectBonus + coCultBonus))
+    const setBonus = collectionBonus.value.idleQiPct / 100
+    return Math.round(base * conMult * (1 + innerBonus + armorBonus + sectBonus + coCultBonus + setBonus))
   })
 
   // 当前激活的三人行羁绊
@@ -814,6 +844,7 @@ export const useGameStore = defineStore('wuxiaGame', () => {
     ])
 
     const report = simulateServerBattle({
+      bonus: collectionBonus.value,
       sceneTitle: `${ch.code} ${ch.title}`,
       mode: 'SOLO_STORY',
       player: player.value,
@@ -841,6 +872,7 @@ export const useGameStore = defineStore('wuxiaGame', () => {
   /** 松鹤楼：3名真实玩家主角实时结义组队战（破少林三渡金刚伏魔圈） */
   function startThreePlayerCoopRaid() {
     const report = simulateServerBattle({
+      bonus: collectionBonus.value,
       sceneTitle: '松鹤楼结义 · 少室山三渡金刚伏魔圈',
       mode: 'COOP_3P',
       player: player.value,
@@ -907,6 +939,7 @@ export const useGameStore = defineStore('wuxiaGame', () => {
           : `纷争劫镖 · 强夺【${target.nickname}】`
 
     const report = simulateServerBattle({
+      bonus: collectionBonus.value,
       sceneTitle: titlePrefix,
       mode: action === 'SPAR' ? 'PVP_HUASHAN' : 'PVP_AMBUSH',
       player: player.value,
@@ -982,6 +1015,7 @@ export const useGameStore = defineStore('wuxiaGame', () => {
     }
     const nextRankName = currentSect.value.ranks[player.value.sectRank]
     const report = simulateServerBattle({
+      bonus: collectionBonus.value,
       sceneTitle: `${currentSect.value.name}升阶大考 · 晋升「${nextRankName}」`,
       mode: 'SECT_TRIAL',
       player: player.value,
@@ -1289,6 +1323,8 @@ export const useGameStore = defineStore('wuxiaGame', () => {
     currentMap,
     currentSect,
     derivedStats,
+    setBonusStates,
+    collectionBonus,
     effectiveQiPerHour,
     activeTrioSynergy,
     isWandererMasteryActive,
