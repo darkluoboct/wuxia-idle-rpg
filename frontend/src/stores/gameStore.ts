@@ -447,7 +447,8 @@ export const useGameStore = defineStore('wuxiaGame', () => {
 
   function toggleTheme(forceMidnight?: boolean) {
     isMidnightTheme.value = forceMidnight !== undefined ? forceMidnight : !isMidnightTheme.value
-    document.documentElement.classList.toggle('theme-midnight', isMidnightTheme.value)
+    // 无 DOM 环境（测试 / 服务端渲染）下只更新状态
+    if (typeof document !== 'undefined') document.documentElement.classList.toggle('theme-midnight', isMidnightTheme.value)
   }
 
   function openInspect(payload: { title: string; subtitle: string; tier: TierColor; desc: string; extra?: string }) {

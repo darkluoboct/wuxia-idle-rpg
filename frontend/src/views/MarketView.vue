@@ -4,6 +4,7 @@ import { useGameStore } from '@/stores/gameStore'
 import { COMPANIONS, GHOST_APPRAISE_COST, GRADE_MULT, INN_GIFT_COST, INN_TEA_COST, MAPS, SKILLS, STORY_CHAPTERS } from '@/config/gameData'
 import { STANCE_META, TIER_META } from '@/config/uiMeta'
 import {
+  GACHA_BASE_RATES,
   GACHA_DUP_TOKENS,
   GACHA_HARD_PITY,
   GACHA_ORANGE_TOP_GRADE_RATE,
@@ -137,7 +138,7 @@ function challengeFiveGreats(p: (typeof fiveGreats)[0]) {
                 <span class="seal h-9 w-9 text-xl">缘</span>
                 <h4 class="font-brush text-2xl leading-none">醉仙楼 · 结缘</h4>
               </div>
-              <p class="hint mt-1.5">雅间焚香求签，结识江湖名宿、偶得神兵秘籍。神品 1.5% · 绝品 8% · 上品 30%；第 {{ GACHA_HARD_PITY }} 抽必出神品，十连必出上品及以上。</p>
+              <p class="hint mt-1.5">雅间焚香求签，结识江湖名宿、偶得神兵秘籍。神品 {{ GACHA_BASE_RATES.red }}% · 绝品 {{ GACHA_BASE_RATES.orange }}% · 上品 {{ GACHA_BASE_RATES.purple }}%；第 {{ GACHA_HARD_PITY }} 抽必出神品，十连必出上品及以上。</p>
               <div class="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
                 <span class="chip tabular-nums">已结缘 {{ store.gacha.pulls }} 次</span>
                 <span class="chip chip-gold tabular-nums">距神品保底 {{ GACHA_HARD_PITY - store.gacha.pity }} 抽</span>
