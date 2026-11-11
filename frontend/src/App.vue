@@ -5,6 +5,7 @@ import { useGameStore, type MainTab } from '@/stores/gameStore'
 import { IS_GUEST_ENTRY, IS_MOCK_MODE } from '@/network/apiClient'
 import { TIER_META } from '@/config/uiMeta'
 import LeftCharacterSidebar from '@/components/LeftCharacterSidebar.vue'
+import JianghuQuestScroll from '@/components/JianghuQuestScroll.vue'
 import RightJianghuSidebar from '@/components/RightJianghuSidebar.vue'
 import OnlineEntry from '@/components/OnlineEntry.vue'
 import CharacterSelect from '@/components/CharacterSelect.vue'
@@ -158,7 +159,10 @@ const TOAST_GLYPH = { gold: '喜', danger: '警', info: '讯' } as const
       </section>
 
       <aside id="world-rail" class="wuxia-rail world-rail" aria-label="江湖卷" :data-open="store.mobileDrawer === 'WORLD'">
-        <div class="rail-frame"><RightJianghuSidebar /></div>
+        <div class="rail-frame">
+          <JianghuQuestScroll />
+          <RightJianghuSidebar />
+        </div>
       </aside>
     </main>
 

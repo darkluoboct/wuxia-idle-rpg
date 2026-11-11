@@ -1,8 +1,9 @@
 import { defineStore } from 'pinia'
-import { computed, onScopeDispose, ref, shallowRef } from 'vue'
+import { computed, onScopeDispose, ref, shallowRef, watch } from 'vue'
 import type {
   BattleReportDTO,
   CombatUnitDTO,
+  EquipSlotType,
   GameLogEntry,
   IdleGain,
   GhostMarketListingDTO,
@@ -16,6 +17,9 @@ import type {
   SkillUpgradeResult,
   StanceType,
   StoryChallengeResult,
+  TrialChallengeResult,
+  TrialPatrolStatusDTO,
+  TrialReplayResult,
   TierColor,
   UniqueArtifactStatusDTO,
   WsServerEvent,
@@ -55,6 +59,11 @@ import {
 import { EQUIP_SLOT_META, formatSkillPower, itemBonusLabels, shichenIdxFromDate, SKILL_SLOT_META, STANCE_META } from '@/config/uiMeta'
 import { apiClient, ApiError, IS_MOCK_MODE } from '@/network/apiClient'
 import { coCultivationRate, createStarterCharacter, cultivationRate, idleQiNumerator } from '../../../shared/player.ts'
+import {
+  PATROL_DROP_CHANCE, PATROL_ENCOUNTER_MINUTES, TRIAL_PATROL_HOURS, TRIAL_REPLAY_HOURS,
+  TRIAL_STAGES, trialItemOf, trialPartId, trialSetOf, trialStageOf,
+} from '../../../shared/trialStages.ts'
+import { FTUE_QUESTS, HAND_THREE_YANG, type FtueQuestConfig } from '../../../shared/ftueQuests.ts'
 import { MAX_SKILL_MASTERY, getSkillMasteryCap, skillUpgradeCost } from '../../../shared/skillMastery.ts'
 import { useOnlineGame } from './onlineGame'
 
@@ -71,7 +80,7 @@ export const useGameStore = defineStore('wuxiaGame', () => {
   // 主题与响应式抽屉状态（默认启动采用燕云玄墨深色护眼主题）
   const isMidnightTheme = ref(true)
   const activeTab = ref<MainTab>('CULTIVATE')
-  const jianghuTab = ref<'STORY' | 'MAPS' | 'RAID'>('STORY')
+  const jianghuTab = ref<'STORY' | 'TRIAL' | 'MAPS' | 'RAID'>('TRIAL')
   const arsenalTab = ref<'SKILLS' | 'SQUAD' | 'EQUIP' | 'MERIDIAN'>('SKILLS')
   // 窄屏下左 / 右侧栏以抽屉形式呈现
   const mobileDrawer = ref<'NONE' | 'CHAR' | 'WORLD'>('NONE')
@@ -141,6 +150,29 @@ export const useGameStore = defineStore('wuxiaGame', () => {
   const companionAffinity = ref(starter.companionAffinity)
   const presets = ref(starter.presets)
   const betrayedSectIds = ref<string[]>([])
+  const marketTab = ref<'INN' | 'GHOST' | 'ALCHEMY' | 'HUASHAN' | 'ARTIFACTS'>('INN')
+
+  // 首日《江湖行历》：进度按现有系统状态推导，领取记录按角色本地保存
+  interface FtueState { index: number; claimed: number[]; forageCount: number; refinedRecipeIds: string[] }
+  const FTUE_KEY = (id: string) => `wuxia-ftue-${id}`
+  const emptyFtue = (): FtueState => ({ index: 0, claimed: [], forageCount: 0, refinedRecipeIds: [] })
+  function loadFtue(id: string): FtueState {
+    if (typeof localStorage === 'undefined') return emptyFtue()
+    try {
+      const raw = localStorage.getItem(FTUE_KEY(id))
+      if (!raw) return emptyFtue()
+      const saved = JSON.parse(raw) as Partial<FtueState>
+      return { ...emptyFtue(), ...saved, claimed: saved.claimed ?? [], refinedRecipeIds: saved.refinedRecipeIds ?? [] }
+    } catch {
+      return emptyFtue()
+    }
+  }
+  const ftue = ref<FtueState>(loadFtue(player.value.id))
+  function saveFtue() {
+    if (typeof localStorage === 'undefined') return
+    localStorage.setItem(FTUE_KEY(player.value.id), JSON.stringify(ftue.value))
+  }
+  watch(() => player.value.id, (id) => { ftue.value = loadFtue(id) })
   const onlineState = shallowRef<{ snapshot: PlayerSnapshot; receivedAt: number } | null>(null)
   const shaoshiClears = computed(() => onlineState.value?.snapshot.shaoshiClears ?? 0)
   const nextRaidRelic = computed(() => IS_MOCK_MODE
@@ -1042,6 +1074,263 @@ export const useGameStore = defineStore('wuxiaGame', () => {
     startBattlePlayback(report)
   }
 
+  const trial = computed(() => player.value.trial)
+
+  const ftueQuest = computed(() => FTUE_QUESTS[ftue.value.index] ?? null)
+
+  function ftueProgressOf(quest: FtueQuestConfig): number {
+    switch (quest.targetType) {
+      case 'STORY':
+        return player.value.trial.rewardedStageIds.includes(Number(quest.targetValue)) ? 1 : 0
+      case 'PIERCE':
+        return openedAcupointIds.value.includes(String(quest.targetValue)) ? 1 : 0
+      case 'PIERCE_ALL':
+        return HAND_THREE_YANG.every((id) => openedAcupointIds.value.includes(id)) ? 1 : 0
+      case 'COMPANION': {
+        const state = companionAffinity.value[String(quest.targetValue)]
+        return state?.recruited && state.affinity >= 100 ? 1 : 0
+      }
+      case 'FORAGE':
+        return ftue.value.forageCount >= 1 ? 1 : 0
+      case 'REFINE':
+        return ftue.value.refinedRecipeIds.includes(String(quest.targetValue)) ? 1 : 0
+      case 'BREAKTHROUGH':
+        return player.value.realmTier >= Number(quest.targetValue) ? 1 : 0
+      case 'SECT':
+        return player.value.currentSectId ? 1 : 0
+    }
+  }
+
+  const ftueReady = computed(() => {
+    const quest = ftueQuest.value
+    return !!quest && ftueProgressOf(quest) >= 1
+  })
+
+  function claimFtueReward() {
+    const quest = ftueQuest.value
+    if (!quest || ftueProgressOf(quest) < 1) return
+    player.value.qiExp += quest.rewardQi
+    player.value.silver += quest.rewardSilver
+    if (quest.rewardPillId) {
+      pillInventory.value[quest.rewardPillId] = (pillInventory.value[quest.rewardPillId] ?? 0) + 1
+    }
+    ftue.value.claimed.push(quest.id)
+    ftue.value.index = Math.min(FTUE_QUESTS.length, ftue.value.index + 1)
+    saveFtue()
+    appendLog('JIANGHU', [
+      { type: 'tag', text: '江湖行历', tone: 'gold' },
+      { type: 'text', text: ` 达成「${quest.title}」，领得真气 ${quest.rewardQi.toLocaleString()}、纹银 ${quest.rewardSilver.toLocaleString()}${quest.rewardPillId ? '，并获赠一枚丹药' : ''}。` },
+    ])
+    showToast(`行历达成：${quest.title}`, 'gold')
+  }
+
+  function gotoFtueTarget() {
+    const quest = ftueQuest.value
+    if (!quest) return
+    selectTab(quest.jumpTab)
+    if (quest.jumpTab === 'JIANGHU' && quest.jumpSub) {
+      jianghuTab.value = quest.jumpSub as typeof jianghuTab.value
+    }
+    if (quest.jumpTab === 'MARKET' && quest.jumpSub) {
+      marketTab.value = quest.jumpSub as typeof marketTab.value
+    }
+  }
+
+  function trialPatrolStatus(stageId = player.value.trial.selectedStageId): TrialPatrolStatusDTO {
+    const hours = player.value.trial.stageHours[String(stageId)] ?? 0
+    return {
+      stageId,
+      hours,
+      requiredHours: TRIAL_PATROL_HOURS[stageId] ?? 0,
+      encounters: Math.floor(hours * (60 / PATROL_ENCOUNTER_MINUTES)),
+    }
+  }
+
+  /** 本地试玩版惰性巡历：进度、章末复战与 30 分钟一次的小怪掉落 */
+  function mockSettlePatrol() {
+    if (!IS_MOCK_MODE) return
+    const t = player.value.trial
+    const now = Date.now()
+    const since = Math.max(t.lastPatrolAt, now - 12 * 3_600_000)
+    const elapsed = now - since
+    if (elapsed <= 0) return
+
+    const key = String(t.selectedStageId)
+    t.stageHours[key] = (t.stageHours[key] ?? 0) + elapsed / 3_600_000
+    if (TRIAL_STAGES.find((stage) => stage.id === t.selectedStageId)?.replayPartIds) {
+      t.replayHours[key] = Math.min(TRIAL_REPLAY_HOURS, (t.replayHours[key] ?? 0) + elapsed / 3_600_000)
+    }
+    t.lastPatrolAt = now
+
+    const encounters = Math.floor(elapsed / (PATROL_ENCOUNTER_MINUTES * 60_000))
+    const stage = trialStageOf(t.selectedStageId)
+    const set = stage ? trialSetOf(stage.setId) : undefined
+    if (encounters <= 0 || !set) return
+    for (let i = 0; i < encounters; i++) {
+      if (Math.random() >= PATROL_DROP_CHANCE) continue
+      const part = set.parts[Math.floor(Math.random() * set.parts.length)]
+      const id = trialPartId(set.id, part.slot)
+      if (ownedItemIds.value.includes(id)) {
+        t.marks[key] = (t.marks[key] ?? 0) + 1
+        continue
+      }
+      ownedItemIds.value.push(id)
+      t.recentDrops.unshift({ id, name: part.name, tier: set.tier, at: now })
+    }
+    t.recentDrops = t.recentDrops.slice(0, 10)
+  }
+
+  function setPatrolStage(stageId: number) {
+    if (!IS_MOCK_MODE) {
+      return online.action<TrialPatrolStatusDTO>('POST', '/trial/patrol', { stageId }, (status) => {
+        showToast(`已改在「第 ${String(status.stageId).padStart(2, '0')} 关」巡历`, 'info')
+      })
+    }
+    mockSettlePatrol()
+    const stage = trialStageOf(stageId)
+    if (!stage || stageId > player.value.trial.maxStageId) return
+    player.value.trial.selectedStageId = stageId
+    showToast(`已改在「第 ${stage.code} 关」巡历`, 'info')
+  }
+
+  function challengeTrialStage(stageId: number) {
+    if (!IS_MOCK_MODE) {
+      if (isBattlePlaying.value) return
+      return online.action<TrialChallengeResult>('POST', `/trial/${stageId}/challenge`, undefined, ({ report, firstClear, drops }) => {
+        if (firstClear) showToast(`首胜奖励：${drops.length ? drops.map((drop) => drop.name).join('、') : '真气与纹银'}`, 'gold')
+        startBattlePlayback(report)
+      })
+    }
+    mockSettlePatrol()
+    const stage = trialStageOf(stageId)
+    if (!stage) return
+    const t = player.value.trial
+    if (stageId > t.maxStageId) {
+      showToast('先打过上一关，才能挑战这里。', 'danger')
+      return
+    }
+    const required = TRIAL_PATROL_HOURS[stageId] ?? 0
+    const hours = t.stageHours[String(stageId)] ?? 0
+    if (hours < required) {
+      const rest = required - hours
+      showToast(`本关巡历还差 ${rest < 1 ? `${Math.max(1, Math.ceil(rest * 60))} 分钟` : `${rest.toFixed(1)} 小时`}。`, 'danger')
+      return
+    }
+
+    const firstClear = !t.rewardedStageIds.includes(stageId)
+    const drops = firstClear
+      ? stage.firstClearParts
+        .map((slot) => trialItemOf(trialPartId(stage.setId, slot)))
+        .filter((item): item is NonNullable<ReturnType<typeof trialItemOf>> => !!item && !ownedItemIds.value.includes(item.id))
+      : []
+    const rewardQi = Math.round(stage.boss.hp * 2)
+    const rewardSilver = Math.round(stage.boss.hp * 0.8)
+    const report = simulateServerBattle({
+      sceneTitle: `${stage.code} ${stage.title}`,
+      mode: 'SOLO_STORY',
+      player: player.value,
+      loadout: currentLoadout.value,
+      enemyMain: {
+        name: stage.boss.name,
+        title: stage.boss.title,
+        portrait: stage.boss.portrait,
+        hp: stage.boss.hp,
+        atk: stage.boss.atk,
+        mp: Math.round(stage.boss.hp * 0.45),
+        stance: stage.boss.stance,
+      },
+      surviveRounds: stage.victory === 'SURVIVE_ROUNDS' ? stage.surviveRounds : undefined,
+      rewards: firstClear
+        ? { qiExp: rewardQi, silver: rewardSilver, items: drops.map(({ id, name, tier }) => ({ id, name, tier })) }
+        : undefined,
+    })
+    if (report.winner === 'ALLY' && firstClear) {
+      player.value.qiExp += rewardQi
+      player.value.silver += rewardSilver
+      for (const drop of drops) ownedItemIds.value.push(drop.id)
+      t.rewardedStageIds.push(stageId)
+      t.stageHours[String(stageId)] = 0
+      const next = Math.min(TRIAL_STAGES.length, stageId + 1)
+      t.maxStageId = Math.max(t.maxStageId, next)
+      t.selectedStageId = next
+    }
+    startBattlePlayback(report)
+  }
+
+  function replayTrialBoss(stageId: number) {
+    if (!IS_MOCK_MODE) {
+      if (isBattlePlaying.value) return
+      return online.action<TrialReplayResult>('POST', `/trial/${stageId}/replay`, undefined, ({ report, drop }) => {
+        if (drop) showToast(`首领复战：${drop.name}`, 'gold')
+        startBattlePlayback(report)
+      })
+    }
+    mockSettlePatrol()
+    const stage = trialStageOf(stageId)
+    if (!stage?.replayPartIds) return
+    const t = player.value.trial
+    const key = String(stageId)
+    if ((t.replayHours[key] ?? 0) < TRIAL_REPLAY_HOURS) {
+      showToast(`在本关巡历满 ${TRIAL_REPLAY_HOURS} 小时才能再战首领。`, 'danger')
+      return
+    }
+    const report = simulateServerBattle({
+      sceneTitle: `${stage.code} ${stage.title} · 首领复战`,
+      mode: 'SOLO_STORY',
+      player: player.value,
+      loadout: currentLoadout.value,
+      enemyMain: {
+        name: stage.boss.name,
+        title: stage.boss.title,
+        portrait: stage.boss.portrait,
+        hp: stage.boss.hp,
+        atk: stage.boss.atk,
+        mp: Math.round(stage.boss.hp * 0.45),
+        stance: stage.boss.stance,
+      },
+      surviveRounds: stage.victory === 'SURVIVE_ROUNDS' ? stage.surviveRounds : undefined,
+    })
+    if (report.winner === 'ALLY') {
+      const candidates = stage.replayPartIds
+        .map((id) => trialItemOf(id))
+        .filter((item): item is NonNullable<ReturnType<typeof trialItemOf>> => !!item)
+      const drop = candidates.find((item) => !ownedItemIds.value.includes(item.id)) ?? candidates[0]
+      if (drop) {
+        if (ownedItemIds.value.includes(drop.id)) t.marks[key] = (t.marks[key] ?? 0) + 1
+        else ownedItemIds.value.push(drop.id)
+        showToast(`首领复战：${drop.name}`, 'gold')
+      }
+      t.replayHours[key] = 0
+    }
+    startBattlePlayback(report)
+  }
+
+  function redeemTrialPart(stageId: number, slot: EquipSlotType) {
+    if (!IS_MOCK_MODE) {
+      return online.action<{ itemId: string; name: string }>('POST', `/trial/${stageId}/redeem`, { slot }, ({ name }) => {
+        showToast(`兑换：${name}`, 'gold')
+      })
+    }
+    mockSettlePatrol()
+    const stage = trialStageOf(stageId)
+    if (!stage) return
+    const t = player.value.trial
+    const key = String(stageId)
+    if ((t.marks[key] ?? 0) < 4) {
+      showToast('集齐 4 枚巡历印记才能兑换。', 'danger')
+      return
+    }
+    const item = trialItemOf(trialPartId(stage.setId, slot))
+    if (!item) return
+    if (ownedItemIds.value.includes(item.id)) {
+      showToast('这个部位已经拿到了。', 'danger')
+      return
+    }
+    t.marks[key] = (t.marks[key] ?? 0) - 4
+    ownedItemIds.value.push(item.id)
+    showToast(`兑换：${item.name}`, 'gold')
+  }
+
   function openRaidLobby() {
     jianghuTab.value = 'RAID'
     selectTab('JIANGHU')
@@ -1580,6 +1869,8 @@ export const useGameStore = defineStore('wuxiaGame', () => {
       { type: 'text', text: ` 在【${map.name}】跋山涉水巡探，采获：${descStr}！` },
     ])
     showToast(`采获：${descStr}`, 'gold')
+    ftue.value.forageCount += 1
+    saveFtue()
   }
 
   // 丹房炼制
@@ -1644,6 +1935,10 @@ export const useGameStore = defineStore('wuxiaGame', () => {
         { type: 'text', text: ` 依照《${recipe.name}》起炉炼药，${critText} 炼得「${medName}」x${yieldCount}！` },
       ])
       showToast(`炼丹大成！获得「${medName}」x${yieldCount}${isDouble ? '（一炉双丹！）' : ''}`, 'gold')
+      if (!ftue.value.refinedRecipeIds.includes(recipeId)) {
+        ftue.value.refinedRecipeIds.push(recipeId)
+        saveFtue()
+      }
     } else {
       // 失败补偿
       alchemyPity.value[recipeId] = pity + 6
@@ -1768,6 +2063,20 @@ export const useGameStore = defineStore('wuxiaGame', () => {
     selectTab,
     moveMap,
     challengeChapter,
+    trial,
+    ftue,
+    ftueQuest,
+    ftueReady,
+    ftueProgressOf,
+    claimFtueReward,
+    gotoFtueTarget,
+    marketTab,
+    trialPatrolStatus,
+    mockSettlePatrol,
+    setPatrolStage,
+    challengeTrialStage,
+    replayTrialBoss,
+    redeemTrialPart,
     startThreePlayerCoopRaid,
     openRaidLobby,
     raidTeamAction,

@@ -113,8 +113,10 @@ export function simulateServerBattle(params: {
   enemyGuards?: { name: string; title: string; portrait: CombatUnitDTO['portraitStyle']; hp: number; atk: number }[]
   coopPlayers?: { leftPlayer: { name: string; sect: string; hp: number; atk: number }; rightPlayer: { name: string; sect: string; hp: number; atk: number } }
   rewards?: BattleReportDTO['rewards']
+  /** 生存战：撑过该回合且主角仍存活即判胜 */
+  surviveRounds?: number
 }): BattleReportDTO {
-  const { sceneTitle, mode, player, loadout, learnedSkills, enemyMain, enemyGuards, coopPlayers, rewards } = params
+  const { sceneTitle, mode, player, loadout, learnedSkills, enemyMain, enemyGuards, coopPlayers, rewards, surviveRounds } = params
   const pDerived = computeDerivedStats(player, loadout)
   const stanceInfo = evaluateStanceAdvantage(loadout.stance, enemyMain.stance)
 
@@ -263,6 +265,7 @@ export function simulateServerBattle(params: {
   const enrageStartRound = calcBattleEnrageRound(enemyMain.hp, mode)
   const maxRounds = enrageStartRound + 4
   let isEnraged = false
+  let survived = false
 
   for (let round = 1; round <= maxRounds; round++) {
     if (hpState.ALLY_MAIN <= 0 || (hpState.ENEMY_MAIN <= 0 && (hpState.ENEMY_LEFT ?? 0) <= 0 && (hpState.ENEMY_RIGHT ?? 0) <= 0)) {
@@ -451,10 +454,15 @@ export function simulateServerBattle(params: {
         segments: enemySegs,
       })
     }
+
+    if (surviveRounds && round >= surviveRounds && hpState.ALLY_MAIN > 0) {
+      survived = true
+      break
+    }
   }
 
   const enemyDead = hpState.ENEMY_MAIN <= 0 && (hpState.ENEMY_LEFT ?? 0) <= 0 && (hpState.ENEMY_RIGHT ?? 0) <= 0
-  const winner: 'ALLY' | 'ENEMY' = enemyDead ? 'ALLY' : 'ENEMY'
+  const winner: 'ALLY' | 'ENEMY' = enemyDead || survived ? 'ALLY' : 'ENEMY'
 
   return {
     battleId: `bt_${Date.now()}`,

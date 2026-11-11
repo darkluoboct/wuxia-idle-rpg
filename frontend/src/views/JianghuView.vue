@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onScopeDispose } from 'vue'
 import { storeToRefs } from 'pinia'
 import { Lock } from 'lucide-vue-next'
 import { useGameStore } from '@/stores/gameStore'
 import { IS_MOCK_MODE } from '@/network/apiClient'
 import { EXPANSION_VOLUMES_PREVIEW, getChapterDrops, getMapHerbs, MAPS, STORY_CHAPTERS } from '@/config/gameData'
+import { TRIAL_PATROL_HOURS, TRIAL_REPLAY_HOURS, TRIAL_STAGES, trialSetOf } from '../../../shared/trialStages.ts'
 import { STANCE_META, TIER_META, stanceRelation } from '@/config/uiMeta'
 import PortraitCard from '@/components/PortraitCard.vue'
 import RaidLobbyPanel from '@/components/RaidLobbyPanel.vue'
@@ -13,6 +14,7 @@ import SceneBackdrop from '@/components/SceneBackdrop.vue'
 const store = useGameStore()
 const { jianghuTab: sub } = storeToRefs(store)
 const tabs = [
+  { k: 'TRIAL', l: '三十关历练' },
   { k: 'STORY', l: '射雕主线' },
   { k: 'MAPS', l: '江湖地图' },
   { k: 'RAID', l: '结义副本' },
@@ -21,6 +23,35 @@ const tabs = [
 const cleared = computed(() => Math.max(0, store.player.maxChapterId - 1))
 type State = 'CLEARED' | 'CURRENT' | 'LOCKED'
 const stateOf = (id: number): State => (id < store.player.maxChapterId ? 'CLEARED' : id === store.player.maxChapterId ? 'CURRENT' : 'LOCKED')
+
+const trial = computed(() => store.trial)
+const trialStateOf = (id: number): State => (id < trial.value.maxStageId ? 'CLEARED' : id === trial.value.maxStageId ? 'CURRENT' : 'LOCKED')
+const trialRows = TRIAL_STAGES.map((stage) => ({ stage, set: trialSetOf(stage.setId)! }))
+const currentStage = computed(() => TRIAL_STAGES.find((stage) => stage.id === trial.value.selectedStageId) ?? TRIAL_STAGES[0])
+const currentPatrol = computed(() => store.trialPatrolStatus())
+store.mockSettlePatrol()
+const patrolTimer = setInterval(() => store.mockSettlePatrol(), 30_000)
+onScopeDispose(() => clearInterval(patrolTimer))
+
+function fmtHours(hours: number) {
+  if (hours <= 0) return '0 分钟'
+  if (hours < 1) return `${Math.max(1, Math.round(hours * 60))} 分钟`
+  return `${hours.toFixed(1)} 小时`
+}
+
+const trialProgress = (stageId: number) => {
+  const required = TRIAL_PATROL_HOURS[stageId] ?? 0
+  if (required <= 0) return 100
+  return Math.min(100, Math.round(((trial.value.stageHours[String(stageId)] ?? 0) / required) * 100))
+}
+
+const trialCleared = computed(() => Math.max(0, trial.value.maxStageId - 1))
+const progressPct = computed(() => sub.value === 'TRIAL'
+  ? (trialCleared.value / TRIAL_STAGES.length) * 100
+  : (cleared.value / STORY_CHAPTERS.length) * 100)
+const progressLabel = computed(() => sub.value === 'TRIAL'
+  ? `${trialCleared.value} / ${TRIAL_STAGES.length}`
+  : `${cleared.value} / ${STORY_CHAPTERS.length}`)
 
 </script>
 
@@ -32,14 +63,89 @@ const stateOf = (id: number): State => (id < store.player.maxChapterId ? 'CLEARE
           <button v-for="t in tabs" :key="t.k" class="tab" role="tab" :aria-selected="sub === t.k" @click="sub = t.k">{{ t.l }}</button>
         </div>
         <div class="flex items-center gap-2 text-xs text-ink3">
-          通关
-          <div class="bar bar-thin bar-gold w-20"><i :style="{ width: `${(cleared / STORY_CHAPTERS.length) * 100}%` }" /></div>
-          <b class="tabular-nums text-gold">{{ cleared }} / {{ STORY_CHAPTERS.length }}</b>
+          {{ sub === 'TRIAL' ? '历练' : '通关' }}
+          <div class="bar bar-thin bar-gold w-20"><i :style="{ width: `${progressPct}%` }" /></div>
+          <b class="tabular-nums text-gold">{{ progressLabel }}</b>
         </div>
       </div>
 
+      <!-- ============ 三十关历练 ============ -->
+      <div v-if="sub === 'TRIAL'" class="view-scroll -mr-1 space-y-3 pr-1">
+        <article class="well flex flex-wrap items-center justify-between gap-3 p-3">
+          <div class="min-w-0">
+            <div class="text-xs text-ink3">当前巡历</div>
+            <div class="font-brush text-xl leading-tight">
+              <span class="text-gold">{{ currentStage.code }}</span> {{ currentStage.title }}
+            </div>
+            <div class="mt-1 flex flex-wrap gap-1.5 text-xs">
+              <span class="chip chip-gold tabular-nums">{{ fmtHours(currentPatrol.hours) }} / {{ fmtHours(currentPatrol.requiredHours) }}</span>
+              <span class="chip">遭遇 {{ currentPatrol.encounters }} 次</span>
+              <span class="chip">印记 {{ trial.marks[String(currentStage.id)] ?? 0 }} 枚</span>
+            </div>
+          </div>
+          <div class="text-right text-xs text-ink3">
+            <div>挂机每 30 分钟一次遭遇</div>
+            <div>首胜必得套装件，重复件转印记</div>
+          </div>
+        </article>
+
+        <article
+          v-for="row in trialRows" :key="row.stage.id"
+          class="well p-3"
+          :class="trialStateOf(row.stage.id) === 'LOCKED' ? 'opacity-60' : trialStateOf(row.stage.id) === 'CURRENT' ? '!border-gold' : ''"
+        >
+          <div class="flex flex-wrap items-start justify-between gap-3">
+            <div class="min-w-0 flex-1 space-y-1.5">
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="chip tabular-nums">{{ row.stage.code }}</span>
+                <h4 class="font-brush text-lg leading-none">{{ row.stage.title }}</h4>
+                <span v-if="trialStateOf(row.stage.id) === 'CLEARED'" class="chip chip-jade">已通关</span>
+                <span v-else-if="trialStateOf(row.stage.id) === 'CURRENT'" class="chip chip-gold">当前关卡</span>
+                <span v-else class="chip"><Lock :size="11" class="inline" /> 未开放</span>
+              </div>
+              <div class="flex flex-wrap items-center gap-1.5 text-xs">
+                <span class="chip">推荐 Lv.{{ row.stage.recLevel }}</span>
+                <span class="chip">对手 {{ row.stage.boss.name }}</span>
+                <span class="chip">{{ STANCE_META[row.stage.boss.stance].name }}</span>
+                <span class="chip tier-chip" :class="TIER_META[row.set.tier].cls">{{ row.set.name }}</span>
+              </div>
+              <p class="hint">{{ row.stage.mechanicTip }}</p>
+              <div class="flex items-center gap-2">
+                <div class="bar bar-thin flex-1"><i :style="{ width: `${trialProgress(row.stage.id)}%` }" /></div>
+                <span class="w-24 text-right text-[0.7rem] tabular-nums text-ink3">{{ trialProgress(row.stage.id) }}%</span>
+              </div>
+            </div>
+            <div class="flex shrink-0 flex-wrap items-center justify-end gap-1.5 sm:flex-col sm:items-stretch">
+              <button
+                class="btn btn-sm"
+                :class="trialStateOf(row.stage.id) === 'CURRENT' && trialProgress(row.stage.id) >= 100 ? 'btn-seal' : ''"
+                :disabled="trialStateOf(row.stage.id) === 'LOCKED' || (trialStateOf(row.stage.id) === 'CURRENT' && trialProgress(row.stage.id) < 100) || store.onlineActionBusy"
+                @click="store.challengeTrialStage(row.stage.id)"
+              >
+                {{ trialStateOf(row.stage.id) === 'CLEARED' ? '再战一次' : trialStateOf(row.stage.id) === 'CURRENT' ? (trialProgress(row.stage.id) >= 100 ? '拔剑试炼' : '巡历中') : '未开放' }}
+              </button>
+              <button
+                class="btn btn-sm"
+                :disabled="trialStateOf(row.stage.id) === 'LOCKED' || trial.selectedStageId === row.stage.id"
+                @click="store.setPatrolStage(row.stage.id)"
+              >
+                {{ trial.selectedStageId === row.stage.id ? '正在巡历' : '巡历到此' }}
+              </button>
+              <button
+                v-if="row.stage.replayPartIds"
+                class="btn btn-sm btn-gold"
+                :disabled="(trial.replayHours[String(row.stage.id)] ?? 0) < TRIAL_REPLAY_HOURS || store.onlineActionBusy"
+                @click="store.replayTrialBoss(row.stage.id)"
+              >
+                首领复战 {{ fmtHours(trial.replayHours[String(row.stage.id)] ?? 0) }}/{{ TRIAL_REPLAY_HOURS }}h
+              </button>
+            </div>
+          </div>
+        </article>
+      </div>
+
       <!-- ============ 主线：回目时间轴 ============ -->
-      <ol v-if="sub === 'STORY'" class="view-scroll -mr-1 pr-1">
+      <ol v-else-if="sub === 'STORY'" class="view-scroll -mr-1 pr-1">
         <li
           v-for="ch in STORY_CHAPTERS" :key="ch.id"
           class="relative grid grid-cols-[2.75rem_minmax(0,1fr)] gap-x-3 pb-4 last:pb-0 sm:grid-cols-[2.75rem_minmax(0,1fr)_auto]"

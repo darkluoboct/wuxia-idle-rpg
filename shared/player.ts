@@ -34,6 +34,16 @@ export function createStarterCharacter(identity: Pick<PlayerDTO, 'id' | 'nicknam
     bountyUntil: null,
     wearingMask: false,
     activePresetIdx: 1,
+    trial: {
+      selectedStageId: 1,
+      maxStageId: 1,
+      rewardedStageIds: [],
+      stageHours: {},
+      replayHours: {},
+      lastPatrolAt: now,
+      marks: {},
+      recentDrops: [],
+    },
   }
   const learnedSkills: Record<string, number> = {
     quanzhen_tuna: 3,

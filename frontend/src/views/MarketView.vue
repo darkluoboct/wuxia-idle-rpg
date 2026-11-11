@@ -20,7 +20,10 @@ import type { StanceType } from '@/network/protocol'
 import InkFigure from '@/components/InkFigure.vue'
 
 const store = useGameStore()
-const sub = ref<'INN' | 'GHOST' | 'ALCHEMY' | 'HUASHAN' | 'ARTIFACTS'>('INN')
+const sub = computed({
+  get: () => store.marketTab,
+  set: (value) => { store.marketTab = value },
+})
 
 function enterGhostMarket() {
   sub.value = 'GHOST'

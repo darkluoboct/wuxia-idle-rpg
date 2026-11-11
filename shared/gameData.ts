@@ -1,4 +1,5 @@
 import type { CombatUnitDTO, EquipSlotType, SkillSlotType, StanceType, TierColor, ZoneSafety } from './protocol.ts'
+import { TRIAL_ITEMS } from './trialStages.ts'
 
 type PortraitStyle = CombatUnitDTO['portraitStyle']
 
@@ -1334,6 +1335,10 @@ export interface ItemConfig {
   dodgeBonus?: number
   idleBonus?: number
   signatureEffect?: string
+  /** 所属历练套装；散件为空 */
+  setId?: string
+  /** 未进入二级面板的破甲、招架、内力等属性 */
+  extra?: string
   desc: string
 }
 
@@ -1590,6 +1595,8 @@ export const ITEMS: Record<string, ItemConfig> = {
     desc: '靴面绣着云纹，穿上迈步轻快，更容易闪开对手的招式。',
   },
 }
+
+for (const item of TRIAL_ITEMS) ITEMS[item.id] = item
 
 export const COOP_RAID_RELICS = [ITEMS.wumu_yishu, ITEMS.xiaoao_qupu]
 

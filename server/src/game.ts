@@ -4,11 +4,15 @@ import type { PoolClient } from 'pg'
 import { calcNextLevelQi, computeDerivedStats, simulateServerBattle, simulateShaoshiRaid } from '../../shared/battle.ts'
 import { EQUIP_SLOT_META, STANCE_META } from '../../shared/combatMeta.ts'
 import { COOP_RAID_RELICS, getChapterDrops, ITEMS, MAPS, SHAOSHI_RAID, SKILLS, STORY_CHAPTERS } from '../../shared/gameData.ts'
+import {
+  PATROL_DROP_CHANCE, PATROL_ENCOUNTER_MINUTES, TRIAL_PATROL_HOURS, TRIAL_REPLAY_HOURS,
+  TRIAL_STAGES, trialItemOf, trialPartId, trialSetOfStage, trialStageOf,
+} from '../../shared/trialStages.ts'
 import { coCultivationRate, createStarterCharacter, cultivationRate, idleQiNumerator } from '../../shared/player.ts'
 import { MAX_SKILL_MASTERY, skillPowerAtMastery, skillUpgradeCost } from '../../shared/skillMastery.ts'
 import type {
   BattleReportDTO, CoCultivationDTO, CoCultivationInviteDTO, GameAction, IdleGain, LoadoutPresetDTO, PlayerDTO, PlayerSnapshot,
-  SkillSlotType, SkillUpgradeResult, StoryChallengeResult,
+  SkillSlotType, SkillUpgradeResult, StoryChallengeResult, TrialChallengeResult, TrialPatrolStatusDTO, TrialReplayResult,
 } from '../../shared/protocol.ts'
 import { requireSession } from './auth.ts'
 import { serverTime, transaction } from './db.ts'
@@ -86,6 +90,10 @@ async function hydrateCharacter(client: PoolClient, row: CharacterRow): Promise<
       nextLevelQi: calcNextLevelQi(row.profile.level),
       qiPerHour: 0,
       coCultivatePartner: null,
+      trial: row.profile.trial ?? {
+        selectedStageId: 1, maxStageId: 1, rewardedStageIds: [], stageHours: {}, replayHours: {},
+        lastPatrolAt: Number(row.last_settle_at), marks: {}, recentDrops: [],
+      },
     },
     pillCount: row.pill_count,
     rewardedChapters: row.rewarded_chapters,
@@ -123,6 +131,56 @@ function settle(character: Character, now: number): IdleGain {
   character.silverRemainder = silverRemainder
   if (character.coCultivation && character.coCultivation.endsAt <= now) character.coCultivation = null
   return { gainedQi, gainedSilver }
+}
+
+const PATROL_CAP_MS = 12 * 3_600_000
+const REPLAY_STAGES = new Set(TRIAL_STAGES.filter((stage) => stage.replayPartIds).map((stage) => stage.id))
+
+/** 惰性结算巡历：进度、章末复战进度与 30 分钟一次的小怪掉落 */
+async function settlePatrol(character: Character, now: number, client: PoolClient) {
+  const { player } = character
+  const { trial } = player
+  const since = Math.max(trial.lastPatrolAt, now - PATROL_CAP_MS)
+  const elapsed = Math.max(0, now - since)
+  if (elapsed <= 0) return false
+
+  const key = String(trial.selectedStageId)
+  trial.stageHours[key] = (trial.stageHours[key] ?? 0) + elapsed / 3_600_000
+  if (REPLAY_STAGES.has(trial.selectedStageId)) {
+    trial.replayHours[key] = Math.min(TRIAL_REPLAY_HOURS, (trial.replayHours[key] ?? 0) + elapsed / 3_600_000)
+  }
+  trial.lastPatrolAt = now
+
+  const encounters = Math.floor(elapsed / (PATROL_ENCOUNTER_MINUTES * 60_000))
+  const stage = trialStageOf(trial.selectedStageId)
+  const set = stage ? trialSetOfStage(stage) : undefined
+  if (encounters > 0 && set) {
+    for (let i = 0; i < encounters; i++) {
+      if (Math.random() >= PATROL_DROP_CHANCE) continue
+      const part = set.parts[Math.floor(Math.random() * set.parts.length)]
+      const id = trialPartId(set.id, part.slot)
+      if (character.ownedItemIds.includes(id)) {
+        trial.marks[key] = (trial.marks[key] ?? 0) + 1
+        continue
+      }
+      await client.query('INSERT INTO player_items VALUES ($1, $2) ON CONFLICT DO NOTHING', [player.id, id])
+      character.ownedItemIds.push(id)
+      trial.recentDrops.unshift({ id, name: part.name, tier: set.tier, at: now })
+    }
+    trial.recentDrops = trial.recentDrops.slice(0, 10)
+  }
+  return true
+}
+
+function patrolStatus(character: Character): TrialPatrolStatusDTO {
+  const stageId = character.player.trial.selectedStageId
+  const hours = character.player.trial.stageHours[String(stageId)] ?? 0
+  return {
+    stageId,
+    hours,
+    requiredHours: TRIAL_PATROL_HOURS[stageId] ?? 0,
+    encounters: Math.floor(hours * (60 / PATROL_ENCOUNTER_MINUTES)),
+  }
 }
 
 function activePair(character: Character, now: number) {
@@ -268,7 +326,8 @@ async function writeAction<T>(request: FastifyRequest, apply: ApplyAction<T>): P
           return { response: { snapshot: snapshot(character, now), result: receipt.result }, updates: [] }
         }
 
-        const { result, changed, related = [] } = await apply(character, now, client, async (ids) => {
+        const patrolChanged = await settlePatrol(character, now, client)
+        const { result, changed: applied, related = [] } = await apply(character, now, client, async (ids) => {
           if (ids.includes(row.id)) throw new GameError(400, 'INVALID_PARTNER', '请选择另一位侠客')
           // 释放单人锁后按角色 ID 一起加锁，再校验当前共修关系或副本队伍。
           if (ids.some((id) => !relatedIds.includes(id))) throw new RelatedLocksNeeded(ids)
@@ -280,6 +339,7 @@ async function writeAction<T>(request: FastifyRequest, apply: ApplyAction<T>): P
           }
           return characters
         })
+        const changed = patrolChanged || applied
         if (changed) await saveCharacter(client, character)
         for (const other of related) await saveCharacter(client, other)
         await client.query('INSERT INTO player_actions VALUES ($1, $2, $3, $4)', [row.id, requestId, fingerprint, result])
@@ -609,5 +669,154 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
       }
     }
     return { result: { report, firstClear: true }, changed: true }
+  }))
+
+  app.post('/api/v1/trial/patrol', (request) => respond<TrialPatrolStatusDTO>(request, async (character) => {
+    const { stageId } = objectBody(request.body)
+    const stage = typeof stageId === 'number' ? trialStageOf(stageId) : undefined
+    if (!stage) throw new GameError(400, 'INVALID_TRIAL_STAGE', '找不到这一关')
+    if (stage.id > character.player.trial.maxStageId) {
+      throw new GameError(409, 'TRIAL_STAGE_LOCKED', '先打过上一关，才能在这里巡历')
+    }
+    if (character.player.trial.selectedStageId === stage.id) {
+      return { result: patrolStatus(character), changed: false }
+    }
+    character.player.trial.selectedStageId = stage.id
+    return { result: patrolStatus(character), changed: true }
+  }))
+
+  function trialBattle(character: Character, stage: NonNullable<ReturnType<typeof trialStageOf>>, rewards?: BattleReportDTO['rewards']) {
+    return simulateServerBattle({
+      sceneTitle: `${stage.code} ${stage.title}`,
+      mode: 'SOLO_STORY',
+      player: character.player,
+      loadout: activeLoadout(character),
+      learnedSkills: character.learnedSkills,
+      enemyMain: {
+        name: stage.boss.name,
+        title: stage.boss.title,
+        portrait: stage.boss.portrait,
+        hp: stage.boss.hp,
+        atk: stage.boss.atk,
+        mp: Math.round(stage.boss.hp * 0.45),
+        stance: stage.boss.stance,
+      },
+      surviveRounds: stage.victory === 'SURVIVE_ROUNDS' ? stage.surviveRounds : undefined,
+      rewards,
+    })
+  }
+
+  app.post<{ Params: { stageId: string } }>('/api/v1/trial/:stageId/challenge', (request) => respond<TrialChallengeResult>(request, async (character, _now, client) => {
+    const stage = trialStageOf(Number(request.params.stageId))
+    if (!stage) throw new GameError(404, 'TRIAL_STAGE_NOT_FOUND', '江湖图上没有这一关')
+    const player = character.player
+    const trial = player.trial
+    if (stage.id > trial.maxStageId) throw new GameError(409, 'TRIAL_STAGE_LOCKED', '先打过上一关，才能挑战这里')
+
+    const required = TRIAL_PATROL_HOURS[stage.id] ?? 0
+    const hours = trial.stageHours[String(stage.id)] ?? 0
+    if (hours < required) {
+      const rest = required - hours
+      throw new GameError(409, 'TRIAL_PATROL_REQUIRED',
+        `本关巡历还差 ${rest < 1 ? `${Math.max(1, Math.ceil(rest * 60))} 分钟` : `${rest.toFixed(1)} 小时`}`)
+    }
+
+    const firstClear = !trial.rewardedStageIds.includes(stage.id)
+    const drops = firstClear
+      ? stage.firstClearParts
+        .map((slot) => trialItemOf(trialPartId(stage.setId, slot)))
+        .filter((item): item is NonNullable<ReturnType<typeof trialItemOf>> => !!item && !character.ownedItemIds.includes(item.id))
+      : []
+    const rewardQi = Math.round(stage.boss.hp * 2)
+    const rewardSilver = Math.round(stage.boss.hp * 0.8)
+    const report = trialBattle(character, stage, firstClear
+      ? { qiExp: rewardQi, silver: rewardSilver, items: drops.map(({ id, name, tier }) => ({ id, name, tier })) }
+      : undefined)
+    report.battleId = randomUUID()
+
+    const patrol = patrolStatus(character)
+    if (report.winner !== 'ALLY' || !firstClear) {
+      return { result: { report, firstClear: false, unlockedStageId: null, drops: [], patrol }, changed: false }
+    }
+
+    player.qiExp += rewardQi
+    player.silver += rewardSilver
+    for (const drop of drops) {
+      await client.query('INSERT INTO player_items VALUES ($1, $2) ON CONFLICT DO NOTHING', [player.id, drop.id])
+      character.ownedItemIds.push(drop.id)
+    }
+    trial.rewardedStageIds.push(stage.id)
+    trial.stageHours[String(stage.id)] = 0
+    const next = Math.min(TRIAL_STAGES.length, stage.id + 1)
+    trial.maxStageId = Math.max(trial.maxStageId, next)
+    trial.selectedStageId = next
+    return {
+      result: {
+        report,
+        firstClear: true,
+        unlockedStageId: trial.maxStageId,
+        drops: drops.map(({ id, name, tier }) => ({ id, name, tier })),
+        patrol: patrolStatus(character),
+      },
+      changed: true,
+    }
+  }))
+
+  app.post<{ Params: { stageId: string } }>('/api/v1/trial/:stageId/replay', (request) => respond<TrialReplayResult>(request, async (character, _now, client) => {
+    const stage = trialStageOf(Number(request.params.stageId))
+    if (!stage) throw new GameError(404, 'TRIAL_STAGE_NOT_FOUND', '江湖图上没有这一关')
+    if (!stage.replayPartIds) throw new GameError(400, 'TRIAL_NOT_REPLAYABLE', '这一关没有首领复战')
+
+    const key = String(stage.id)
+    const replayHours = character.player.trial.replayHours[key] ?? 0
+    if (replayHours < TRIAL_REPLAY_HOURS) {
+      throw new GameError(409, 'TRIAL_REPLAY_REQUIRED', `在本关巡历满 ${TRIAL_REPLAY_HOURS} 小时才能再战首领`)
+    }
+
+    const report = trialBattle(character, stage)
+    report.battleId = randomUUID()
+    if (report.winner !== 'ALLY') return { result: { report, drop: null, replayHours }, changed: false }
+
+    const candidates = stage.replayPartIds
+      .map((id) => trialItemOf(id))
+      .filter((item): item is NonNullable<ReturnType<typeof trialItemOf>> => !!item)
+    const drop = candidates.find((item) => !character.ownedItemIds.includes(item.id)) ?? candidates[0]
+    if (drop) {
+      if (character.ownedItemIds.includes(drop.id)) {
+        character.player.trial.marks[key] = (character.player.trial.marks[key] ?? 0) + 1
+      } else {
+        await client.query('INSERT INTO player_items VALUES ($1, $2) ON CONFLICT DO NOTHING', [character.player.id, drop.id])
+        character.ownedItemIds.push(drop.id)
+      }
+    }
+    character.player.trial.replayHours[key] = 0
+    return {
+      result: {
+        report,
+        drop: drop ? { id: drop.id, name: drop.name, tier: drop.tier } : null,
+        replayHours: 0,
+      },
+      changed: true,
+    }
+  }))
+
+  app.post<{ Params: { stageId: string } }>('/api/v1/trial/:stageId/redeem', (request) => respond<{ itemId: string; name: string }>(request, async (character, _now, client) => {
+    const stage = trialStageOf(Number(request.params.stageId))
+    if (!stage) throw new GameError(404, 'TRIAL_STAGE_NOT_FOUND', '江湖图上没有这一关')
+    const { slot } = objectBody(request.body)
+    if (typeof slot !== 'string' || !Object.hasOwn(EQUIP_SLOT_META, slot)) {
+      throw new GameError(400, 'INVALID_EQUIP_SLOT', '请选择要补的部位')
+    }
+    const key = String(stage.id)
+    const marks = character.player.trial.marks[key] ?? 0
+    if (marks < 4) throw new GameError(409, 'TRIAL_MARKS_REQUIRED', '集齐 4 枚巡历印记才能兑换')
+    const item = trialItemOf(trialPartId(stage.setId, slot as keyof typeof EQUIP_SLOT_META))
+    if (!item) throw new GameError(404, 'TRIAL_ITEM_NOT_FOUND', '这一关没有该部位')
+    if (character.ownedItemIds.includes(item.id)) throw new GameError(409, 'TRIAL_ITEM_OWNED', '这个部位已经拿到了')
+
+    character.player.trial.marks[key] = marks - 4
+    await client.query('INSERT INTO player_items VALUES ($1, $2) ON CONFLICT DO NOTHING', [character.player.id, item.id])
+    character.ownedItemIds.push(item.id)
+    return { result: { itemId: item.id, name: item.name }, changed: true }
   }))
 }

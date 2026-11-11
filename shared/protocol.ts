@@ -50,6 +50,19 @@ export interface PlayerDTO {
   bountyUntil: number | null        // 叛师追杀令截止时间戳
   wearingMask: boolean              // 是否佩戴夜行蒙面巾(正派入鬼市用)
   activePresetIdx: 1 | 2 | 3
+  trial: TrialStateDTO
+}
+
+/** 第一卷 30 关历练与巡历状态 */
+export interface TrialStateDTO {
+  selectedStageId: number          // 当前巡历关卡
+  maxStageId: number               // 已开放的最高关卡
+  rewardedStageIds: number[]       // 已领首胜
+  stageHours: Record<string, number>   // 各关累计有效巡历小时
+  replayHours: Record<string, number>  // 章末关复战进度
+  lastPatrolAt: number             // 巡历结算锚点(毫秒)
+  marks: Record<string, number>    // 巡历印记，4 枚换普通缺件
+  recentDrops: { id: string; name: string; tier: TierColor; at: number }[] // 最近巡历掉落
 }
 
 /** 装备/秘宝装配与阵容预设 */
@@ -137,6 +150,27 @@ export interface GameAction<T> {
 export interface StoryChallengeResult {
   report: BattleReportDTO
   firstClear: boolean
+}
+
+export interface TrialPatrolStatusDTO {
+  stageId: number
+  hours: number
+  requiredHours: number
+  encounters: number
+}
+
+export interface TrialChallengeResult {
+  report: BattleReportDTO
+  firstClear: boolean
+  unlockedStageId: number | null
+  drops: { id: string; name: string; tier: TierColor }[]
+  patrol: TrialPatrolStatusDTO
+}
+
+export interface TrialReplayResult {
+  report: BattleReportDTO
+  drop: { id: string; name: string; tier: TierColor } | null
+  replayHours: number
 }
 
 export interface SkillUpgradeResult {
