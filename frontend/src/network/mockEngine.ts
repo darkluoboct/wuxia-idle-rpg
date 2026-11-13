@@ -1,5 +1,8 @@
-import type { GachaDrawDTO, GhostMarketListingDTO, RoomPlayerDTO, UniqueArtifactStatusDTO } from './protocol'
-import { ITEMS } from '@/config/gameData'
+import type { GachaDrawDTO, LoadoutPresetDTO, RoomPlayerDTO, StanceType, UniqueArtifactStatusDTO } from './protocol'
+import { REALMS, SECTS } from '@/config/gameData'
+import { computeDerivedStats } from '../../../shared/battle.ts'
+import { createStarterCharacter } from '../../../shared/player.ts'
+import { trialPartId } from '../../../shared/trialStages.ts'
 import {
   AWAKENABLE_IDS,
   GACHA_BASE_RATES,
@@ -14,51 +17,92 @@ import {
 
 export { calcNextLevelQi, computeDerivedStats, evaluateStanceAdvantage, simulateServerBattle } from '../../../shared/battle.ts'
 
-/** 模拟同地图在线真实玩家池 */
+/** 同地图的试玩对手。战力显示由实战配装计算。 */
 export function generateRoomPlayers(mapId: string): RoomPlayerDTO[] {
+  return roomPlayers(mapId).map((entry) => {
+    const { player, loadout } = mockDuelOpponent(entry, mapId)
+    return { ...entry, combatPower: computeDerivedStats(player, loadout).combatPower }
+  })
+}
+
+function roomPlayers(mapId: string): Omit<RoomPlayerDTO, 'combatPower'>[] {
   if (mapId === 'jiaxing_suburb') {
     return [
-      { id: 'rp_1', nickname: '烟雨断桥客', sectName: '逍遥散人', realmName: '融会贯通', level: 34, combatPower: 14200, stance: 'AGILE', isBetrayerBounty: false, isEscortingDart: false },
-      { id: 'rp_2', nickname: '清风道长', sectName: '终南全真教', realmName: '炉火纯青', level: 48, combatPower: 26800, stance: 'TAICHI', isBetrayerBounty: false, isEscortingDart: false },
-      { id: 'rp_3', nickname: '桃花小师妹', sectName: '东海桃花岛', realmName: '略有小成', level: 27, combatPower: 10900, stance: 'AGILE', isBetrayerBounty: false, isEscortingDart: false },
-      { id: 'rp_4', nickname: '逆徒·尹狂刀', sectName: '全真弃徒', realmName: '融会贯通', level: 36, combatPower: 15600, stance: 'FIERCE', isBetrayerBounty: true, isEscortingDart: false },
+      { id: 'rp_1', nickname: '烟雨断桥客', sectName: '逍遥散人', realmName: '融会贯通', level: 34, stance: 'AGILE', isBetrayerBounty: false, isEscortingDart: false },
+      { id: 'rp_2', nickname: '清风道长', sectName: '终南全真教', realmName: '炉火纯青', level: 48, stance: 'TAICHI', isBetrayerBounty: false, isEscortingDart: false },
+      { id: 'rp_3', nickname: '桃花小师妹', sectName: '东海桃花岛', realmName: '略有小成', level: 27, stance: 'AGILE', isBetrayerBounty: false, isEscortingDart: false },
+      { id: 'rp_4', nickname: '逆徒·尹狂刀', sectName: '全真弃徒', realmName: '融会贯通', level: 36, stance: 'FIERCE', isBetrayerBounty: true, isEscortingDart: false },
     ]
   }
   if (mapId === 'zhongnan_forest') {
     return [
-      { id: 'rp_5', nickname: '活死人墓客', sectName: '终南古墓派', realmName: '炉火纯青', level: 52, combatPower: 33400, stance: 'AGILE', isBetrayerBounty: false, isEscortingDart: false },
-      { id: 'rp_6', nickname: '重阳执剑人', sectName: '终南全真教', realmName: '融会贯通', level: 41, combatPower: 21500, stance: 'TAICHI', isBetrayerBounty: false, isEscortingDart: false },
+      { id: 'rp_5', nickname: '活死人墓客', sectName: '终南古墓派', realmName: '炉火纯青', level: 52, stance: 'AGILE', isBetrayerBounty: false, isEscortingDart: false },
+      { id: 'rp_6', nickname: '重阳执剑人', sectName: '终南全真教', realmName: '融会贯通', level: 41, stance: 'TAICHI', isBetrayerBounty: false, isEscortingDart: false },
     ]
   }
   if (mapId === 'damo_caravan') {
     return [
-      { id: 'rp_7', nickname: '威远总镖头', sectName: '丐帮', realmName: '融会贯通', level: 38, combatPower: 18500, stance: 'FIERCE', isBetrayerBounty: false, isEscortingDart: true },
-      { id: 'rp_8', nickname: '西域毒皇·欧阳烈', sectName: '西域白驼山庄', realmName: '一代宗师', level: 63, combatPower: 64200, stance: 'FIERCE', isBetrayerBounty: false, isEscortingDart: false, holdingUniqueArtifact: '真·绿玉打狗棒' },
-      { id: 'rp_9', nickname: '塞外孤狼', sectName: '逍遥散人', realmName: '略有小成', level: 29, combatPower: 12800, stance: 'AGILE', isBetrayerBounty: false, isEscortingDart: true },
+      { id: 'rp_7', nickname: '威远总镖头', sectName: '丐帮', realmName: '融会贯通', level: 38, stance: 'FIERCE', isBetrayerBounty: false, isEscortingDart: true },
+      { id: 'rp_8', nickname: '西域毒皇·欧阳烈', sectName: '西域白驼山庄', realmName: '一代宗师', level: 63, stance: 'FIERCE', isBetrayerBounty: false, isEscortingDart: false, holdingUniqueArtifact: '真·绿玉打狗棒' },
+      { id: 'rp_9', nickname: '塞外孤狼', sectName: '逍遥散人', realmName: '略有小成', level: 29, stance: 'AGILE', isBetrayerBounty: false, isEscortingDart: true },
     ]
   }
   if (mapId === 'guiyun_lake') {
     return [
-      { id: 'rp_12', nickname: '归云庄少庄主', sectName: '东海桃花岛', realmName: '融会贯通', level: 36, combatPower: 17200, stance: 'AGILE', isBetrayerBounty: false, isEscortingDart: false },
-      { id: 'rp_13', nickname: '太湖渔隐', sectName: '逍遥散人', realmName: '融会贯通', level: 39, combatPower: 19800, stance: 'TAICHI', isBetrayerBounty: false, isEscortingDart: false },
+      { id: 'rp_12', nickname: '归云庄少庄主', sectName: '东海桃花岛', realmName: '融会贯通', level: 36, stance: 'AGILE', isBetrayerBounty: false, isEscortingDart: false },
+      { id: 'rp_13', nickname: '太湖渔隐', sectName: '逍遥散人', realmName: '融会贯通', level: 39, stance: 'TAICHI', isBetrayerBounty: false, isEscortingDart: false },
     ]
   }
   if (mapId === 'taohua_isle') {
     return [
-      { id: 'rp_14', nickname: '哑仆（桃花岛）', sectName: '东海桃花岛', realmName: '炉火纯青', level: 50, combatPower: 30500, stance: 'AGILE', isBetrayerBounty: false, isEscortingDart: false },
-      { id: 'rp_15', nickname: '试剑亭客', sectName: '逍遥散人', realmName: '炉火纯青', level: 47, combatPower: 27400, stance: 'FIERCE', isBetrayerBounty: false, isEscortingDart: false },
+      { id: 'rp_14', nickname: '哑仆（桃花岛）', sectName: '东海桃花岛', realmName: '炉火纯青', level: 50, stance: 'AGILE', isBetrayerBounty: false, isEscortingDart: false },
+      { id: 'rp_15', nickname: '试剑亭客', sectName: '逍遥散人', realmName: '炉火纯青', level: 47, stance: 'FIERCE', isBetrayerBounty: false, isEscortingDart: false },
     ]
   }
   if (mapId === 'huashan_peak') {
     return [
-      { id: 'rp_16', nickname: '论剑台守擂人', sectName: '终南全真教', realmName: '一代宗师', level: 66, combatPower: 58200, stance: 'TAICHI', isBetrayerBounty: false, isEscortingDart: false },
-      { id: 'rp_17', nickname: '西毒门徒·白衣客', sectName: '西域白驼山庄', realmName: '一代宗师', level: 64, combatPower: 55400, stance: 'FIERCE', isBetrayerBounty: true, isEscortingDart: false },
+      { id: 'rp_16', nickname: '论剑台守擂人', sectName: '终南全真教', realmName: '一代宗师', level: 66, stance: 'TAICHI', isBetrayerBounty: false, isEscortingDart: false },
+      { id: 'rp_17', nickname: '西毒门徒·白衣客', sectName: '西域白驼山庄', realmName: '一代宗师', level: 64, stance: 'FIERCE', isBetrayerBounty: true, isEscortingDart: false },
     ]
   }
   return [
-    { id: 'rp_10', nickname: '湘西赶尸人', sectName: '西域白驼山庄', realmName: '炉火纯青', level: 47, combatPower: 27900, stance: 'AGILE', isBetrayerBounty: false, isEscortingDart: false },
-    { id: 'rp_11', nickname: '陆乘云', sectName: '东海桃花岛', realmName: '一代宗师', level: 65, combatPower: 71000, stance: 'AGILE', isBetrayerBounty: false, isEscortingDart: true, holdingUniqueArtifact: '真·桃花岛软猬甲' },
+    { id: 'rp_10', nickname: '湘西赶尸人', sectName: '西域白驼山庄', realmName: '炉火纯青', level: 47, stance: 'AGILE', isBetrayerBounty: false, isEscortingDart: false },
+    { id: 'rp_11', nickname: '陆乘云', sectName: '东海桃花岛', realmName: '一代宗师', level: 65, stance: 'AGILE', isBetrayerBounty: false, isEscortingDart: true, holdingUniqueArtifact: '真·桃花岛软猬甲' },
   ]
+}
+
+const duelPresets: Record<StanceType, Partial<LoadoutPresetDTO>> = {
+  FIERCE: { innerSkillId: 'huntian_qigong', outerSkillId: 'dagou_bangfa', ultSkillId: 'kanglong_youhui',
+    weaponId: trialPartId('jiangnan_qiguai', 'WEAPON'), armorId: trialPartId('henglian_tongjia', 'ARMOR') },
+  AGILE: { innerSkillId: 'bipo_xinjue', outerSkillId: 'luoying_zhang', ultSkillId: 'tanzhi_shentong', lightSkillId: 'qimen_bufa',
+    weaponId: 'qinggang_sword', armorId: 'ruanwei_armor' },
+  TAICHI: { innerSkillId: 'quanzhen_tuna', outerSkillId: 'quanzhen_jianfa', ultSkillId: 'tonggui_jianfa', lightSkillId: 'jinyan_gong',
+    weaponId: 'qinggang_sword', accId: 'jiuwei_fox' },
+}
+
+const sectDuelPresets: Record<string, Partial<LoadoutPresetDTO>> = {
+  baituo: { innerSkillId: 'hama_gong', outerSkillId: 'lingshe_quan', ultSkillId: 'nizhuan_jiuyin', lightSkillId: 'shunxi_qianli',
+    weaponId: 'lingshe_zhang', armorId: 'baituo_jinsi' },
+  taohua: { outerSkillId: 'yuxiao_jianfa', ultSkillId: 'bihai_chaosheng', weaponId: 'biyu_xiao' },
+  yideng: { innerSkillId: 'kurong_chan', ultSkillId: 'yiyang_zhi' },
+  gaibang: { armorId: 'jiudai_baina' },
+}
+
+export function mockDuelOpponent(entry: Pick<RoomPlayerDTO, 'id' | 'nickname' | 'sectName' | 'level' | 'realmName' | 'stance' | 'isBetrayerBounty'>, mapId: string) {
+  const { player, presets } = createStarterCharacter({ id: entry.id, nickname: entry.nickname, avatarId: 'hero_sword_male' }, 0)
+  const sect = SECTS.find(({ name, chiefPlayerName }) => name === entry.sectName || chiefPlayerName === entry.nickname)
+  const realm = REALMS.find(({ name }) => name === entry.realmName)
+  const rank = entry.level
+  Object.assign(player, {
+    level: rank, realmTier: realm?.tier ?? player.realmTier, currentSectId: sect?.id ?? null, currentMapId: mapId,
+    sectRank: entry.id.startsWith('fg_') ? 5 : 3,
+  })
+  Object.assign(player.stats, { str: rank, con: Math.round(rank * 1.25), agi: Math.round(rank * 0.7), intStat: rank, karma: entry.isBetrayerBounty ? -250 : 40 })
+  const loadout = { ...presets[1], ...duelPresets[entry.stance], ...(sect ? sectDuelPresets[sect.id] : undefined),
+    stance: entry.stance, leftCompanionId: null, rightCompanionId: null }
+  const learnedSkills = Object.fromEntries([loadout.innerSkillId, loadout.outerSkillId, loadout.lightSkillId, loadout.ultSkillId]
+    .filter((id) => id !== null).map((id) => [id, entry.id.startsWith('fg_') ? 5 : 3]))
+  return { player, loadout, learnedSkills }
 }
 
 /** 初始全服唯一真品神兵公示表 */
@@ -67,16 +111,6 @@ export const INITIAL_UNIQUE_ARTIFACTS: UniqueArtifactStatusDTO[] = [
   { artifactCode: 'TRUE_DAGOU', itemId: 'dagou_stick_true', name: '真·绿玉打狗棒', holderNickname: '西域毒皇·欧阳烈', holderSect: '西域白驼山庄', defendStreak: 1, nextContestLabel: '离线>72h自动回收 / 君山擂台' },
   { artifactCode: 'TRUE_RUANWEI', itemId: 'ruanwei_armor', name: '真·桃花岛软猬甲', holderNickname: '陆乘云', holderSect: '东海桃花岛', defendStreak: 5, nextContestLabel: '周六试剑亭守擂' },
   { artifactCode: 'TRUE_YITIAN', itemId: 'biyu_xiao', name: '真·倚天剑', holderNickname: null, holderSect: '万安寺秘境待择主', defendStreak: 0, nextContestLabel: '全服首通3.0倚天篇择主' },
-]
-
-/** 初始子时鬼市匿名寄售与竞拍单 */
-export const INITIAL_GHOST_LISTINGS: GhostMarketListingDTO[] = [
-  { id: 'mk_1', maskedSeller: '蒙面客·甲戌', itemId: 'kongming_quan', itemName: '《空明拳》手抄拓本', tier: 'orange', listingType: 'FIXED', currency: 'SILVER', price: 6800, desc: '清音洞孤本拓印，至柔化刚拳谱。' },
-  { id: 'mk_2', maskedSeller: '黑衣人·丙辰', itemId: 'wucan_baoyi', itemName: '大雪山乌蚕宝衣', tier: 'orange', listingType: 'FIXED', currency: 'SILVER', price: 8500, desc: '穿上能提高防御和气血上限。' },
-  { id: 'mk_3', maskedSeller: '全真逆徒·匿名销赃', itemId: 'jiuwei_fox', itemName: '黑沼·九尾灵狐', tier: 'orange', listingType: 'FIXED', currency: 'SILVER', price: 9200, desc: '白狐伴你同行，提高气血上限和暴击率。' },
-  { id: 'mk_4', maskedSeller: '鬼市压轴官拍', itemId: 'lingbo_weibu', itemName: '《凌波微步》琅嬛帛卷', tier: 'red', listingType: 'AUCTION', currency: 'GOLD', price: 320, highestBidderMasked: '蒙面客·癸亥', desc: '一门轻功，能让你更容易闪避。躲开攻击还能攒怒气。' },
-  { id: 'mk_5', maskedSeller: '关外客商', itemId: 'snow_hood', itemName: ITEMS.snow_hood.name, tier: ITEMS.snow_hood.tier, listingType: 'FIXED', currency: 'SILVER', price: 8800, desc: ITEMS.snow_hood.desc },
-  { id: 'mk_6', maskedSeller: '走镖人', itemId: 'deerskin_boots', itemName: ITEMS.deerskin_boots.name, tier: ITEMS.deerskin_boots.tier, listingType: 'FIXED', currency: 'SILVER', price: 4800, desc: ITEMS.deerskin_boots.desc },
 ]
 
 /**

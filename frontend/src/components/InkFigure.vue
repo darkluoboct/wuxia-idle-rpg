@@ -44,6 +44,7 @@ const LOOKS: Record<PortraitStyle, Look> = {
   zhebie: { robe: '#6b5a3a', robe2: '#463a24', trim: '#c9a35c', hair: '#15130f', hairKind: 'wrap', item: 'staff', band: '#a8402f' },
   yinggu: { robe: '#5b4a5f', robe2: '#3a2f3e', trim: '#cdb6c9', hair: '#cfc9c0', hairKind: 'long', item: 'staff' },
   yangtiexin: { robe: '#5a3d33', robe2: '#3a261f', trim: '#b9946a', hair: '#18130f', hairKind: 'bun', item: 'staff', broad: true },
+  baoxiruo: { robe: '#7d5b66', robe2: '#533b47', trim: '#dcc5a8', hair: '#18130f', hairKind: 'bun', item: 'palm' },
   sunbuer: { robe: '#4a6d78', robe2: '#2e4851', trim: '#d6e4e0', hair: '#14171a', hairKind: 'ribbons', item: 'sword', band: '#cfe0dc' },
   luchengfeng: { robe: '#3f5a4a', robe2: '#28392f', trim: '#cbd8bd', hair: '#14171a', hairKind: 'cap', item: 'palm' },
   zhuziliu: { robe: '#5b5f78', robe2: '#3a3d50', trim: '#d8d4c4', hair: '#14171a', hairKind: 'cap', item: 'flute' },

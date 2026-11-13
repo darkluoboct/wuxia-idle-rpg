@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import type { WebSocket } from 'ws'
-import { REALMS, SECTS } from '../../shared/gameData.ts'
+import { ITEMS, REALMS, SECTS } from '../../shared/gameData.ts'
 import type { PlayerSnapshot, RoomPlayerDTO, WsServerEvent } from '../../shared/protocol.ts'
 import { requireSession, type Session } from './auth.ts'
 import { getSnapshot } from './game.ts'
@@ -22,6 +22,7 @@ interface Member {
 
 function publicPlayer(snapshot: PlayerSnapshot): RoomPlayerDTO {
   const { player, loadouts, derivedStats } = snapshot
+  const escort = player.escortDart
   return {
     id: player.id,
     nickname: player.nickname,
@@ -30,8 +31,9 @@ function publicPlayer(snapshot: PlayerSnapshot): RoomPlayerDTO {
     level: player.level,
     combatPower: derivedStats.combatPower,
     stance: loadouts[player.activePresetIdx - 1].stance,
-    isBetrayerBounty: false,
-    isEscortingDart: false,
+    isBetrayerBounty: (player.bountyUntil ?? 0) > snapshot.serverTime,
+    isEscortingDart: !!escort && escort.mapId === player.currentMapId && escort.endsAt > snapshot.serverTime && !escort.robbed,
+    holdingUniqueArtifact: snapshot.ownedItemIds.includes('dagou_stick_true') ? ITEMS.dagou_stick_true.name : undefined,
   }
 }
 
@@ -39,6 +41,7 @@ export function registerRooms(app: FastifyInstance) {
   const online = new Map<string, Member>()
   const joining = new WeakMap<FastifyRequest, { session: Session; snapshot: PlayerSnapshot }>()
   let onPresence: ((playerId: string, resetReady: boolean) => void) | undefined
+  let onJoin: ((playerId: string) => WsServerEvent | undefined) | undefined
 
   // ponytail: 内测直接从在线角色筛出同图成员，在线规模增长后可按地图索引。
   function membersOn(mapId: string) {
@@ -161,6 +164,8 @@ export function registerRooms(app: FastifyInstance) {
       void getSnapshot(session.accountId).then(publish).catch((error) => request.log.error(error))
     }
     send(connection, { event: 'PLAYER_CHANGED', data: { revision: member.revision } })
+    const welcome = onJoin?.(id)
+    if (welcome) send(connection, welcome)
     onPresence?.(id, false)
   })
 
@@ -197,5 +202,6 @@ export function registerRooms(app: FastifyInstance) {
       for (const connection of online.get(playerId)?.connections ?? []) send(connection, event)
     },
     onPresenceChange: (listener: NonNullable<typeof onPresence>) => { onPresence = listener },
+    onJoin: (listener: NonNullable<typeof onJoin>) => { onJoin = listener },
   }
 }

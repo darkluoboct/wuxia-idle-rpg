@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useGameStore } from '@/stores/gameStore'
-import { SHAOSHI_RAID } from '@/config/gameData'
+import { COOP_RAIDS } from '@/config/gameData'
 
 const store = useGameStore()
 const team = computed(() => store.raidLobby.team)
@@ -9,17 +9,28 @@ const isLeader = computed(() => team.value?.leaderId === store.player.id)
 const mySeat = computed(() => team.value?.members.find((member) => member.id === store.player.id))
 const readyCount = computed(() => team.value?.members.filter((member) => member.online && member.ready).length ?? 0)
 const busy = computed(() => !store.roomConnected || store.raidLobbyBusy || store.onlineActionBusy || !!team.value?.starting)
+const raid = computed(() => COOP_RAIDS[store.selectedRaidId])
+const nextRelic = computed(() => raid.value.relics[store.selectedRaidClears])
 </script>
 
 <template>
-  <article class="well space-y-3 p-4" aria-label="少室山组队">
+  <article class="well space-y-3 p-4" aria-label="三人副本组队">
     <div class="space-y-1.5">
-      <span class="chip chip-gold">三人合战</span>
-      <h4 class="font-brush text-2xl leading-tight">{{ SHAOSHI_RAID.title }}</h4>
-      <p class="hint">三位侠客同图集合，各自点准备，再由队长带大家入阵。击败渡难、渡劫和渡厄三僧即可通关。</p>
-      <p class="text-sm text-gold">个人通关 {{ store.shaoshiClears }} 次</p>
-      <p v-if="store.nextRaidRelic" class="text-sm text-jade">下次通关可得《{{ store.nextRaidRelic.name }}》</p>
-      <p v-else class="hint">两件秘宝已领齐，再胜仍可获得真气和纹银。</p>
+      <div class="flex flex-wrap gap-2" role="group" aria-label="选择三人副本">
+        <button v-for="(entry, id) in COOP_RAIDS" :key="id" class="btn btn-sm"
+          :class="{ 'btn-gold': store.selectedRaidId === id }" :aria-pressed="store.selectedRaidId === id"
+          :disabled="!!team && (!isLeader || busy)" @click="store.selectRaid(id)"
+        >{{ entry.title }}</button>
+      </div>
+      <p class="hint">{{ raid.description }}</p>
+      <p class="text-sm text-gold">个人通关 {{ store.selectedRaidClears }} 次</p>
+      <p v-if="nextRelic && !store.ownedItemIds.includes(nextRelic.id)" class="text-sm text-jade">下次通关可得《{{ nextRelic.name }}》</p>
+      <p v-else-if="nextRelic" class="hint">已持有《{{ nextRelic.name }}》，下次通关发放真气和纹银。</p>
+      <p v-else-if="raid.firstClearBonus && store.selectedRaidClears === 0" class="text-sm text-jade">
+        首胜额外奖励 {{ raid.firstClearBonus.qiExp.toLocaleString() }} 真气、{{ raid.firstClearBonus.silver.toLocaleString() }} 纹银。
+      </p>
+      <p v-else-if="raid.firstClearBonus" class="hint">首胜奖励已结算，再胜可获得真气和纹银。</p>
+      <p v-else class="hint">秘宝奖励已结算，再胜可获得真气和纹银。</p>
     </div>
 
     <template v-if="team">
@@ -39,7 +50,7 @@ const busy = computed(() => !store.roomConnected || store.raidLobbyBusy || store
       <div class="flex flex-wrap gap-2">
         <button
           class="btn btn-gold" :disabled="busy || team.members.length !== 3"
-          @click="store.raidTeamAction({ action: 'ready', teamId: team.id, ready: !mySeat?.ready })"
+          @click="store.raidTeamAction({ action: 'ready', teamId: team.id, raidId: team.raidId, ready: !mySeat?.ready })"
         >{{ mySeat?.ready ? '取消准备' : '准备' }}</button>
         <button v-if="isLeader" class="btn btn-seal" :disabled="busy || readyCount !== 3" @click="store.startThreePlayerCoopRaid()">
           {{ team.starting ? '正在破阵…' : '挑战副本' }}

@@ -1,23 +1,38 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useGameStore } from '@/stores/gameStore'
-import { SKILLS } from '@/config/gameData'
+import { COMPANIONS, COOP_RAIDS, SKILLS } from '@/config/gameData'
 import { TIER_META } from '@/config/uiMeta'
 import PortraitCard from './PortraitCard.vue'
 import SceneBackdrop from './SceneBackdrop.vue'
 
 const store = useGameStore()
 
-const SLOT_ORDER = ['LEFT', 'MAIN', 'RIGHT']
+const SLOT_ORDER = ['LEFT', 'MAIN', 'RIGHT', 'REAR']
 const bySide = (side: 'ALLY' | 'ENEMY') =>
-  (store.activeBattle?.units.filter((u) => u.slot.startsWith(side)) ?? []).sort(
+  store.battleUnits.filter((unit) => unit.slot.startsWith(side)).sort(
     (a, b) => SLOT_ORDER.indexOf(a.slot.split('_')[1]) - SLOT_ORDER.indexOf(b.slot.split('_')[1])
   )
-const allyUnits = computed(() => bySide('ALLY'))
+const allyUnits = computed(() => bySide('ALLY').filter((u) => !u.slot.startsWith('ALLY_ESCORT_')))
+const escortUnits = computed(() => store.activeBattle?.units.filter((u) => u.slot.startsWith('ALLY_ESCORT_')) ?? [])
 const enemyUnits = computed(() => bySide('ENEMY'))
+const stanceBanner = computed(() => store.battleOpponentEntry?.stanceBanner ?? store.activeBattle?.stanceBanner)
 
 const rewards = computed(() => store.activeBattle?.rewards ?? null)
-const won = computed(() => store.activeBattle?.winner === 'ALLY')
+const won = computed(() => store.activeBattle?.winner === (store.activeBattle?.perspective ?? 'ALLY'))
+const retreated = computed(() => !!store.activeBattle?.retreated)
+const enemyPerspective = computed(() => store.activeBattle?.perspective === 'ENEMY')
+const raidLog = computed(() => {
+  const report = store.activeBattle
+  if (report?.raidId !== 'chongyang' && report?.raidId !== 'juxian') return []
+  const sources = report.raidId === 'juxian' ? ['raid_wave', 'raid_survival'] : ['enemy_formation']
+  return report.events.slice(0, store.battleEventCursor)
+    .filter((event) => event.effectSourceId && sources.includes(event.effectSourceId))
+    .map(({ round, segments }) => ({
+      round, title: segments.find((segment) => segment.type === 'tag')?.text,
+      details: segments.flatMap((segment) => segment.type === 'text' ? [segment.text] : []),
+    }))
+})
 
 function inspectReward(id: string) {
   store.inspectById(SKILLS[id] ? 'skill' : 'item', id)
@@ -28,7 +43,11 @@ function inspectReward(id: string) {
 <template>
   <section class="panel battle-arena overflow-hidden">
     <div v-if="store.activeBattle" class="relative flex min-h-full flex-col justify-between">
-      <SceneBackdrop :map-id="store.player.currentMapId" :shichen-idx="store.shichenIdx" battle />
+      <SceneBackdrop :map-id="store.activeBattle.raidId === 'chongyang' ? COOP_RAIDS.chongyang.mapId : store.player.currentMapId"
+        :shichen-idx="store.shichenIdx" battle />
+      <div v-if="store.isBattlePlaying && store.slashBanner?.sanskrit" :key="store.slashBanner.key"
+        class="sanskrit-flow pointer-events-none absolute inset-x-0 top-1/4 z-30 text-center text-3xl text-gold"
+        aria-hidden="true">ॐ　अ　इ　उ　ऋ　ऐ　औ　ॐ</div>
 
       <!-- 破屏书法招式横幅 -->
       <div
@@ -43,7 +62,7 @@ function inspectReward(id: string) {
         >
           <div
             class="font-brush whitespace-nowrap leading-none"
-            :class="[store.slashBanner.isAlly ? 'text-gold' : 'text-cinnabar', store.slashBanner.isUlt ? 'text-4xl' : 'text-3xl']"
+            :class="[store.slashBanner.isAlly || store.slashBanner.sanskrit ? 'text-gold' : 'text-cinnabar', store.slashBanner.isUlt ? 'text-4xl' : 'text-3xl']"
           >
             「{{ store.slashBanner.text }}」
           </div>
@@ -73,15 +92,19 @@ function inspectReward(id: string) {
       <div class="relative z-10 grid items-end gap-2 px-3 py-4 md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] md:gap-3">
         <!-- 敌（手机端在上） -->
         <div class="order-1 md:order-3">
-          <div class="mx-auto grid gap-1.5" :class="enemyUnits.length > 1 ? 'grid-cols-[1fr_1.2fr_1fr]' : 'w-1/2 max-w-[11rem] grid-cols-1'">
+          <div class="mx-auto grid gap-1.5" :class="{
+            'max-w-[18rem] grid-cols-2': enemyUnits.length === 4,
+            'grid-cols-[1fr_1.2fr_1fr]': enemyUnits.length === 2 || enemyUnits.length === 3,
+            'w-1/2 max-w-[11rem] grid-cols-1': enemyUnits.length === 1,
+          }">
             <PortraitCard
               v-for="u in enemyUnits" :key="u.slot"
-              :name="u.name" :subtitle="u.title" :style-type="u.portraitStyle" :avatar-id="u.avatarId"
+              :name="u.name" :subtitle="enemyPerspective && u.id === store.player.id ? `你 · ${u.title}` : u.title" :style-type="u.portraitStyle" :avatar-id="u.avatarId"
               :hp="store.liveUnitStates[u.slot]?.hp ?? u.hp" :max-hp="u.maxHp"
               :rage="store.liveUnitStates[u.slot]?.rage ?? u.rage"
               :anim="store.liveUnitStates[u.slot]?.anim ?? 'NONE'"
               :popup="store.floatingPopups[u.slot] ?? null"
-              :is-main="u.slot === 'ENEMY_MAIN'" size="md" is-enemy
+              :is-main="u.slot === 'ENEMY_MAIN'" size="md" :is-enemy="!enemyPerspective"
               :class="u.slot === 'ENEMY_MAIN' ? '' : 'scale-[0.92] origin-bottom'"
             />
           </div>
@@ -104,8 +127,17 @@ function inspectReward(id: string) {
               :rage="store.liveUnitStates[u.slot]?.rage ?? u.rage"
               :anim="store.liveUnitStates[u.slot]?.anim ?? 'NONE'"
               :popup="store.floatingPopups[u.slot] ?? null"
-              :is-main="u.slot === 'ALLY_MAIN'" size="md"
+              :is-main="u.slot === 'ALLY_MAIN'" size="md" :is-enemy="enemyPerspective"
               :class="u.slot === 'ALLY_MAIN' ? '' : 'scale-[0.92] origin-bottom'"
+            />
+          </div>
+          <div v-if="escortUnits.length" class="mx-auto mt-2 grid max-w-[17rem] grid-cols-2 gap-1.5">
+            <PortraitCard
+              v-for="u in escortUnits" :key="u.slot"
+              :name="u.name" :subtitle="u.title" :style-type="u.portraitStyle"
+              :hp="store.liveUnitStates[u.slot]?.hp ?? u.hp" :max-hp="u.maxHp"
+              :anim="store.liveUnitStates[u.slot]?.anim ?? 'NONE'" :popup="store.floatingPopups[u.slot] ?? null"
+              size="sm"
             />
           </div>
         </div>
@@ -116,32 +148,45 @@ function inspectReward(id: string) {
         <p
           class="text-center text-sm leading-relaxed"
           :class="
-            store.activeBattle.stanceBanner.advantage === 'ALLY'
+            stanceBanner?.advantage === 'ALLY'
               ? 'text-gold'
-              : store.activeBattle.stanceBanner.advantage === 'ENEMY'
+              : stanceBanner?.advantage === 'ENEMY'
                 ? 'text-cinnabar'
                 : 'text-[#b9b2a4]'
           "
         >
-          {{ store.activeBattle.stanceBanner.description }}
+          {{ stanceBanner?.description }}
         </p>
+
+        <details v-if="raidLog.length" class="mt-2 text-sm text-jade">
+          <summary class="cursor-pointer text-center">{{ raidLog.at(-1)?.title }}</summary>
+          <ol class="mx-auto mt-1 max-h-32 w-fit space-y-1 overflow-y-auto px-2">
+            <li v-for="(entry, index) in raidLog" :key="index">
+              第 {{ entry.round }} 回合 · {{ entry.title }}
+              <p v-for="(detail, detailIndex) in entry.details" :key="detailIndex" class="pl-2 text-ink2">{{ detail }}</p>
+            </li>
+          </ol>
+        </details>
 
         <div v-if="!store.isBattlePlaying" class="mt-2 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 border-t border-line pt-2">
           <span
             class="anim-stamp seal h-11 w-14 text-2xl"
             :class="won ? '' : '!bg-transparent !text-ink3 !shadow-none !outline-ink3'"
-          >{{ won ? '告捷' : '惜败' }}</span>
+          >{{ won ? '告捷' : retreated ? '脱身' : '惜败' }}</span>
           <template v-if="won && rewards">
             <span class="chip chip-jade tabular-nums">真气 +{{ rewards.qiExp.toLocaleString() }}</span>
             <span class="chip chip-gold tabular-nums">纹银 +{{ rewards.silver.toLocaleString() }}</span>
             <span v-if="rewards.sectContrib" class="chip tabular-nums">门派贡献 +{{ rewards.sectContrib }}</span>
+            <span v-if="rewards.karma" class="chip tabular-nums">侠义 +{{ rewards.karma }}</span>
             <button
               v-for="it in rewards.items ?? []" :key="it.id"
               class="chip tier-chip" :class="TIER_META[it.tier].cls" @click="inspectReward(it.id)"
             >
               {{ TIER_META[it.tier].label }} · {{ it.name }}
             </button>
+            <span v-for="id in rewards.companions ?? []" :key="id" class="chip chip-jade">{{ COMPANIONS[id]?.name }}入队</span>
           </template>
+          <span v-else-if="retreated" class="text-sm text-ink3">已退出本场战斗。可重新挑战。</span>
           <span v-else-if="!won" class="text-sm text-ink3">可以先去武库换打法、挑件装备，再来一战。</span>
         </div>
       </div>
@@ -149,3 +194,29 @@ function inspectReward(id: string) {
 
   </section>
 </template>
+
+<style scoped>
+.sanskrit-flow {
+  animation: sanskrit-flow 700ms ease-out forwards;
+  text-shadow: 0 0 12px currentColor;
+}
+
+.battle-arena:has(.sanskrit-flow) {
+  animation: sanskrit-impact 200ms ease-out;
+}
+
+@keyframes sanskrit-flow {
+  from { opacity: 0.9; transform: translateY(0.6rem); }
+  to { opacity: 0; transform: translateY(-0.9rem); }
+}
+
+@keyframes sanskrit-impact {
+  25% { transform: translateX(-3px); }
+  50% { transform: translateX(3px); }
+  75% { transform: translateX(-1px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sanskrit-flow, .battle-arena:has(.sanskrit-flow) { animation: none; }
+}
+</style>

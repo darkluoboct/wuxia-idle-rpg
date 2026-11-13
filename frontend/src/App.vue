@@ -159,13 +159,7 @@ const TOAST_GLYPH = { gold: '喜', danger: '警', info: '讯' } as const
       </aside>
 
       <section ref="stage" class="wuxia-stage" :class="{ 'wuxia-interior': currentTab !== 'CULTIVATE' || inBattle }" aria-label="江湖舞台">
-        <div v-if="!IS_MOCK_MODE && (currentTab === 'SECT' || currentTab === 'MARKET')" class="view">
-          <section class="panel space-y-2 p-4">
-            <h2 class="sec-title">{{ currentTab === 'SECT' ? '门派' : '市井' }}筹备中</h2>
-            <p class="hint">先去嘉兴会友，或到江湖页闯闯射雕主线。</p>
-          </section>
-        </div>
-        <component v-else :is="currentView" :key="currentTab" />
+        <component :is="currentView" :key="currentTab" />
       </section>
 
       <aside id="world-rail" class="wuxia-rail world-rail" aria-label="江湖卷" :data-open="store.mobileDrawer === 'WORLD'">
@@ -175,6 +169,11 @@ const TOAST_GLYPH = { gold: '喜', danger: '警', info: '讯' } as const
         </div>
       </aside>
     </main>
+
+    <div v-if="store.journeyMap" class="panel fixed bottom-4 right-3 z-20 flex items-center gap-2 p-2 text-sm">
+      <span>{{ store.journeySeconds ? `前往${store.journeyMap.name} · ${store.journeySeconds} 秒` : `可抵达${store.journeyMap.name}` }}</span>
+      <button class="btn btn-sm btn-gold" :disabled="store.journeySeconds > 0 || store.onlineActionBusy" @click="store.moveMap(store.journeyMap.id, 'arrive')">抵达</button>
+    </div>
 
     <div v-if="store.canRetryOnline" class="panel fixed right-3 top-16 z-40 flex items-center gap-2 p-2 text-sm">
       <span>连接中断</span>

@@ -2,10 +2,16 @@
 import { computed, ref } from 'vue'
 import { ChevronDown, Swords } from 'lucide-vue-next'
 import { useGameStore } from '@/stores/gameStore'
-import { ITEMS, type ItemConfig } from '@/config/gameData'
+import { backpackCapacity, canEquipCompanionItem, HIDDEN_WEAPONS, hiddenWeaponCapacity, ITEMS, JIANGHU_TITLES, MEDICINES, meetsItemStatRequirement, SKILLS, titleEligible, unlockedHiddenWeapons, type ItemConfig } from '@/config/gameData'
 import { BASE_STAT_LABELS, EQUIP_SLOT_META, itemBonusLabels, TIER_META } from '@/config/uiMeta'
 import type { EquipSlotType } from '@/network/protocol'
+import { companionItemId, formatBattleStatBonuses, PERSONAL_EQUIP_SLOTS } from '../../../shared/combatMeta.ts'
+import { temperedItem } from '../../../shared/equipmentForge.ts'
+import { equippedGearSkill, trialAffixLabel, trialAffixQuality } from '../../../shared/trialStages.ts'
+import { sectEquipmentSetOf, WANDERER_EQUIPMENT } from '../../../shared/sectEquipment.ts'
 import CharacterCombatStats from './CharacterCombatStats.vue'
+import EquipmentForge from './EquipmentForge.vue'
+import InkFigure from './InkFigure.vue'
 
 const store = useGameStore()
 const slotOrder = ['HEAD', 'WEAPON', 'ARMOR', 'ACC', 'WRIST', 'BELT', 'BOOTS', 'RELIC'] as const satisfies readonly EquipSlotType[]
@@ -24,50 +30,135 @@ function itemArt(item: ItemConfig) {
   return atlasCells[item.id] ? 'art-gear' : fallbackArt[item.slot]
 }
 
-const worn = computed(() => slotOrder.map((type) => {
+const companionId = ref<string | null>(null)
+const companions = computed(() => [...new Set([store.currentLoadout.leftCompanionId, store.currentLoadout.rightCompanionId])]
+  .flatMap((id) => {
+    const companion = id && store.companionOf(id)
+    return companion ? [companion] : []
+  }))
+const wearer = computed(() => companions.value.find((member) => member.id === companionId.value))
+const wearerStats = computed(() => wearer.value?.stats ?? store.player.stats)
+const companionStats = computed(() => wearer.value && store.companionCombatStats(wearer.value.id))
+const shownStats = computed(() => companionStats.value?.attributes ?? wearer.value?.stats ?? store.martialStats)
+const hiddenSlots = computed(() => hiddenWeaponCapacity(store.currentLoadout))
+const availableWeapons = computed(() => unlockedHiddenWeapons(store.player))
+const equippedWeapons = computed(() => (store.currentLoadout.hiddenWeaponIds ?? []).slice(0, hiddenSlots.value))
+const gearSkillWeapon = computed(() => ITEMS[store.currentLoadout.weaponId ?? ''])
+const gearSkill = computed(() => equippedGearSkill({ ...store.currentLoadout, gearSkillId: gearSkillWeapon.value?.id }))
+const equippedTitle = computed(() => JIANGHU_TITLES.find((title) => title.id === store.currentLoadout.titleId))
+const titleActive = computed(() => !!store.jianghuTitle)
+const medicineSlots = [
+  { field: 'battlePillId', category: 'BATTLE_PILL', name: '战斗丹药' },
+  { field: 'weaponVenomId', category: 'WEAPON_VENOM', name: '兵刃毒膏' },
+] as const
+const medicineStock = computed(() => store.player.battleMedicines ?? {})
+const battleMedicines = Object.values(MEDICINES).filter((medicine) => medicine.category === 'BATTLE_PILL' || medicine.category === 'WEAPON_VENOM')
+
+function equipHiddenWeapon(index: number, event: Event) {
+  const id = (event.target as HTMLSelectElement).value
+  const selected = [...equippedWeapons.value]
+  selected[index] = id
+  return store.updateLoadout({ hiddenWeaponIds: selected.filter(Boolean) })
+}
+
+function equipTitle(event: Event) {
+  const id = (event.target as HTMLSelectElement).value
+  return store.updateLoadout({ titleId: id || null })
+}
+
+function selectGearSkill(event: Event) {
+  return store.updateLoadout({ gearSkillId: (event.target as HTMLSelectElement).value || null })
+}
+
+function equipMedicine(field: typeof medicineSlots[number]['field'], event: Event) {
+  const id = (event.target as HTMLSelectElement).value
+  return store.updateLoadout({ [field]: id || null })
+}
+
+function openAlchemy() {
+  store.marketTab = 'ALCHEMY'
+  store.selectTab('MARKET')
+}
+
+const worn = computed(() => slotOrder.flatMap((type) => {
   const slot = EQUIP_SLOT_META[type]
-  const id = store.currentLoadout[slot.field]
-  return { ...slot, type, item: id ? ITEMS[id] : undefined }
+  if (type === 'RELIC' && wearer.value) return []
+  const id = wearer.value && type !== 'RELIC' ? companionItemId(store.currentLoadout, wearer.value.id, type) : store.currentLoadout[slot.field]
+  return [{ ...slot, type, item: typeof id === 'string' ? ITEMS[id] : undefined }]
 }))
-const wornIds = computed(() => new Set(worn.value.flatMap(({ item }) => item ? [item.id] : [])))
+const wornIds = computed(() => new Set([
+  ...slotOrder.map((slot) => store.currentLoadout[EQUIP_SLOT_META[slot].field]),
+  ...companions.value.flatMap(({ id }) => PERSONAL_EQUIP_SLOTS.map((slot) => companionItemId(store.currentLoadout, id, slot))),
+]))
 const backpack = computed(() => store.ownedItemIds
   .map((id) => ITEMS[id])
   .filter((item) => item && !wornIds.value.has(item.id))
   .sort((a, b) => TIER_META[b.tier].rank - TIER_META[a.tier].rank))
 
-const PILL_ID = 'jiuhua_yulu_pill'
+const PILL_ID = 'pozhang_dan'
 const hasPill = computed(() => store.pillCount > 0)
-const emptySlots = computed(() => Math.max(0, 24 - backpack.value.length - Number(hasPill.value)))
+const bagCapacity = computed(() => backpackCapacity(store.currentLoadout))
+const carriedSlots = computed(() => bagCapacity.value - Number(hasPill.value))
+const bagSections = computed(() => [
+  { name: '背包', items: backpack.value.slice(0, carriedSlots.value) },
+  { name: '行囊', items: backpack.value.slice(carriedSlots.value) },
+])
+const emptySlots = computed(() => Math.max(0, carriedSlots.value - backpack.value.length))
+const showStorage = ref(false)
 
 const selectedId = ref<string | null>(null)
 const selected = computed(() => backpack.value.find((item) => item.id === selectedId.value))
 const pillSelected = computed(() => hasPill.value && selectedId.value === PILL_ID)
 const requirement = computed(() => selected.value?.reqStat)
-const meetsRequirement = computed(() => !requirement.value || store.player.stats[requirement.value.key] >= requirement.value.val)
+const meetsRequirement = computed(() => wearer.value
+  ? canEquipCompanionItem(wearer.value, selected.value)
+  : !selected.value || meetsItemStatRequirement(selected.value, wearerStats.value))
 
-const bonuses = computed(() => selected.value ? itemBonusLabels(selected.value) : [])
+const forgeState = (id: string) => store.player.equipmentForge?.items[id]
+const stars = (id: string) => forgeState(id)?.stars ?? 0
+const bonuses = computed(() => selected.value ? itemBonusLabels(temperedItem(selected.value, stars(selected.value.id))) : [])
+const secondaryLabel = computed(() => {
+  const affix = selected.value && forgeState(selected.value.id)?.secondary
+  return affix ? formatBattleStatBonuses({ [affix.stat]: affix.value }) : ''
+})
+const sectSet = computed(() => selected.value?.setId ? sectEquipmentSetOf(selected.value.setId) : undefined)
+const wornSetPieces = computed(() => worn.value.filter(({ item }) => sectSet.value && item?.setId === sectSet.value.id).length)
+const affixRoll = (id: string) => store.player.equipmentAffixes?.[id] ?? 0
 
 function equipSelected() {
   if (!selected.value || !meetsRequirement.value) return
-  store.equipItem(selected.value.id)
+  const { id, slot } = selected.value
+  if (!wearer.value) store.equipItem(id)
+  else if (slot !== 'RELIC') store.equipCompanionItem(wearer.value.id, slot, id)
   selectedId.value = null
+}
+
+function unequip(type: EquipSlotType) {
+  if (!wearer.value) store.updateLoadout({ [EQUIP_SLOT_META[type].field]: null }, '已卸下装备')
+  else if (type !== 'RELIC') store.equipCompanionItem(wearer.value.id, type, null)
 }
 </script>
 
 <template>
   <div class="equipment-panel">
+    <div v-if="companions.length" class="flex flex-wrap gap-2" role="group" aria-label="选择穿戴者">
+      <button class="btn btn-sm" :class="{ 'btn-gold': !wearer }" :aria-pressed="!wearer" @click="companionId = null">主角</button>
+      <button v-for="companion in companions" :key="companion.id" class="btn btn-sm" :class="{ 'btn-gold': wearer?.id === companion.id }"
+        :aria-pressed="wearer?.id === companion.id" @click="companionId = companion.id">{{ companion.name }}</button>
+    </div>
     <div class="equipment-overview">
       <section class="well equip-pane" aria-label="已穿戴">
         <header class="equip-heading">
           <h3 class="sec-title">已穿戴</h3>
-          <span>{{ wornIds.size }} / {{ worn.length }}</span>
+          <span>{{ worn.filter(({ item }) => item).length }} / {{ worn.length }}</span>
         </header>
 
         <div class="equip-doll">
           <div class="equip-portrait">
-            <i class="art art-hero" aria-hidden="true" />
-            <strong class="font-brush">{{ store.player.nickname }}</strong>
-            <small>{{ store.player.level }} 级 · {{ store.currentRealm.name }}</small>
+            <span v-if="wearer" class="equip-partner-portrait relative overflow-hidden"><InkFigure :style-type="wearer.portraitStyle" /></span>
+            <i v-else class="art art-hero" aria-hidden="true" />
+            <strong class="font-brush">{{ wearer?.name ?? store.player.nickname }}</strong>
+            <small>{{ wearer?.title ?? `${store.player.level} 级 · ${store.currentRealm.name}` }}</small>
           </div>
 
           <div v-for="slot in worn" :key="slot.type" class="worn-slot" :data-slot="slot.type">
@@ -79,49 +170,131 @@ function equipSelected() {
               @click="store.inspectById('item', slot.item.id)"
             ><i class="art" :class="itemArt(slot.item)" :style="atlasCells[slot.item.id]" aria-hidden="true" /></button>
             <span v-else class="gear-cell worn-cell is-empty font-brush" aria-hidden="true">{{ slot.glyph }}</span>
-            <span class="worn-name" :class="slot.item ? TIER_META[slot.item.tier].cls : ''">{{ slot.item?.name ?? emptyHints[slot.type] ?? '未装备' }}</span>
+            <span class="worn-name" :class="slot.item ? TIER_META[slot.item.tier].cls : ''">
+              {{ slot.item?.name ?? emptyHints[slot.type] ?? '未装备' }}
+              <small v-if="slot.item && stars(slot.item.id)" class="text-gold">+{{ stars(slot.item.id) }} 星</small>
+              <small v-if="slot.item && affixRoll(slot.item.id)" class="text-gold">{{ trialAffixQuality(slot.item, affixRoll(slot.item.id)) }}</small>
+            </span>
+            <button v-if="slot.item" type="button" class="text-xs text-ink3 underline" :aria-label="`卸下${slot.item.name}`"
+              :disabled="store.onlineActionBusy" @click="unequip(slot.type)">卸下</button>
           </div>
         </div>
       </section>
 
       <section class="well equip-pane equip-attributes" aria-label="角色属性">
         <h3 class="sec-title">角色属性</h3>
-        <div class="equip-power"><Swords aria-hidden="true" /><span>战力</span><b>{{ store.derivedStats.combatPower.toLocaleString() }}</b></div>
-        <CharacterCombatStats />
+        <div class="equip-power"><Swords aria-hidden="true" /><span>战力</span><b>{{ (companionStats ?? store.derivedStats).combatPower.toLocaleString() }}</b></div>
+        <CharacterCombatStats :stats="companionStats" />
 
         <details class="equip-base">
-          <summary><span>基础属性</span><ChevronDown :size="14" aria-hidden="true" /></summary>
+          <summary><span>{{ !wearer && store.isWandererMasteryActive ? '六维属性 · 兼收并蓄' : '六维属性' }}</span><ChevronDown :size="14" aria-hidden="true" /></summary>
           <dl class="base-stats">
-            <div v-for="(label, key) in BASE_STAT_LABELS" :key="key"><dt>{{ label }}</dt><dd>{{ store.player.stats[key] }}</dd></div>
+            <div v-for="(label, key) in BASE_STAT_LABELS" :key="key"><dt>{{ label }}</dt><dd>{{ shownStats[key] }}</dd></div>
           </dl>
         </details>
       </section>
     </div>
 
+    <div v-if="!wearer" class="grid gap-2 md:grid-cols-2">
+      <section v-if="gearSkill" class="well equip-pane space-y-2" aria-label="装备特技配装">
+        <label class="block space-y-1 text-sm">
+          <span>装备特技</span>
+          <select class="field w-full" :value="store.currentLoadout.gearSkillId ?? ''"
+            :disabled="store.onlineActionBusy" @change="selectGearSkill">
+            <option value="">不使用</option>
+            <option :value="gearSkill.weapon.id">{{ gearSkill.name }} · {{ gearSkill.rageCost }} 怒气</option>
+          </select>
+        </label>
+        <p class="hint">试炼与复战每场可施展一次。对同一目标连击，每击按外功威力的 {{ gearSkill.damagePercent }}% 结算。</p>
+      </section>
+      <section class="well equip-pane space-y-2" aria-label="暗器配装">
+        <h3 class="sec-title">暗器</h3>
+        <p v-if="!availableWeapons.length" class="hint">首胜历练第 04 关解锁飞天淬毒黑菱。</p>
+        <label v-for="index in hiddenSlots" :key="index" class="block space-y-1 text-sm">
+          <span>暗器 {{ index }}</span>
+          <select class="field w-full" :value="equippedWeapons[index - 1] ?? ''"
+            :disabled="store.onlineActionBusy || !availableWeapons.length" @change="equipHiddenWeapon(index - 1, $event)">
+            <option value="">未装备</option>
+            <option v-for="weapon in availableWeapons" :key="weapon.id" :value="weapon.id"
+              :disabled="equippedWeapons.includes(weapon.id) && equippedWeapons[index - 1] !== weapon.id">{{ weapon.name }}</option>
+          </select>
+          <span v-if="HIDDEN_WEAPONS[equippedWeapons[index - 1]]" class="hint block">{{ HIDDEN_WEAPONS[equippedWeapons[index - 1]].effectDesc }}</span>
+        </label>
+      </section>
+      <section class="well equip-pane space-y-2" aria-label="称号配装">
+        <h3 class="sec-title">江湖称号</h3>
+        <label class="block space-y-1 text-sm">
+          <span>出战称号</span>
+          <select class="field w-full" :value="equippedTitle?.id ?? ''" :disabled="store.onlineActionBusy" @change="equipTitle">
+            <option value="">不佩戴称号</option>
+            <option v-for="title in JIANGHU_TITLES" :key="title.id" :value="title.id">
+              {{ title.titleName }}{{ titleEligible(title, { ...store.player, stats: store.martialStats }, store.currentLoadout) ? '' : '（未达条件）' }}
+            </option>
+          </select>
+        </label>
+        <template v-if="equippedTitle">
+          <p class="hint">{{ equippedTitle.statBuffDesc }}</p>
+          <p v-if="!titleActive" class="hint">
+            {{ equippedTitle.reqAlignment === 'HERMIT' ? '侠义 −199 至 199' : `侠义 ${equippedTitle.reqAlignment === 'EVIL' ? '≤' : '≥'} ${equippedTitle.minReputation}` }}，
+            装配{{ equippedTitle.skills.map((id) => SKILLS[id]?.name).join('、') }}中的一门{{ equippedTitle.outerForm === 'PALM' ? '或其他掌法外功' : '' }}后生效。
+          </p>
+        </template>
+      </section>
+    </div>
+
+    <section v-if="!wearer" class="well equip-pane space-y-2" aria-label="百草药囊">
+      <header class="equip-heading">
+        <h3 class="sec-title">百草药囊</h3>
+        <button class="btn btn-sm" type="button" @click="openAlchemy">去百草丹房</button>
+      </header>
+      <div class="grid gap-2 md:grid-cols-2">
+        <label v-for="slot in medicineSlots" :key="slot.field" class="block space-y-1 text-sm">
+          <span>{{ slot.name }}</span>
+          <select class="field w-full" :value="store.currentLoadout[slot.field] ?? ''" :disabled="store.onlineActionBusy"
+            @change="equipMedicine(slot.field, $event)">
+            <option value="">未装配</option>
+            <option v-for="medicine in battleMedicines.filter((entry) => entry.category === slot.category)" :key="medicine.id" :value="medicine.id"
+              :disabled="!(medicineStock[medicine.id] > 0)">{{ medicine.name }} · {{ medicineStock[medicine.id] ?? 0 }} 份</option>
+          </select>
+          <span v-if="store.currentLoadout[slot.field]" class="hint block">{{ MEDICINES[store.currentLoadout[slot.field] ?? '']?.effectDesc }}</span>
+        </label>
+      </div>
+      <p class="hint">实战触发后扣除库存。切磋和华山挑战期间药囊停用。</p>
+    </section>
+
     <div class="equipment-storage">
       <section class="well equip-pane" aria-label="背包">
         <header class="equip-heading">
           <h3 class="sec-title">背包</h3>
-          <span>{{ backpack.length }} 件装备<span v-if="hasPill"> · {{ store.pillCount }} 枚丹药</span></span>
+          <span>{{ Math.min(backpack.length, carriedSlots) + Number(hasPill) }} / {{ bagCapacity }} 格</span>
         </header>
-        <div class="bag-grid">
-          <button
-            v-for="item in backpack" :key="item.id"
-            class="gear-cell" :class="TIER_META[item.tier].cls"
-            :aria-pressed="selectedId === item.id" :aria-label="item.name" :title="`${item.name} · ${TIER_META[item.tier].label}`"
-            @click="selectedId = item.id"
-          ><i class="art" :class="itemArt(item)" :style="atlasCells[item.id]" aria-hidden="true" /></button>
+        <template v-for="(section, index) in bagSections" :key="section.name">
+          <button v-if="index && section.items.length" class="btn btn-sm mt-2" :aria-expanded="showStorage"
+            aria-controls="equipment-storage" @click="showStorage = !showStorage">{{ showStorage ? '收起' : '展开' }}行囊 · {{ section.items.length }} 件</button>
+          <div v-if="!index || (section.items.length && showStorage)" :id="index ? 'equipment-storage' : undefined" class="bag-grid" :aria-label="section.name">
+            <button
+              v-for="item in section.items" :key="item.id"
+              class="gear-cell" :class="TIER_META[item.tier].cls"
+              :aria-pressed="selectedId === item.id" :aria-label="affixRoll(item.id) ? `${item.name} · ${trialAffixQuality(item, affixRoll(item.id))}` : item.name"
+              :title="`${item.name} · ${TIER_META[item.tier].label}`"
+              @click="selectedId = item.id"
+            >
+              <i class="art" :class="itemArt(item)" :style="atlasCells[item.id]" aria-hidden="true" />
+              <span v-if="stars(item.id) || affixRoll(item.id)" class="affix-star text-gold" aria-hidden="true">{{ stars(item.id) || '' }}★</span>
+            </button>
 
-          <button
-            v-if="hasPill" class="gear-cell bag-potion"
-            :aria-pressed="pillSelected" :aria-label="`九花玉露丸，${store.pillCount} 枚`" title="九花玉露丸"
-            @click="selectedId = PILL_ID"
-          >
-            <i class="art art-potion" aria-hidden="true" /><b>{{ store.pillCount }}</b>
-          </button>
-
-          <span v-for="n in emptySlots" :key="`empty-${n}`" class="gear-cell is-empty" aria-hidden="true" />
-        </div>
+            <template v-if="!index">
+              <button
+                v-if="hasPill" class="gear-cell bag-potion"
+                :aria-pressed="pillSelected" :aria-label="`${MEDICINES[PILL_ID].name}，${store.pillCount} 枚`" :title="MEDICINES[PILL_ID].name"
+                @click="selectedId = PILL_ID"
+              >
+                <i class="art art-potion" aria-hidden="true" /><b>{{ store.pillCount }}</b>
+              </button>
+              <span v-for="n in emptySlots" :key="`empty-${n}`" class="gear-cell is-empty" aria-hidden="true" />
+            </template>
+          </div>
+        </template>
       </section>
 
       <aside class="well equip-pane bag-actions" aria-label="物品操作">
@@ -129,19 +302,28 @@ function equipSelected() {
 
         <div class="bag-selection" aria-live="polite">
           <template v-if="selected">
-            <h4 class="tier-text" :class="TIER_META[selected.tier].cls">{{ selected.name }}</h4>
+            <h4 class="tier-text" :class="TIER_META[selected.tier].cls">{{ selected.name }}<template v-if="stars(selected.id)"> +{{ stars(selected.id) }} 星</template></h4>
             <p class="text-ink2">{{ TIER_META[selected.tier].label }} · {{ EQUIP_SLOT_META[selected.slot].label }}</p>
             <p v-if="selected.isTrueUnique" class="text-cinnabar">全服唯一</p>
             <ul v-if="bonuses.length" class="bag-bonuses text-jade">
               <li v-for="bonus in bonuses" :key="bonus">{{ bonus }}</li>
             </ul>
-            <p v-if="requirement" :class="meetsRequirement ? 'text-ink2' : 'text-cinnabar'">
-              需要{{ requirement.label }}（当前 {{ store.player.stats[requirement.key] }}）
+            <p v-if="affixRoll(selected.id)" class="text-gold">
+              {{ trialAffixQuality(selected, affixRoll(selected.id)) }} · {{ trialAffixLabel(selected, affixRoll(selected.id)) }}
             </p>
+            <p v-if="secondaryLabel" class="text-gold">副词条 · {{ secondaryLabel }}</p>
+            <p v-if="selected.signatureEffect" class="hint">{{ selected.signatureEffect }}</p>
+            <p v-if="sectSet" class="hint">{{ sectSet.name }} · 已穿戴 {{ wornSetPieces }}/{{ sectSet.parts.length }}</p>
+            <p v-if="sectSet" class="hint">{{ sectSet.bonus }}</p>
+            <p v-if="WANDERER_EQUIPMENT.items.some(({ id }) => id === selected?.id)" class="hint">{{ selected.desc }}</p>
+            <p v-if="requirement" :class="meetsRequirement ? 'text-ink2' : 'text-cinnabar'">
+              需要{{ requirement.label }}<template v-if="'key' in requirement">（当前 {{ wearerStats[requirement.key] }}）</template>
+            </p>
+            <p v-if="wearer && selected.slot === 'RELIC'" class="text-ink2">全队秘宝在主角栏装配。</p>
           </template>
           <template v-else-if="pillSelected">
-            <h4>九花玉露丸</h4>
-            <p class="text-ink2">在修行页勾选服用。每次突破消耗 1 枚，成功率 +25%。</p>
+            <h4>{{ MEDICINES[PILL_ID].name }}</h4>
+            <p class="text-ink2">{{ MEDICINES[PILL_ID].effectDesc }}</p>
           </template>
           <p v-else class="text-ink2">{{ backpack.length || hasPill ? '选一个背包格子。' : '背包里还没有物品。' }}</p>
         </div>
@@ -159,6 +341,7 @@ function equipSelected() {
         </div>
       </aside>
     </div>
+    <EquipmentForge />
   </div>
 </template>
 
@@ -205,7 +388,8 @@ function equipSelected() {
   min-width: 0;
   text-align: center;
 }
-.equip-portrait .art {
+.equip-portrait .art,
+.equip-partner-portrait {
   width: min(100%, 7rem);
   aspect-ratio: 1;
   border: 2px solid var(--frame-edge);
@@ -249,6 +433,7 @@ function equipSelected() {
 }
 .gear-cell .art { position: absolute; inset: 2px; border-radius: .16rem; }
 .art.art-gear { background-image: url('@/assets/gear-atlas.webp'); }
+.affix-star { position: absolute; top: .1rem; right: .25rem; font-size: .8rem; }
 button.gear-cell:hover { border-color: var(--gold); }
 button.gear-cell[aria-pressed="true"] { border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold), 0 0 .65rem var(--gold-soft); }
 .worn-cell { width: min(100%, 2.65rem); }

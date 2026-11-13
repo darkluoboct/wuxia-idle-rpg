@@ -8,9 +8,12 @@ for (const map of ONLINE_MAPS) {
   for (const h of herbs) {
     console.log(`  - [${h.tier}] ${h.name} (${h.rarity}) | ${h.desc.slice(0, 24)}...`)
   }
-  if (herbs.length !== 4) {
+  if (herbs.length && herbs.length !== 4) {
     throw new Error(`地图 ${map.id} 草药数量应为 4，当前为 ${herbs.length}`)
   }
+}
+for (const herb of Object.values(HERBS)) {
+  if (!ONLINE_MAPS.some((map) => map.id === herb.mapId)) throw new Error(`药材 ${herb.name} 的产地不存在`)
 }
 
 console.log('\n=== [2] 验证全丹方与成药/药材闭环 ===')

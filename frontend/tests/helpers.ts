@@ -34,5 +34,11 @@ export function resolvePending(s: Store, pick?: (templateId: string) => 'A' | 'B
     const key = pick?.(p.templateId!) ?? p.options.find((o) => o.canSelect)?.key
     if (!key) throw new Error(`奇遇「${p.title}」没有可选项`)
     s.resolveAdventure(key)
+    if (s.isBattlePlaying) {
+      s.skipBattleToEnd()
+      const won = s.activeBattle?.winner === 'ALLY'
+      s.closeBattleStage()
+      if (!won) break
+    }
   }
 }

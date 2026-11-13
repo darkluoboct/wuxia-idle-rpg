@@ -40,7 +40,9 @@ db.on('error', (error) => app.log.error(error))
 app.addHook('onClose', async () => db.end())
 
 try {
-  await db.query('SELECT co_cultivation_id, shaoshi_clears FROM players LIMIT 0')
+  await db.query('SELECT co_cultivation_id, shaoshi_clears, chongyang_clears, juxian_clears FROM players LIMIT 0')
+  await db.query('SELECT chapter FROM chapter_one_statue LIMIT 0')
+  await db.query('SELECT 1 FROM sect_contest_entries, sect_contest_results LIMIT 0')
   await app.listen({ host: '127.0.0.1', port: Number(process.env.PORT || 8080) })
 } catch (error) {
   app.log.error(error)

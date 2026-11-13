@@ -145,7 +145,7 @@ export function validateGachaData(): string[] {
       if (e.kind === 'COMPANION') {
         const c = COMPANIONS[e.id]
         if (!c) errs.push(`抽卡 ${tier}: 未知伙伴 ${e.id}`)
-        else if (c.route === 'STORY') errs.push(`抽卡 ${tier}: 剧情送伙伴 ${c.name} 不应进入卡池`)
+        else if (c.route === 'STORY' || c.route === 'TRIAL') errs.push(`抽卡 ${tier}: 直接入队伙伴 ${c.name} 不应进入卡池`)
       }
       if (e.kind === 'SKILL' && !SKILLS[e.id]) errs.push(`抽卡 ${tier}: 未知武学 ${e.id}`)
       if (e.kind === 'ITEM' && !ITEMS[e.id]) errs.push(`抽卡 ${tier}: 未知装备 ${e.id}`)

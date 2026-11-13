@@ -4,17 +4,19 @@ import { storeToRefs } from 'pinia'
 import { Check } from 'lucide-vue-next'
 import { useGameStore } from '@/stores/gameStore'
 import { IS_MOCK_MODE } from '@/network/apiClient'
-import { ACUPOINTS, ACUPOINT_PILLS, COMPANIONS, REALMS, SKILLS, TRIO_SYNERGIES, type SkillConfig } from '@/config/gameData'
+import { ACUPOINTS, ACUPOINT_PILLS, canEquipCompanionItem, COMPANIONS, ITEMS, REALMS, SKILLS, TRIO_SYNERGIES, type SkillConfig } from '@/config/gameData'
+import { acupointCost, canOpenAcupoint } from '../../../shared/player.ts'
 import { formatSkillPower, SKILL_SLOT_META, STANCE_META, TIER_META } from '@/config/uiMeta'
 import type { StanceType } from '@/network/protocol'
 import InkFigure from '@/components/InkFigure.vue'
 import EquipmentPanel from '@/components/EquipmentPanel.vue'
-import { MAX_SKILL_MASTERY, getSkillMasteryCap, skillPowerAtMastery } from '../../../shared/skillMastery.ts'
+import { MAX_SKILL_MASTERY, getSkillMasteryCap, skillFragmentDiscount, skillPowerAtMastery } from '../../../shared/skillMastery.ts'
+import { hasMartialFreedom, martialEffectiveness, martialOrigin, WANDERER_MASTERY } from '../../../shared/martialSchools.ts'
 
 const store = useGameStore()
 const { arsenalTab: sub } = storeToRefs(store)
 
-const intDiscountPct = computed(() => Math.round((store.player.stats.intStat / (store.player.stats.intStat + 180)) * 100))
+const intDiscountPct = computed(() => Math.round((store.martialStats.intStat / (store.martialStats.intStat + 180)) * 100))
 
 /* ---------- 武学 ---------- */
 const stances = Object.keys(STANCE_META) as StanceType[]
@@ -32,22 +34,34 @@ const skillSlots = computed(() => slots.map((slot) => {
   const cap = equipped ? getSkillMasteryCap(equipped.tier, store.player.level) : MAX_SKILL_MASTERY
   const learned = Object.values(SKILLS).filter((skill) => skill.slot === slot.slot && store.learnedSkills[skill.id] > 0)
   const cost = equipped && level < cap ? store.getSkillUpgradeCost(equipped.id) : 0
+  const fragmentCost = equipped && skillFragmentDiscount(equipped, cost, store.player.skillFragments?.[equipped.id] ?? 0)
+  const freedom = hasMartialFreedom(store.currentLoadout)
   const power = equipped && (equipped.slot === 'OUTER' || equipped.slot === 'ULT')
-    ? skillPowerAtMastery(equipped, IS_MOCK_MODE ? 1 : level)
+    ? skillPowerAtMastery(equipped, IS_MOCK_MODE ? 1 : level, store.player, freedom)
     : null
   const nextPower = equipped && power !== null && !IS_MOCK_MODE && level > 0 && level < cap
-    ? skillPowerAtMastery(equipped, level + 1)
+    ? skillPowerAtMastery(equipped, level + 1, store.player, freedom)
     : null
-  return { ...slot, equipped, level, cap, learned, cost, power, nextPower, stats: equipped ? skillStats(equipped, power) : [] }
+  const origin = equipped && martialOrigin(equipped)
+  const efficiency = equipped ? martialEffectiveness(equipped, store.player, freedom) : 100
+  return { ...slot, equipped, level, cap, learned, cost, fragmentCost, power, nextPower, origin, efficiency, stats: equipped ? skillStats(equipped, power, efficiency) : [] }
 }))
 
-function skillStats(s: SkillConfig, power: number | null) {
+const fragments = computed(() => Object.entries(store.player.skillFragments ?? {}).flatMap(([id, count]) => {
+  const skill = SKILLS[id]
+  return skill && count > 0 ? [{ name: skill.name, count }] : []
+}))
+
+function skillStats(s: SkillConfig, power: number | null, efficiency: number) {
   const out: string[] = []
+  const effective = (amount: number) => amount * efficiency / 100
   if (power !== null) out.push(`招式威力 ×${IS_MOCK_MODE ? power.toFixed(2) : formatSkillPower(power)}`)
-  if (s.speedBonus) out.push(`出手速度 +${s.speedBonus}`)
-  if (s.dodgeBonus) out.push(`闪避率 +${s.dodgeBonus}%`)
-  if (s.critBonus) out.push(`暴击率 +${s.critBonus}%`)
-  if (s.idleQiBonus) out.push(`修行真气 +${s.idleQiBonus}%`)
+  if (s.speedBonus) out.push(`出手速度 +${effective(s.speedBonus)}`)
+  if (s.dodgeBonus) out.push(`闪避率 +${effective(s.dodgeBonus)}%`)
+  if (s.critBonus) out.push(`暴击率 +${effective(s.critBonus)}%`)
+  const penetration = s.battleEffects?.find((effect) => effect.kind === 'ARMOR_PENETRATION')
+  if (penetration) out.push(`无视防御 ${penetration.percent}%`)
+  if (s.idleQiBonus) out.push(`修行真气 +${effective(s.idleQiBonus)}%`)
   return out
 }
 
@@ -68,6 +82,16 @@ function applySynergy(s: (typeof TRIO_SYNERGIES)[number]) {
   store.updateLoadout({ leftCompanionId: s.leftId, rightCompanionId: s.rightId })
 }
 
+function companionWeaponOptions(id: string | null) {
+  const owner = id ? store.companionOf(id) : undefined
+  return owner ? store.ownedItemIds.map((itemId) => ITEMS[itemId])
+    .filter((item) => item?.slot === 'WEAPON' && canEquipCompanionItem(owner, item)) : []
+}
+
+function chooseCompanionWeapon(id: string | null, event: Event) {
+  if (id) store.equipCompanionWeapon(id, (event.target as HTMLSelectElement).value || null)
+}
+
 /* ---------- 经脉冲穴与冲穴灵丹 ---------- */
 const currentMeridianRealm = computed(() => {
   return REALMS.find((r) => r.tier === store.player.realmTier) ?? REALMS[0]
@@ -82,7 +106,7 @@ const piercedCount = computed(() => {
 })
 
 const isMeridianCompleted = computed(() => {
-  return piercedCount.value >= realmAcupoints.value.length
+  return realmAcupoints.value.length > 0 && piercedCount.value >= realmAcupoints.value.length
 })
 
 const acupointPillsList = computed(() => {
@@ -93,14 +117,11 @@ const acupointPillsList = computed(() => {
 })
 
 function getAcupointCost(cost: number) {
-  const intDiscount = store.player.stats.intStat / (store.player.stats.intStat + 250)
-  return Math.max(100, Math.round(cost * (1 - intDiscount * 0.28)))
+  return acupointCost(cost, store.martialStats.intStat)
 }
 
-function canPierce(apId: string, order: number) {
-  if (store.openedAcupointIds.includes(apId)) return false
-  const prev = realmAcupoints.value.filter((a) => a.order < order)
-  return prev.every((a) => store.openedAcupointIds.includes(a.id))
+function canPierce(point: (typeof ACUPOINTS)[number]) {
+  return canOpenAcupoint(point, store.openedAcupointIds)
 }
 
 </script>
@@ -164,6 +185,7 @@ function canPierce(apId: string, order: number) {
                   <h4 class="font-brush tier-text text-xl leading-tight">{{ sl.equipped.name }}</h4>
                   <span class="chip tier-chip">{{ TIER_META[sl.equipped.tier].label }}</span>
                 </div>
+                <p class="text-xs text-ink3">{{ sl.origin?.name }}<span v-if="sl.efficiency < 100" class="ml-2 text-cinnabar">{{ sl.efficiency === 80 ? '出师辅修' : '真气冲突' }} · 效力 {{ sl.efficiency }}%</span></p>
                 <p class="hint">{{ sl.equipped.desc }}</p>
                 <div v-if="sl.stats.length" class="flex flex-wrap gap-1">
                   <span v-for="stat in sl.stats" :key="stat" class="chip">{{ stat }}</span>
@@ -203,6 +225,10 @@ function canPierce(apId: string, order: number) {
                   v-else class="btn btn-sm btn-gold" :disabled="store.player.qiExp < sl.cost || store.onlineActionBusy"
                   :aria-label="`升级${sl.equipped.name}`" @click="store.upgradeSkillMastery(sl.equipped.id)"
                 >升级武功</button>
+                <button v-if="sl.level < sl.cap && sl.fragmentCost && sl.fragmentCost.count"
+                  class="btn btn-sm" :disabled="store.player.qiExp < sl.fragmentCost.spentQi || store.onlineActionBusy"
+                  @click="store.upgradeSkillMastery(sl.equipped.id, true)"
+                >用 {{ sl.fragmentCost.count }} 张残页参悟 · {{ sl.fragmentCost.spentQi.toLocaleString() }} 真气</button>
                 <span v-if="sl.level < sl.cap" class="text-xs tabular-nums text-ink2">花费 {{ sl.cost.toLocaleString() }} 真气</span>
                 <span v-if="sl.level < sl.cap && store.player.qiExp < sl.cost" class="text-xs text-cinnabar">
                   还差 {{ (sl.cost - store.player.qiExp).toLocaleString() }} 真气
@@ -211,6 +237,13 @@ function canPierce(apId: string, order: number) {
             </article>
           </div>
         </div>
+        <section v-if="fragments.length" class="well space-y-2 p-3" aria-label="武学残页">
+          <h3 class="sec-title">武学残页</h3>
+          <p class="hint">已习得的同名武学可在升级时用残页抵扣真气。</p>
+          <ul class="grid gap-1 text-sm text-ink2 sm:grid-cols-2">
+            <li v-for="fragment in fragments" :key="fragment.name">《{{ fragment.name }}》 · {{ fragment.count }} 张</li>
+          </ul>
+        </section>
       </div>
 
       <!-- ============ 编队 ============ -->
@@ -245,7 +278,7 @@ function canPierce(apId: string, order: number) {
             <article v-for="b in store.setBonusStates" :key="b.set.id" class="well flex flex-col gap-2 p-3" :class="b.tier ? '!border-gold' : ''">
               <div class="flex items-center justify-between gap-2">
                 <b class="font-brush text-lg" :class="b.tier ? 'text-gold' : ''">{{ b.set.name }}</b>
-                <span class="chip tabular-nums" :class="b.tier ? 'chip-gold' : ''">{{ b.owned }} / {{ b.set.memberIds.length + (b.set.plannedMembers?.length ?? 0) }}</span>
+                <span class="chip tabular-nums" :class="b.tier ? 'chip-gold' : ''">{{ b.owned }} / {{ b.set.memberIds.length }}</span>
               </div>
               <p class="hint">{{ b.set.desc }}</p>
               <div class="flex flex-wrap gap-1">
@@ -253,7 +286,6 @@ function canPierce(apId: string, order: number) {
                   v-for="id in b.set.memberIds" :key="id" class="chip !py-0 !text-[0.68rem]"
                   :class="isRecruited(id) ? 'chip-jade' : 'opacity-60'"
                 >{{ COMPANIONS[id].name }}</span>
-                <span v-for="n in b.set.plannedMembers ?? []" :key="n" class="chip !py-0 !text-[0.68rem] opacity-40" title="后续版本登场">{{ n }}</span>
               </div>
               <ul class="space-y-0.5 text-xs">
                 <li v-for="t in b.set.tiers" :key="t.count" :class="b.owned >= t.count ? 'text-jade' : 'text-ink3'">
@@ -270,6 +302,19 @@ function canPierce(apId: string, order: number) {
               <b :class="side.role === 'LEFT' ? 'text-gold' : 'text-jade'">{{ side.title }}</b>
               <span class="text-xs text-ink3">{{ side.sub }}</span>
             </div>
+            <label v-if="store.currentLoadout[side.key]" class="flex items-center gap-2 text-xs">
+              <span class="shrink-0 text-ink3">兵刃</span>
+              <select
+                class="well min-w-0 flex-1 border border-line bg-raised p-1.5 text-ink"
+                :aria-label="`${side.title}兵刃`"
+                :value="store.currentLoadout.companionWeapons?.[store.currentLoadout[side.key] ?? ''] ?? ''"
+                :disabled="store.onlineActionBusy"
+                @change="chooseCompanionWeapon(store.currentLoadout[side.key], $event)"
+              >
+                <option value="">未装备</option>
+                <option v-for="item in companionWeaponOptions(store.currentLoadout[side.key])" :key="item.id" :value="item.id">{{ item.name }}</option>
+              </select>
+            </label>
             <div class="space-y-1.5" role="radiogroup" :aria-label="side.title">
               <button
                 v-for="c in recruited(side.role)" :key="c.id" role="radio" :aria-checked="store.currentLoadout[side.key] === c.id"
@@ -310,10 +355,10 @@ function canPierce(apId: string, order: number) {
             </div>
           </div>
           <p class="text-xs text-ink2 leading-relaxed">
-            每 10 级大境界须打通当前经脉全部核心穴道，方可凝聚纯阳真气破关晋阶。冲穴可永久提升主角基础属性。
+            {{ realmAcupoints.length ? '达到等级上限并贯通当前经脉后，可前往修行突破。冲穴可获得永久属性。' : '当前境界的核心穴位随下一卷开放。' }}
           </p>
           <div v-if="isMeridianCompleted" class="rounded border border-jade/30 bg-jade/10 p-2 text-xs text-jade flex items-center justify-between">
-            <span>✨ 本阶经脉已全线贯通！可前往「修行」使用【纯阳·通脉破障丹】冲击大境界玄关！</span>
+            <span>本阶经脉已全线贯通。</span>
             <button class="btn btn-sm btn-gold font-brush text-xs" @click="store.selectTab('CULTIVATE')">去突破</button>
           </div>
         </div>
@@ -361,12 +406,12 @@ function canPierce(apId: string, order: number) {
             <div
               v-for="ap in realmAcupoints" :key="ap.id"
               class="well p-3 flex flex-wrap items-center justify-between gap-3 border"
-              :class="store.openedAcupointIds.includes(ap.id) ? 'border-jade/40 bg-jade/5' : canPierce(ap.id, ap.order) ? 'border-gold/50 bg-[var(--gold-soft)]' : 'border-line opacity-65'"
+                  :class="store.openedAcupointIds.includes(ap.id) ? 'border-jade/40 bg-jade/5' : canPierce(ap) ? 'border-gold/50 bg-[var(--gold-soft)]' : 'border-line opacity-65'"
             >
               <div class="flex items-center gap-3 min-w-[12rem]">
                 <div
                   class="h-9 w-9 rounded-full flex items-center justify-center font-brush text-sm border"
-                  :class="store.openedAcupointIds.includes(ap.id) ? 'border-jade bg-jade text-raised' : canPierce(ap.id, ap.order) ? 'border-gold bg-gold/20 text-gold animate-pulse' : 'border-line text-ink3'"
+                  :class="store.openedAcupointIds.includes(ap.id) ? 'border-jade bg-jade text-raised' : canPierce(ap) ? 'border-gold bg-gold/20 text-gold animate-pulse' : 'border-line text-ink3'"
                 >
                   {{ ap.order }}
                 </div>
@@ -385,7 +430,7 @@ function canPierce(apId: string, order: number) {
                 <span v-if="store.openedAcupointIds.includes(ap.id)" class="text-xs text-jade font-brush flex items-center gap-1">
                   <Check :size="14" /> 已贯通
                 </span>
-                <template v-else-if="canPierce(ap.id, ap.order)">
+                <template v-else-if="canPierce(ap)">
                   <button
                     class="btn btn-sm btn-gold font-brush text-xs"
                     :disabled="store.player.qiExp < getAcupointCost(ap.costQi) || store.onlineActionBusy"

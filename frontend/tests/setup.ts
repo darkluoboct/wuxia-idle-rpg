@@ -9,7 +9,11 @@ const mem = new Map<string, string>()
   clear: () => mem.clear(),
 }
 
-beforeEach(() => mem.clear())
+beforeEach(() => {
+  mem.clear()
+  // 常规回归使用固定晴天。天气与夜战用例单独传入时刻或场景。
+  vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-11-13T08:00:00+08:00'))
+})
 afterEach(() => {
   vi.restoreAllMocks()
   vi.unstubAllEnvs()

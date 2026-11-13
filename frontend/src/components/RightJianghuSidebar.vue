@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { ChevronRight, Circle, CircleCheck, Diamond, Store, Swords } from 'lucide-vue-next'
 import { useGameStore } from '@/stores/gameStore'
-import { isMapUnlocked, MAPS, ONLINE_STORY_CHAPTERS, STORY_CHAPTERS } from '@/config/gameData'
+import { COOP_RAIDS, MAPS, ONLINE_STORY_CHAPTERS, STORY_CHAPTERS } from '@/config/gameData'
 import { IS_MOCK_MODE } from '@/network/apiClient'
 import RichLogStream from './RichLogStream.vue'
 
@@ -12,9 +12,12 @@ const panes = [
 ] as const
 const pane = ref<(typeof panes)[number]['key']>(IS_MOCK_MODE ? 'TASKS' : 'SOCIAL')
 const chapters = IS_MOCK_MODE ? STORY_CHAPTERS : ONLINE_STORY_CHAPTERS
-const chapter = computed(() => chapters.find((ch) => ch.id === store.player.maxChapterId))
-const cleared = computed(() => Math.min(chapters.length, store.player.maxChapterId - 1))
-const lastCleared = computed(() => chapters[cleared.value - 1])
+const chapter = computed(() => chapters.find((ch) => ch.id === store.player.maxChapterId) ??
+  (IS_MOCK_MODE ? undefined : chapters.find((ch) => !store.claimedNodeIds.includes(ch.id))))
+const clearedChapters = computed(() => chapters.filter((ch) => IS_MOCK_MODE
+  ? ch.id < store.player.maxChapterId : store.claimedNodeIds.includes(ch.id)))
+const cleared = computed(() => clearedChapters.value.length)
+const lastCleared = computed(() => clearedChapters.value.at(-1))
 const news = computed(() => {
   const groups = new Map<string, string[]>()
   for (const full of store.marqueeBulletin.split('　　·　　')) {
@@ -45,8 +48,8 @@ const COMPASS: { id: string; dir: Dir; cls: string }[] = [
 const nodes = computed(() =>
   COMPASS.map((c) => {
     const map = MAPS.find((m) => m.id === c.id)!
-    return { ...c, map, locked: !isMapUnlocked(map, store.player.maxChapterId) }
-  }).filter(({ map }) => IS_MOCK_MODE || map.reqCleared === undefined)
+    return { ...c, map, locked: !store.canTravelTo(map) }
+  }).filter(({ map }) => IS_MOCK_MODE || map.reqCleared === undefined || map.onlineReqCleared !== undefined)
 )
 const SHORT: Record<string, string> = {
   zhongnan_forest: '终南后山', damo_caravan: '大漠商道', jiaxing_suburb: '嘉兴烟雨', heizhao_swamp: '湘西黑沼',
@@ -73,6 +76,11 @@ watch([pane, tab], ([p, t]) => {
   if (p === 'SOCIAL' && t === 'CHAT') unread.value = false
 })
 watch(() => store.activeBattle?.battleId, (id) => { if (id) pane.value = 'TASKS' })
+
+function openStory() {
+  store.selectTab('JIANGHU')
+  store.jianghuTab = 'STORY'
+}
 
 function send() {
   if (!chatInput.value.trim()) return
@@ -127,20 +135,31 @@ const coCultivationTimeLeft = computed(() => {
       </template>
     </section>
 
+    <section v-if="store.duelInvite" class="well shrink-0 space-y-1.5 px-3 py-2.5" aria-label="切磋请帖">
+      <template v-if="store.duelInvite.invitee.id === store.player.id">
+        <strong class="text-sm text-gold">「{{ store.duelInvite.inviter.nickname }}」邀你切磋</strong>
+        <div class="flex gap-2">
+          <button class="btn btn-sm btn-gold" :disabled="store.onlineActionBusy || store.isBattlePlaying" @click="store.replyDuel(true)">接受切磋</button>
+          <button class="btn btn-sm" :disabled="store.onlineActionBusy || store.isBattlePlaying" @click="store.replyDuel(false)">婉拒切磋</button>
+        </div>
+      </template>
+      <strong v-else class="text-sm text-gold">等候「{{ store.duelInvite.invitee.nickname }}」接帖</strong>
+    </section>
+
     <section v-if="store.raidLobby.invitation" class="well shrink-0 space-y-1.5 px-3 py-2.5" aria-label="组队邀请">
       <strong class="text-sm text-gold">「{{ store.raidLobby.invitation.leaderNickname }}」邀你组队</strong>
-      <p class="text-xs text-ink2">少室山 · 金刚伏魔圈，三位侠客一起破阵。</p>
+      <p class="text-xs text-ink2">{{ COOP_RAIDS[store.raidLobby.invitation.raidId].title }}</p>
       <div class="flex gap-2">
         <button class="btn btn-sm btn-gold" :disabled="store.raidLobbyBusy || !store.roomConnected" @click="store.raidTeamAction({ action: 'accept', invitationId: store.raidLobby.invitation.id })">接受组队</button>
         <button class="btn btn-sm" :disabled="store.raidLobbyBusy || !store.roomConnected" @click="store.raidTeamAction({ action: 'decline', invitationId: store.raidLobby.invitation.id })">婉拒组队</button>
       </div>
     </section>
     <button v-else-if="store.raidLobby.team" class="quest-link shrink-0 px-3 py-1.5 text-left" @click="store.openRaidLobby()">
-      少室山队伍 {{ store.raidLobby.team.members.length }} / 3 · 查看准备
+      三人副本队伍 {{ store.raidLobby.team.members.length }} / 3 · 查看准备
     </button>
 
     <div v-if="pane === 'TASKS'" class="world-tasks">
-      <button v-if="chapter" class="quest-row quest-main" @click="store.selectTab('JIANGHU')">
+      <button v-if="chapter" class="quest-row quest-main" @click="openStory">
         <span class="quest-mark"><Diamond :size="18" aria-hidden="true" /></span>
         <span class="quest-copy">
           <strong><em>主线</em> {{ chapter.title }}</strong>
@@ -160,7 +179,7 @@ const coCultivationTimeLeft = computed(() => {
         </summary>
         <div class="quest-options">
           <p>{{ store.pendingAdventure.description }}</p>
-          <button v-for="opt in store.pendingAdventure.options" :key="opt.key" class="btn" :disabled="!opt.canSelect" @click="store.resolveAdventure(opt.key)">
+          <button v-for="opt in store.pendingAdventure.options" :key="opt.key" class="btn" :disabled="store.isBattlePlaying || !opt.canSelect" @click="store.resolveAdventure(opt.key)">
             {{ opt.label }}<small v-if="opt.requirementText">{{ opt.requirementText }}</small>
           </button>
           <button class="quest-link" @click="store.triggerRandomAdventure()">换个奇遇</button>
@@ -181,7 +200,7 @@ const coCultivationTimeLeft = computed(() => {
     <div v-else-if="pane === 'EVENTS'" class="world-tasks">
       <button v-if="!IS_MOCK_MODE" class="quest-row quest-main" @click="store.openRaidLobby()">
         <span class="quest-mark"><Swords :size="18" aria-hidden="true" /></span>
-        <span class="quest-copy"><strong><em>副本</em> 少室山 · 金刚伏魔圈</strong><small>同图邀请两位侠客，一起破阵</small></span>
+        <span class="quest-copy"><strong><em>副本</em> 三人组队</strong><small>同图邀请两位侠客，一起破阵</small></span>
         <ChevronRight class="quest-arrow" aria-hidden="true" />
       </button>
       <button v-if="IS_MOCK_MODE" class="quest-row quest-main" :disabled="store.isBattlePlaying" @click="store.startThreePlayerCoopRaid()">
@@ -220,9 +239,9 @@ const coCultivationTimeLeft = computed(() => {
             v-for="n in nodes" :key="n.id"
             class="well well-hover relative z-10 flex min-w-0 flex-col items-center justify-center px-1 py-1.5 text-center"
             :class="[n.cls, store.player.currentMapId === n.id ? '!border-gold bg-[var(--gold-soft)]' : '']"
-            :title="n.locked ? n.map.unlockHint : `前往「${n.map.name}」，每小时基础收益 ${n.map.baseQiPerHour.toLocaleString()} 真气${IS_MOCK_MODE ? `，${n.map.onlineCount} 人在线` : ''}`"
-            :disabled="store.onlineActionBusy"
-            @click="store.currentMap.id !== n.id && store.moveMap(n.id)"
+            :title="n.locked ? (IS_MOCK_MODE ? n.map.unlockHint : n.map.onlineUnlockHint) : `前往「${n.map.name}」，每小时基础收益 ${n.map.baseQiPerHour.toLocaleString()} 真气${IS_MOCK_MODE ? `，${n.map.onlineCount} 人在线` : ''}`"
+            :disabled="store.onlineActionBusy || !!store.journeyMap"
+            @click="store.currentMap.id !== n.id && store.travelTo(n.id)"
           >
             <span class="absolute left-1 top-0.5 text-[0.68rem] leading-none text-ink3">{{ n.dir }}</span>
             <span v-if="n.map.safety === 'CONTESTED'" class="absolute right-1 top-0.5 text-[0.68rem] leading-none text-cinnabar">争</span>
@@ -285,7 +304,7 @@ const coCultivationTimeLeft = computed(() => {
             <button class="btn btn-sm flex-1" @click="store.interactNearbyPlayer(pl, 'CO_CULT')">一起修行</button>
             <button class="btn btn-sm flex-1" @click="store.interactNearbyPlayer(pl, 'SPAR')">切磋</button>
             <button
-              v-if="store.currentMap.safety === 'CONTESTED' || pl.isBetrayerBounty"
+              v-if="(store.currentMap.safety === 'CONTESTED' && pl.isEscortingDart) || pl.isBetrayerBounty"
               class="btn btn-sm btn-danger flex-1" @click="store.interactNearbyPlayer(pl, 'AMBUSH')"
             >
               {{ pl.isBetrayerBounty ? '追捕' : '劫镖' }}
@@ -298,6 +317,12 @@ const coCultivationTimeLeft = computed(() => {
               :disabled="store.onlineActionBusy || !store.roomConnected || !!store.activeCoCultivation || !!store.coCultivationInvite"
               @click="store.interactNearbyPlayer(pl, 'CO_CULT')"
             >邀请共修</button>
+            <button class="btn btn-sm flex-1" :aria-label="`邀请${pl.nickname}切磋`"
+              :disabled="store.onlineActionBusy || !store.roomConnected || !!store.duelInvite || store.isBattlePlaying"
+              @click="store.interactNearbyPlayer(pl, 'SPAR')">递帖切磋</button>
+            <button v-if="(store.currentMap.safety === 'CONTESTED' && pl.isEscortingDart) || pl.isBetrayerBounty"
+              class="btn btn-sm btn-danger flex-1" :disabled="store.onlineActionBusy || !store.roomConnected || store.isBattlePlaying"
+              @click="store.interactNearbyPlayer(pl, 'AMBUSH')">{{ pl.isBetrayerBounty ? '追捕' : '劫镖' }}</button>
             <button
               v-if="canInviteRaid && !store.raidLobby.team?.members.some((entry) => entry.id === pl.id) && !store.raidLobby.team?.invited.some((entry) => entry.id === pl.id)"
               class="btn btn-sm flex-1" :aria-label="`邀请${pl.nickname}组队`" :disabled="store.raidLobbyBusy || !store.roomConnected"

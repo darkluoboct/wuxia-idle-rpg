@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
-import type { RaidLobbyDTO, RaidTeamDTO } from '../../shared/protocol.ts'
+import { COOP_RAIDS } from '../../shared/gameData.ts'
+import type { RaidId, RaidLobbyDTO, RaidTeamDTO } from '../../shared/protocol.ts'
 import { requireSession } from './auth.ts'
 import { db } from './db.ts'
 import { GameError, objectBody } from './http.ts'
@@ -9,6 +10,7 @@ import type { registerRooms } from './rooms.ts'
 type Identity = { id: string; nickname: string }
 type Team = {
   id: string
+  raidId: RaidId
   leaderId: string
   members: Identity[]
   ready: Set<string>
@@ -27,7 +29,7 @@ export function registerRaidLobby(app: FastifyInstance, rooms: ReturnType<typeof
 
   function view(team: Team): RaidTeamDTO {
     return {
-      id: team.id, leaderId: team.leaderId, starting: team.starting, revision: team.revision,
+      id: team.id, raidId: team.raidId, leaderId: team.leaderId, starting: team.starting, revision: team.revision,
       members: team.members.map((member) => ({ ...member, ready: team.ready.has(member.id), online: rooms.onlineMap(member.id) !== null })),
       invited: teamInvites(team).map((entry) => entry.target),
     }
@@ -39,7 +41,7 @@ export function registerRaidLobby(app: FastifyInstance, rooms: ReturnType<typeof
     const data: RaidLobbyDTO = {
       team: team ? view(team) : null,
       invitation: invite && invite.expiresAt > Date.now()
-        ? { id: invite.id, leaderNickname: invite.team.members[0].nickname, expiresAt: invite.expiresAt }
+        ? { id: invite.id, raidId: invite.team.raidId, leaderNickname: invite.team.members[0].nickname, expiresAt: invite.expiresAt }
         : null,
     }
     rooms.sendToPlayer(playerId, { event: 'TEAM_ROOM_SYNC', data })
@@ -74,7 +76,12 @@ export function registerRaidLobby(app: FastifyInstance, rooms: ReturnType<typeof
     return team
   }
 
-  function invitePlayer(actor: Identity, targetId: unknown) {
+  function parseRaidId(value: unknown): RaidId {
+    if (typeof value === 'string' && Object.hasOwn(COOP_RAIDS, value)) return value as RaidId
+    throw new GameError(400, 'INVALID_RAID', '请选择有效的三人副本')
+  }
+
+  function invitePlayer(actor: Identity, targetId: unknown, raidId: RaidId) {
     if (typeof targetId !== 'string' || targetId === actor.id || !sameMap(actor.id, targetId)) {
       throw conflict('RAID_NOT_NEARBY', '请选择一位同图在线的侠客')
     }
@@ -92,7 +99,7 @@ export function registerRaidLobby(app: FastifyInstance, rooms: ReturnType<typeof
     if (pending) expireInvitation(pending)
     if (team && team.members.length + teamInvites(team).length >= 3) throw conflict('RAID_TEAM_FULL', '队伍的三个席位已占满')
 
-    const party: Team = team ?? { id: randomUUID(), leaderId: actor.id, members: [actor], ready: new Set(), starting: false, revision: 0 }
+    const party: Team = team ?? { id: randomUUID(), raidId, leaderId: actor.id, members: [actor], ready: new Set(), starting: false, revision: 0 }
     memberships.set(actor.id, party)
     const invitation: Invitation = {
       id: randomUUID(), team: party, target: { id: target.id, nickname: target.nickname }, expiresAt: Date.now() + 60_000,
@@ -146,13 +153,25 @@ export function registerRaidLobby(app: FastifyInstance, rooms: ReturnType<typeof
     if (!actor) throw new GameError(404, 'PLAYER_NOT_CREATED', '先创建你的角色')
     const input = objectBody(request.body)
     switch (input.action) {
-      case 'invite': invitePlayer(actor, input.targetPlayerId); break
+      case 'invite': invitePlayer(actor, input.targetPlayerId, parseRaidId(input.raidId === undefined ? 'shaoshi' : input.raidId)); break
       case 'accept': replyInvitation(actor, input.invitationId, true); break
       case 'decline': replyInvitation(actor, input.invitationId, false); break
       case 'leave': leaveTeam(actor.id, currentTeam(actor.id, input.teamId)); break
+      case 'select': {
+        const team = currentTeam(actor.id, input.teamId)
+        if (team.leaderId !== actor.id) throw conflict('RAID_LEADER_ONLY', '由队长选择要挑战的副本')
+        const raidId = parseRaidId(input.raidId)
+        if (team.raidId === raidId) break
+        team.raidId = raidId
+        team.ready.clear()
+        changed(team)
+        for (const invite of teamInvites(team)) sync(invite.target.id)
+        break
+      }
       case 'ready': {
         const team = currentTeam(actor.id, input.teamId)
         if (typeof input.ready !== 'boolean') throw new GameError(400, 'INVALID_RAID_READY', '准备状态有误')
+        if (input.raidId !== undefined && input.raidId !== team.raidId) throw conflict('RAID_TEAM_CHANGED', '挑战副本已切换，请重新准备')
         if (input.ready && (team.members.length !== 3 || !sameMap(team.leaderId, actor.id))) {
           throw conflict('RAID_NOT_READY', '三人到齐并与队长同图后再准备')
         }
@@ -177,8 +196,8 @@ export function registerRaidLobby(app: FastifyInstance, rooms: ReturnType<typeof
   }
 
   function lineup(leaderId: string, teamId: unknown, revision: unknown) {
-    const [leader, left, right] = readyTeam(leaderId, teamId, revision).members
-    return [leader.id, left.id, right.id] as const
+    const { raidId, members: [leader, left, right] } = readyTeam(leaderId, teamId, revision)
+    return { raidId, playerIds: [leader.id, left.id, right.id] as const }
   }
 
   function reserve(leaderId: string, teamId: unknown, revision: unknown) {

@@ -46,9 +46,9 @@ const animClass = computed(() => {
 const popupClass = computed(() => {
   if (!props.popup) return ''
   if (props.popup.category === 'dodge') return 'text-jade text-lg'
-  if (props.popup.category === 'heal') return 'text-jade text-xl'
+  if (props.popup.category === 'heal' || props.popup.category === 'shield') return 'text-jade text-xl'
   if (props.popup.isCrit) return 'text-gold text-2xl'
-  if (props.popup.category === 'qi') return 'text-gold text-xl'
+  if (props.popup.category === 'qi' || props.popup.category === 'true') return 'text-gold text-xl'
   return 'text-cinnabar text-xl'
 })
 

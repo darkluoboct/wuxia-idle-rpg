@@ -1,6 +1,9 @@
 import type { SkillSlotType, TierColor } from './typesHelper'
 import type { ItemConfig } from './gameData'
 import type { PlayerAvatarId } from '@/network/protocol'
+import { formatBattleStatBonuses } from '../../../shared/combatMeta.ts'
+import type { TrialDropDTO } from '../../../shared/protocol.ts'
+import { trialAffixLabel, trialAffixQuality } from '../../../shared/trialStages.ts'
 import heroine from '@/assets/selection-heroine.webp'
 import hero from '@/assets/selection-hero.webp'
 export { EQUIP_SLOT_META, STANCE_META, stanceRelation } from '../../../shared/combatMeta.ts'
@@ -39,16 +42,27 @@ export function itemBonusLabels(item: ItemConfig) {
   if (item.critBonus) labels.push(`暴击率 +${item.critBonus}%`)
   if (item.dodgeBonus) labels.push(`闪避率 +${item.dodgeBonus}%`)
   if (item.slot === 'ARMOR' && item.idleBonus) labels.push(`修行真气 +${item.idleBonus}%`)
+  if (item.patrolQiBonus) labels.push(`打坐真气 +${item.patrolQiBonus}%（巡历装备合计上限 20%）`)
+  if (item.patrolSilverBonus) labels.push(`打坐纹银 +${item.patrolSilverBonus}%`)
+  if (item.idleQiPerHour) labels.push(`每小时打坐真气 +${item.idleQiPerHour.toLocaleString()}`)
+  if (item.attributeBonus) labels.push(formatBattleStatBonuses(item.attributeBonus))
+  for (const effect of item.battleEffects ?? []) {
+    if (effect.kind === 'STAT_BONUS') labels.push(formatBattleStatBonuses(effect.stats))
+  }
   return labels
+}
+
+export function trialDropLabel(drop: TrialDropDTO) {
+  const outcome = drop.outcome === 'UPGRADED' ? '已提升' : drop.outcome === 'DUPLICATE' ? '重复' : '获得'
+  return [drop.name, trialAffixQuality(drop.id, drop.affixRoll), trialAffixLabel(drop.id, drop.affixRoll), outcome, drop.marksEarned && '印记 +1']
+    .filter(Boolean).join(' · ')
 }
 
 /** 时辰：与 store 的 SHICHEN_LABELS 一一对应（0 子夜 / 1 平旦 / 2 辰时 / 3 日正 / 4 斜阳 / 5 黄昏） */
 export type DayPeriod = 'night' | 'dawn' | 'morning' | 'noon' | 'golden' | 'dusk'
 export const PERIOD_BY_SHICHEN: DayPeriod[] = ['night', 'dawn', 'morning', 'noon', 'golden', 'dusk']
 
-export function shichenIdxFromDate(d = new Date()): number {
-  return Math.floor(((d.getHours() + 1) % 24) / 4)
-}
+export { shichenIdxFromDate } from '../../../shared/combatMeta.ts'
 
 /** 地图 → 场景气候 */
 export type MapAmbience = 'rain' | 'pine' | 'desert' | 'swamp'
@@ -69,6 +83,7 @@ export const MAP_MOOD_LABEL: Record<string, string> = {
   guiyun_lake: '太湖烟波',
   taohua_isle: '桃岛落英',
   huashan_peak: '华山云海',
+  xiangyang_city: '襄阳城中广场',
 }
 
 /** 门派阵营色 */

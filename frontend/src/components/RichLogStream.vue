@@ -18,7 +18,7 @@ const list = ref<HTMLOListElement>()
 watch(filter, () => { if (list.value) list.value.scrollTop = 0 })
 watch(() => store.activeBattle?.battleId, (id) => { if (id) filter.value = 'BATTLE' }, { immediate: true })
 const filteredLogs = computed(() => store.logs.filter((entry) => filter.value === 'ALL' || entry.channel === filter.value))
-const DMG_LABEL = { phys: '外功', qi: '内力', poison: '毒伤', reflect: '反伤', heal: '疗伤' } as const
+const DMG_LABEL = { phys: '外功', qi: '内力', true: '真伤', poison: '毒伤', bleed: '流血', reflect: '反伤', heal: '疗伤' } as const
 </script>
 
 <template>
@@ -44,9 +44,9 @@ const DMG_LABEL = { phys: '外功', qi: '内力', poison: '毒伤', reflect: '�
             >{{ seg.name }}</button>
             <b
               v-else-if="seg.type === 'damage'" class="tabular-nums"
-              :class="seg.category === 'heal' ? 'text-jade' : seg.isCrit || seg.category === 'qi' ? 'text-gold' : 'text-cinnabar'"
+              :class="seg.category === 'heal' ? 'text-jade' : seg.isCrit || seg.category === 'qi' || seg.category === 'true' ? 'text-gold' : 'text-cinnabar'"
             >
-              {{ seg.isCrit ? '暴击 ' : '' }}{{ seg.category === 'heal' ? '+' : '-' }}{{ seg.value.toLocaleString() }}
+              {{ seg.isCrit ? '暴击 ' : '' }}{{ seg.value === 0 ? '' : seg.category === 'heal' ? '+' : '-' }}{{ seg.value.toLocaleString() }}
               <small>({{ DMG_LABEL[seg.category] }})</small>
             </b>
           </template>

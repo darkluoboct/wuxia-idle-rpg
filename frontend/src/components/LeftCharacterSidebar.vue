@@ -3,9 +3,11 @@ import { computed } from 'vue'
 import { Backpack, ChevronRight, Sparkles, Swords, UsersRound } from 'lucide-vue-next'
 import { useGameStore } from '@/stores/gameStore'
 import { PLAYER_AVATARS } from '@/config/uiMeta'
+import { CHAPTER_ONE_TITLE } from '../../../shared/trialStages.ts'
 
 const store = useGameStore()
 const p = computed(() => store.player)
+const title = computed(() => store.jianghuTitle)
 const qiPct = computed(() => Math.min(100, Math.round(p.value.qiExp / Math.max(1, p.value.nextLevelQi) * 100)))
 
 const PORTRAITS: Record<string, string> = { guojing: 'guojing', huangrong: 'huangrong', huangyaoshi: 'taoist' }
@@ -38,6 +40,8 @@ function openArsenal(tab: typeof store.arsenalTab) {
       </div>
       <div class="hero-details">
         <h2 class="font-brush">{{ p.nickname }}</h2>
+        <p v-if="p.chapterOneChampion" class="text-xs text-gold">{{ CHAPTER_ONE_TITLE }}</p>
+        <p v-if="title" class="text-xs text-gold">{{ title.titleName }}</p>
         <p class="hero-level"><b>Lv.{{ p.level }}</b><span>{{ store.currentRealm.name }}</span></p>
         <div class="hero-progress" :title="`真气 ${p.qiExp.toLocaleString()} / ${p.nextLevelQi.toLocaleString()}`">
           <div class="wuxia-meter qi-meter" role="progressbar" aria-label="角色升级进度" :aria-valuenow="qiPct"><i :style="{ width: `${qiPct}%` }" /></div>

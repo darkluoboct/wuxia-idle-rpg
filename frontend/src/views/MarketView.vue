@@ -1,9 +1,12 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useGameStore } from '@/stores/gameStore'
+import { apiClient, IS_MOCK_MODE } from '@/network/apiClient'
+import { pillDoubleRate, pillSuccessRate } from '../../../shared/alchemy.ts'
+import { recipeForPlayer, SNAKE_FEEDING_RECIPE } from '../../../shared/player.ts'
+import { computeDerivedStats, mockDuelOpponent } from '@/network/mockEngine'
 import {
   COMPANIONS,
-  GHOST_APPRAISE_COST,
   GRADE_MULT,
   HERBS,
   type HerbConfig,
@@ -40,14 +43,34 @@ import {
   REUNION_QUESTS,
   REUNION_WAIT_HOURS,
 } from '@/config/questData'
-import type { StanceType } from '@/network/protocol'
+import type { StanceType, UniqueArtifactStatusDTO } from '@/network/protocol'
 import InkFigure from '@/components/InkFigure.vue'
+import HuashanLadder from '@/components/HuashanLadder.vue'
+import EquipmentForge from '@/components/EquipmentForge.vue'
 
 const store = useGameStore()
 const sub = computed({
   get: () => store.marketTab,
   set: (value) => { store.marketTab = value },
 })
+const ghostMasked = ref(store.player.wearingMask)
+watch(() => store.player.wearingMask, (masked) => { ghostMasked.value = masked })
+const staff = ref<UniqueArtifactStatusDTO>()
+const staffError = ref(false)
+const artifacts = computed(() => IS_MOCK_MODE ? store.uniqueArtifacts : staff.value ? [staff.value] : [])
+watch(sub, async (tab, _old, onCleanup) => {
+  if (IS_MOCK_MODE || tab !== 'ARTIFACTS') return
+  staff.value = undefined
+  staffError.value = false
+  let current = true
+  onCleanup(() => { current = false })
+  try {
+    const result = await apiClient.request<{ staff: UniqueArtifactStatusDTO }>('GET', '/sect/dagou-staff')
+    if (current) staff.value = result.staff
+  } catch {
+    if (current) staffError.value = true
+  }
+}, { immediate: true })
 
 function enterGhostMarket() {
   sub.value = 'GHOST'
@@ -86,7 +109,7 @@ const view = (id: string) => store.companionOf(id)!
 function giftDisabled(id: string, favorite: boolean) {
   const left = store.giftsLeft(id)
   return (
-    !canAfford(favorite ? INN_GIFT_COST : INN_TEA_COST) ||
+    store.onlineActionBusy || !canAfford(favorite ? INN_GIFT_COST : INN_TEA_COST) ||
     (favorite ? left.gift : left.tea) <= 0 ||
     (store.companionAffinity[id]?.affinity ?? 0) >= store.affinityCap
   )
@@ -98,67 +121,63 @@ function canAwaken(id: string) {
   return !!st && st.form === 'base' && st.recruited && st.affinity >= 600 && st.tokens >= need
 }
 /** 这一杯酒喝完好感是否会跨过 600（生死之交）门槛 */
-function willTrigger(id: string, gain: number) {
+function willTrigger(id: string) {
   const st = store.companionAffinity[id]
-  return !!st && !st.taught && st.affinity < 600 && st.affinity + gain >= 600
+  return !!st && !st.taught && st.affinity < 600 && st.affinity + store.innGiftGain(id, true) >= 600
 }
+const innCompanions = computed(() => Object.values(COMPANIONS).filter((companion) => IS_MOCK_MODE || store.companionAffinity[companion.id]?.met))
 
 /* 五绝（东邪 / 西毒 / 南帝 / 北丐 / 中神通），数据与策划案 01、08 册一致 */
-const fiveGreats: { title: string; nickname: string; sect: string; power: number; stance: StanceType; poem: string }[] = [
-  { title: '东邪', nickname: '陆乘云', sect: '东海桃花岛', power: 71000, stance: 'AGILE', poem: '一箫一剑平生意，负尽狂名十五年。' },
-  { title: '西毒', nickname: '西域毒皇·欧阳烈', sect: '西域白驼山庄', power: 64200, stance: 'FIERCE', poem: '灵蛇出洞风云变，顺逆九阴我独尊。' },
-  { title: '南帝', nickname: '渡厄居士·段无涯', sect: '大理天龙寺', power: 66800, stance: 'AGILE', poem: '一指洞明千重甲，枯荣禅里见真空。' },
-  { title: '北丐', nickname: '萧峰传人·乔北冥', sect: '丐帮', power: 78500, stance: 'FIERCE', poem: '醉饮松鹤三十碗，亢龙有悔震关山。' },
-  { title: '中神通', nickname: '重阳首座·清风道长', sect: '终南全真教', power: 61800, stance: 'TAICHI', poem: '终南云起先天炁，太极圆转万法空。' },
+const fiveGreats: { title: string; nickname: string; sect: string; stance: StanceType; poem: string }[] = [
+  { title: '东邪', nickname: '陆乘云', sect: '东海桃花岛', stance: 'AGILE', poem: '一箫一剑平生意，负尽狂名十五年。' },
+  { title: '西毒', nickname: '西域毒皇·欧阳烈', sect: '西域白驼山庄', stance: 'FIERCE', poem: '灵蛇出洞风云变，顺逆九阴我独尊。' },
+  { title: '南帝', nickname: '渡厄居士·段无涯', sect: '大理天龙寺', stance: 'AGILE', poem: '一指洞明千重甲，枯荣禅里见真空。' },
+  { title: '北丐', nickname: '萧峰传人·乔北冥', sect: '丐帮', stance: 'FIERCE', poem: '醉饮松鹤三十碗，亢龙有悔震关山。' },
+  { title: '中神通', nickname: '重阳首座·清风道长', sect: '终南全真教', stance: 'TAICHI', poem: '终南云起先天炁，太极圆转万法空。' },
 ]
 
-function challengeFiveGreats(p: (typeof fiveGreats)[0]) {
-  store.interactNearbyPlayer(
-    {
-      id: `fg_${p.title}`,
-      nickname: `【${p.title}】${p.nickname}`,
-      sectName: p.sect,
-      realmName: '一代宗师',
-      level: 65,
-      combatPower: p.power,
-      stance: p.stance,
-      isBetrayerBounty: false,
-      isEscortingDart: false,
-    },
-    'SPAR'
-  )
+function fiveGreatsOpponent(p: (typeof fiveGreats)[0]) {
+  const entry = {
+    id: `fg_${p.title}`,
+    nickname: p.nickname,
+    sectName: p.sect,
+    realmName: '一代宗师',
+    level: 65,
+    stance: p.stance,
+    isBetrayerBounty: false,
+    isEscortingDart: false,
+  }
+  const { player, loadout } = mockDuelOpponent(entry, store.player.currentMapId)
+  return { ...entry, combatPower: computeDerivedStats(player, loadout).combatPower }
 }
 
 // =========================================================================
 // 百草丹房与神农炼制系统
 // =========================================================================
-const selectedRecipeId = ref<string>('recipe_tongmai_dan')
-const selectedRecipe = computed<PillRecipeConfig>(() => PILL_RECIPES[selectedRecipeId.value] ?? Object.values(PILL_RECIPES)[0])
+const selectedRecipeId = ref<string>(IS_MOCK_MODE ? 'recipe_tongmai_dan' : 'recipe_chunyang_jindan')
+const selectedRecipe = computed(() => recipeForPlayer(PILL_RECIPES[selectedRecipeId.value] ?? Object.values(PILL_RECIPES)[0], store.player))
 const recipeFilter = ref<'ALL' | 'ACUPOINT' | 'BATTLE'>('ALL')
 const showHerbAtlas = ref(false)
 
 const filteredRecipes = computed(() => {
-  const all = Object.values(PILL_RECIPES)
+  const all = Object.values(PILL_RECIPES).filter((recipe) => IS_MOCK_MODE || recipe.category !== 'BODY')
   if (recipeFilter.value === 'ALL') return all
   return all.filter((r) => r.category === recipeFilter.value)
 })
 
 function canCraftRecipe(recipe: PillRecipeConfig) {
-  if (store.player.stats.intStat < recipe.minInsight) return false
+  if (store.martialStats.intStat < recipe.minInsight) return false
   if (store.player.qiExp < recipe.costQi) return false
   if (store.player.silver < recipe.costSilver) return false
   return recipe.requiredHerbs.every((req) => (store.herbInventory[req.herbId] ?? 0) >= req.count)
 }
 
 function calcCraftRate(recipe: PillRecipeConfig) {
-  const pity = store.alchemyPity[recipe.id] ?? 0
-  const insightBonus = Math.max(0, (store.player.stats.intStat - recipe.minInsight) * 1.5)
-  const luckBonus = store.player.stats.luck * 0.4
-  return Math.min(98, Math.max(15, Math.round(recipe.baseRate + insightBonus + luckBonus + pity)))
+  return pillSuccessRate(recipe, store.martialStats, store.alchemyPity[recipe.id])
 }
 
 function calcDoubleRate() {
-  return Math.min(40, Math.round(store.player.stats.luck * 0.8 + store.player.stats.intStat * 0.3))
+  return pillDoubleRate(store.martialStats)
 }
 
 const currentMapHerbs = computed(() => getMapHerbs(store.player.currentMapId))
@@ -192,8 +211,9 @@ const FLAME_META = {
 
       <!-- ============ 醉仙客栈 ============ -->
       <div v-if="sub === 'INN'" class="view-scroll -mr-1 space-y-3 pr-1">
+        <p v-if="store.jianghuTitle && !store.jianghuTitle.marketDiscount" class="well p-3 text-sm text-ink2">{{ store.jianghuTitle.greetingText }}</p>
         <!-- 醉仙楼·结缘（抽卡入口） -->
-        <article class="well relative overflow-hidden p-4" style="background-image: radial-gradient(ellipse at 100% 0, color-mix(in srgb, var(--tier-red) 14%, transparent), transparent 60%)">
+        <article v-if="IS_MOCK_MODE" class="well relative overflow-hidden p-4" style="background-image: radial-gradient(ellipse at 100% 0, color-mix(in srgb, var(--tier-red) 14%, transparent), transparent 60%)">
           <div class="relative grid items-center gap-3 md:grid-cols-[1fr_auto]">
             <div class="min-w-0">
               <div class="flex items-center gap-2.5">
@@ -231,11 +251,11 @@ const FLAME_META = {
         <!-- 故人寻访：错过的剧情伙伴。免费线约 30 天；重逢令可随时跳过 -->
         <article v-if="store.reunionCandidates.length" class="well space-y-3 p-3.5">
           <div class="flex items-center gap-2"><span class="seal h-7 w-7 text-base">逢</span><b class="font-brush text-xl">故人寻访</b></div>
-          <p class="hint">这些故人曾与你擦肩而过。日积月累打听线索（每日有数），集齐后赴故地相候、以礼相邀、了却前尘，便可重续前缘；也可直接以「故人重逢令」相邀。</p>
+          <p class="hint">这些故人曾与你擦肩而过。日积月累打听线索（每日有数），集齐后赴故地相候、以礼相邀、了却前尘，便可重续前缘。<template v-if="IS_MOCK_MODE">也可直接以「故人重逢令」相邀。</template></p>
           <div v-for="id in store.reunionCandidates" :key="id" class="space-y-2 border-t border-line pt-2.5">
             <div class="flex flex-wrap items-center justify-between gap-2">
               <b class="font-brush text-lg">{{ COMPANIONS[id].name }}</b>
-              <button class="btn btn-sm btn-gold" :disabled="store.player.goldIngot < REUNION_TICKET_COST" @click="store.redeemReunionTicket(id)">
+              <button v-if="IS_MOCK_MODE" class="btn btn-sm btn-gold" :disabled="store.player.goldIngot < REUNION_TICKET_COST" @click="store.redeemReunionTicket(id)">
                 重逢令 · {{ REUNION_TICKET_COST }} 元宝
               </button>
             </div>
@@ -259,7 +279,7 @@ const FLAME_META = {
                 </span>
               </div>
               <button
-                class="btn btn-sm w-full" :disabled="store.reunionView(id).got.inn >= REUNION_CLUE_SOURCES.inn.dailyCap || store.player.silver < REUNION_INQUIRE_COST"
+                class="btn btn-sm w-full" :disabled="store.onlineActionBusy || store.reunionView(id).got.inn >= REUNION_CLUE_SOURCES.inn.dailyCap || store.player.silver < REUNION_INQUIRE_COST"
                 @click="store.inquireReunion(id)"
               >
                 向掌柜打听 · {{ REUNION_INQUIRE_COST }} 两（今日 {{ store.reunionView(id).got.inn }}/{{ REUNION_CLUE_SOURCES.inn.dailyCap }}）
@@ -275,26 +295,29 @@ const FLAME_META = {
                   在【{{ mapName(REUNION_QUESTS[id].mapId) }}】累计相候 {{ Math.floor(store.reunionView(id).waitRatio * 100) }}%（共 {{ REUNION_WAIT_HOURS }} 小时，离线亦算）
                 </span>
                 <span class="flex gap-1.5">
-                  <button v-if="store.player.currentMapId !== REUNION_QUESTS[id].mapId" class="btn btn-sm" @click="store.moveMap(REUNION_QUESTS[id].mapId)">前往故地</button>
-                  <button class="btn btn-sm btn-gold" :disabled="store.reunionView(id).waitRatio < 1" @click="store.completeReunionWait(id)">赴约</button>
+                  <button v-if="store.player.currentMapId !== REUNION_QUESTS[id].mapId" class="btn btn-sm" :disabled="!!store.journeyMap" @click="store.travelTo(REUNION_QUESTS[id].mapId)">前往故地</button>
+                  <button class="btn btn-sm btn-gold" :disabled="store.onlineActionBusy || store.reunionView(id).waitRatio < 1" @click="store.completeReunionWait(id)">赴约</button>
                 </span>
               </div>
             </template>
             <!-- 3 以礼相邀 -->
             <div v-else-if="store.reunionView(id).step === 'GIFT'" class="flex flex-wrap items-center justify-between gap-2 text-xs">
               <span class="text-ink2">备一份「{{ COMPANIONS[id].favGift }}」相邀</span>
-              <button class="btn btn-sm btn-gold" :disabled="store.player.silver < INN_GIFT_COST" @click="store.reunionGift(id)">备礼 · {{ INN_GIFT_COST }} 两</button>
+              <button class="btn btn-sm btn-gold" :disabled="store.onlineActionBusy || store.player.silver < INN_GIFT_COST" @click="store.reunionGift(id)">备礼 · {{ INN_GIFT_COST }} 两</button>
             </div>
             <!-- 4 了却前尘 -->
             <div v-else-if="store.reunionView(id).step === 'BATTLE'" class="flex flex-wrap items-center justify-between gap-2 text-xs">
-              <span class="text-ink2">强敌拦路：{{ REUNION_QUESTS[id].enemy.name }}（强度随你的等级）</span>
-              <button class="btn btn-sm btn-seal" @click="store.reunionBattle(id)">拔剑相护</button>
+              <div class="space-y-1 text-ink2">
+                <p>强敌拦路：{{ REUNION_QUESTS[id].enemy.name }}（强度随你的等级）</p>
+                <p>{{ REUNION_QUESTS[id].battleHint }}</p>
+              </div>
+              <button class="btn btn-sm btn-seal" :disabled="store.onlineActionBusy || store.isBattlePlaying" @click="store.reunionBattle(id)">拔剑相护</button>
             </div>
           </div>
         </article>
 
         <!-- 北丐·十道绝味：每日一道，食材需在各地挂机采办 -->
-        <article v-if="store.feastActive" class="well space-y-2.5 p-3.5">
+        <article v-if="IS_MOCK_MODE && store.feastActive" class="well space-y-2.5 p-3.5">
           <div class="flex flex-wrap items-center justify-between gap-2">
             <div class="flex items-center gap-2"><span class="seal h-7 w-7 text-base">味</span><b class="font-brush text-xl">北丐 · 十道绝味</b></div>
             <span class="chip chip-gold tabular-nums">{{ store.feast.cooked.length }} / {{ DISHES.length }}</span>
@@ -318,10 +341,10 @@ const FLAME_META = {
         </article>
 
         <p class="hint">
-          请客送礼能增加好感。好感到 <b class="text-ink">100</b> 就能在武库邀请对方上阵，到 <b class="text-gold">600</b> 会收到对方传授的武功。
+          请客送礼能增加好感。好感到 <b class="text-ink">100</b> 可邀请符合条件的伙伴上阵，到 <b class="text-gold">600</b> 可获传功。
         </p>
         <div class="grid gap-3 lg:grid-cols-2">
-          <template v-for="c in Object.values(COMPANIONS)" :key="c.id">
+          <template v-for="c in innCompanions" :key="c.id">
           <!-- 尚未结识：只露剪影与线索 -->
           <article v-if="!store.companionAffinity[c.id]?.met" class="well flex gap-3 p-3 opacity-75">
             <div class="relative h-[6.2rem] w-[4.6rem] shrink-0 self-start overflow-hidden bg-[var(--bg-1)]">
@@ -367,26 +390,26 @@ const FLAME_META = {
                 喜欢「{{ c.favGift }}」· 好感到 600 教《{{ SKILLS[c.teachSkillId]?.name }}》
                 <span class="tier-chip chip ml-1 !py-0 !text-[0.68rem]" :class="TIER_META[SKILLS[c.teachSkillId].tier].cls">{{ TIER_META[SKILLS[c.teachSkillId].tier].label }}</span>
               </div>
-              <p v-if="willTrigger(c.id, 80)" class="text-xs font-bold text-gold">再奉一杯爱物，即可触发「倾囊传功」！</p>
+              <p v-if="willTrigger(c.id)" class="text-xs font-bold text-gold">再奉一杯爱物，即可触发「倾囊传功」！</p>
               <p v-if="c.recruitFlag && !store.companionAffinity[c.id]?.recruited && !store.storyFlags.includes(c.recruitFlag)" class="text-xs text-cinnabar">
                 好感再高也请不动他：需先呈齐「十道绝味」，方肯同行。
               </p>
 
               <div class="mt-auto grid grid-cols-2 gap-1.5">
                 <button class="btn btn-sm !min-h-[2.4rem] flex-col !gap-0" :disabled="giftDisabled(c.id, false)" @click="store.giftCompanionInInn(c.id, false)">
-                  <span>清茶</span><span class="text-[0.7rem] text-ink3">{{ INN_TEA_COST }} 两 · +20 {{ leftLabel(store.giftsLeft(c.id).tea) }}</span>
+                  <span>清茶</span><span class="text-[0.7rem] text-ink3">{{ INN_TEA_COST }} 两 · +{{ store.innGiftGain(c.id, false) }} {{ leftLabel(store.giftsLeft(c.id).tea) }}</span>
                 </button>
                 <button
-                  class="btn btn-sm btn-gold !min-h-[2.4rem] flex-col !gap-0" :class="willTrigger(c.id, 80) ? 'anim-pulse-glow' : ''"
+                  class="btn btn-sm btn-gold !min-h-[2.4rem] flex-col !gap-0" :class="willTrigger(c.id) ? 'anim-pulse-glow' : ''"
                   :disabled="giftDisabled(c.id, true)" @click="store.giftCompanionInInn(c.id, true)"
                 >
-                  <span class="max-w-full truncate">{{ c.favGift }}</span><span class="text-[0.7rem] opacity-80">{{ INN_GIFT_COST }} 两 · +80 {{ leftLabel(store.giftsLeft(c.id).gift) }}</span>
+                  <span class="max-w-full truncate">{{ c.favGift }}</span><span class="text-[0.7rem] opacity-80">{{ INN_GIFT_COST }} 两 · +{{ store.innGiftGain(c.id, true) }} {{ leftLabel(store.giftsLeft(c.id).gift) }}</span>
                 </button>
               </div>
 
               <!-- 觉醒进阶：好感 600 + 伙伴信物 -->
               <button
-                v-if="c.awakened && store.companionAffinity[c.id]?.form === 'base'"
+                v-if="IS_MOCK_MODE && c.awakened && store.companionAffinity[c.id]?.form === 'base'"
                 class="btn btn-sm w-full flex-col !gap-0" :class="canAwaken(c.id) ? 'btn-seal anim-pulse-glow' : ''"
                 :disabled="!canAwaken(c.id)" :title="`觉醒为「${c.awakened.title}」：好感 ≥600，消耗信物 ${c.awakenTokens ?? 30}`" @click="store.awakenCompanion(c.id)"
               >
@@ -401,19 +424,21 @@ const FLAME_META = {
 
       <!-- ============ 子时鬼市 ============ -->
       <div v-else-if="sub === 'GHOST'" class="view-scroll -mr-1 space-y-3 pr-1">
+        <p v-if="store.jianghuTitle?.marketDiscount" class="well p-3 text-sm text-ink2">{{ store.jianghuTitle.greetingText }}</p>
+        <EquipmentForge reforge />
         <div class="well relative overflow-hidden p-4" style="background-image: radial-gradient(ellipse at 92% 0, color-mix(in srgb, var(--tier-purple) 18%, transparent), transparent 55%)">
           <div class="pointer-events-none absolute right-5 top-3 h-10 w-10 rounded-full bg-[#e9eeff] opacity-70 shadow-[0_0_2rem_0.4rem_rgba(180,200,255,0.35)]" />
           <div class="relative space-y-3">
             <div>
               <h4 class="font-brush text-xl leading-none">鬼市旧物摊</h4>
-              <p class="hint mt-1.5">全真或丐帮弟子来鉴宝时记得蒙面，否则会掉 25 点侠义。悟性或福缘达到 28，就能认出摊上的玄铁重剑。</p>
+              <p class="hint mt-1.5">正派门人未蒙面时可能被盘查，基础扣 25 点侠义。假面飘萍四件套鉴宝半价，子时可避开盘查。悟性或福缘达到 28，就能认出摊上的玄铁重剑。</p>
             </div>
             <div class="flex flex-wrap items-center gap-x-5 gap-y-2">
-              <button class="flex items-center gap-2 text-sm" role="switch" :aria-checked="store.player.wearingMask" @click="store.player.wearingMask = !store.player.wearingMask">
-                <span class="switch" :aria-checked="store.player.wearingMask" /> 戴上蒙面巾
+              <button class="flex items-center gap-2 text-sm" role="switch" :aria-checked="ghostMasked" :disabled="store.onlineActionBusy" @click="ghostMasked = !ghostMasked">
+                <span class="switch" :aria-checked="ghostMasked" /> 戴上蒙面巾
               </button>
-              <button class="btn btn-gold" :disabled="!canAfford(GHOST_APPRAISE_COST)" @click="store.appraiseGhostCurio()">
-                鉴宝 · {{ GHOST_APPRAISE_COST }} 两
+              <button class="btn btn-gold" :disabled="store.onlineActionBusy || !canAfford(store.ghostAppraiseCost)" @click="store.appraiseGhostCurio(ghostMasked)">
+                鉴宝 · {{ store.ghostAppraiseCost }} 两
               </button>
             </div>
           </div>
@@ -432,16 +457,23 @@ const FLAME_META = {
             <p class="hint">{{ item.desc }}</p>
             <div class="text-xs text-ink3">摊主 {{ item.maskedSeller }}<template v-if="item.highestBidderMasked"> · 领先 <b class="text-ink2">{{ item.highestBidderMasked }}</b></template></div>
             <div class="mt-auto flex items-center justify-between gap-2 border-t border-line pt-2">
-              <span class="text-base font-bold tabular-nums text-gold">{{ item.price.toLocaleString() }}<span class="ml-1 text-xs font-normal">{{ item.currency === 'GOLD' ? '元宝' : '两纹银' }}</span></span>
-              <button class="btn btn-sm" @click="store.buyOrBidMarketListing(item)">{{ item.listingType === 'AUCTION' ? '加价 50 元宝' : '买下' }}</button>
+              <span class="text-base font-bold tabular-nums text-gold">
+                <s v-if="store.ghostListingPrice(item) < item.price" class="mr-1 text-xs font-normal text-ink3">{{ item.price.toLocaleString() }}</s>
+                {{ store.ghostListingPrice(item).toLocaleString() }}<span class="ml-1 text-xs font-normal">{{ item.currency === 'GOLD' ? '元宝' : '两纹银' }}</span>
+              </span>
+              <button class="btn btn-sm" :disabled="store.onlineActionBusy || (item.currency === 'SILVER' && !canAfford(store.ghostListingPrice(item)))"
+                @click="store.buyOrBidMarketListing(item.id)">{{ item.listingType === 'AUCTION' ? '加价 50 元宝' : '买下' }}</button>
             </div>
           </article>
           <p v-if="!store.ghostListings.length" class="col-span-full py-10 text-center text-sm text-ink3">鬼市的货已经卖完了。</p>
         </div>
       </div>
 
+      <HuashanLadder v-else-if="sub === 'HUASHAN' && !IS_MOCK_MODE" />
+
       <!-- ============ 百草丹房：神农炼制与采药寻草 ============ -->
       <div v-else-if="sub === 'ALCHEMY'" class="view-scroll -mr-1 space-y-3 pr-1">
+        <p v-if="store.player.snakeFeedingRecipe && selectedRecipe.id === SNAKE_FEEDING_RECIPE" class="hint">白驼蛇药饲喂方已生效，炼制蝮蛇见血膏少用 1 株蛇涎草。</p>
         <!-- 顶栏：百草鼎炉概况与药渣回炉 -->
         <div class="well relative overflow-hidden p-3.5" style="background-image: radial-gradient(ellipse at 88% 10%, color-mix(in srgb, var(--gold-soft) 30%, transparent), transparent 60%)">
           <div class="flex flex-wrap items-center justify-between gap-3">
@@ -457,7 +489,7 @@ const FLAME_META = {
             <div class="flex flex-wrap items-center gap-2">
               <div class="rounded border border-line bg-[var(--bg-2)] px-2.5 py-1 text-xs">
                 <span class="text-ink3">悟性加成 </span>
-                <b class="text-jade">+{{ Math.max(0, (store.player.stats.intStat - 20) * 1.5).toFixed(0) }}%</b>
+                <b class="text-jade">+{{ Math.max(0, (store.martialStats.intStat - 20) * 1.5).toFixed(0) }}%</b>
               </div>
               <div class="rounded border border-line bg-[var(--bg-2)] px-2.5 py-1 text-xs">
                 <span class="text-ink3">双丹暴率 </span>
@@ -466,7 +498,7 @@ const FLAME_META = {
               <button
                 class="btn btn-sm"
                 :class="store.furnaceResidue >= 5 ? 'btn-gold anim-pulse-glow' : ''"
-                :disabled="store.furnaceResidue < 5"
+                :disabled="store.onlineActionBusy || store.furnaceResidue < 5"
                 @click="store.exchangeFurnaceResidue()"
               >
                 药渣萃精 ({{ store.furnaceResidue }}/5)
@@ -490,7 +522,7 @@ const FLAME_META = {
               </span>
             </div>
             <div class="flex items-center gap-2">
-              <button v-if="currentMapHerbs.length" class="btn btn-sm btn-gold" @click="store.forageHerbs()">
+              <button v-if="currentMapHerbs.length" class="btn btn-sm btn-gold" :disabled="store.onlineActionBusy" @click="store.forageHerbs()">
                 采药寻草 · 200真气
               </button>
               <button class="btn btn-sm" @click="showHerbAtlas = !showHerbAtlas">
@@ -563,7 +595,10 @@ const FLAME_META = {
                 </div>
 
                 <div class="flex items-center justify-between text-xs">
-                  <span class="text-ink2 font-sans font-bold">成药：{{ MEDICINES[r.targetMedicineId]?.name }}</span>
+                  <span class="text-ink2 font-sans font-bold">
+                    {{ MEDICINES[r.targetMedicineId]?.name }}
+                    <small class="text-ink3">库存 {{ (r.category === 'BATTLE' ? store.player.battleMedicines?.[r.targetMedicineId] : store.pillInventory[r.targetMedicineId]) ?? 0 }}</small>
+                  </span>
                   <span class="chip !py-0 !text-[0.65rem]" :class="FLAME_META[r.furnaceFlame].cls">
                     {{ FLAME_META[r.furnaceFlame].name }}
                   </span>
@@ -662,8 +697,8 @@ const FLAME_META = {
               </div>
               <div class="rounded border border-line bg-[var(--bg-1)] p-2">
                 <div class="text-ink3">门槛悟性</div>
-                <div class="mt-0.5 font-bold tabular-nums" :class="store.player.stats.intStat >= selectedRecipe.minInsight ? 'text-gold' : 'text-crimson'">
-                  {{ store.player.stats.intStat }} / {{ selectedRecipe.minInsight }}
+                <div class="mt-0.5 font-bold tabular-nums" :class="store.martialStats.intStat >= selectedRecipe.minInsight ? 'text-gold' : 'text-crimson'">
+                  {{ store.martialStats.intStat }} / {{ selectedRecipe.minInsight }}
                 </div>
               </div>
             </div>
@@ -678,7 +713,7 @@ const FLAME_META = {
                 <i :style="{ width: `${calcCraftRate(selectedRecipe)}%` }" />
               </div>
               <div class="flex flex-wrap items-center justify-between text-[0.7rem] text-ink3">
-                <span>基础 {{ selectedRecipe.baseRate }}% · 悟性加成 +{{ Math.max(0, (store.player.stats.intStat - selectedRecipe.minInsight) * 1.5).toFixed(0) }}% · 福缘 +{{ (store.player.stats.luck * 0.4).toFixed(0) }}%<template v-if="(store.alchemyPity[selectedRecipe.id] ?? 0) > 0"> · 保底 +{{ store.alchemyPity[selectedRecipe.id] }}%</template></span>
+                <span>基础 {{ selectedRecipe.baseRate }}% · 悟性加成 +{{ Math.max(0, (store.martialStats.intStat - selectedRecipe.minInsight) * 1.5).toFixed(0) }}% · 福缘 +{{ (store.martialStats.luck * 0.4).toFixed(0) }}%<template v-if="(store.alchemyPity[selectedRecipe.id] ?? 0) > 0"> · 保底 +{{ store.alchemyPity[selectedRecipe.id] }}%</template></span>
                 <span class="text-gold font-bold">双丹暴击率：{{ calcDoubleRate() }}%</span>
               </div>
             </div>
@@ -687,13 +722,13 @@ const FLAME_META = {
             <div class="pt-1">
               <button
                 class="btn btn-gold btn-block !py-2.5 text-base font-bold shadow-lg"
-                :disabled="!canCraftRecipe(selectedRecipe)"
+                :disabled="store.onlineActionBusy || !canCraftRecipe(selectedRecipe)"
                 @click="store.refinePill(selectedRecipe.id)"
               >
                 起炉炼丹 · 耗 {{ selectedRecipe.costQi.toLocaleString() }} 真气
               </button>
               <p v-if="!canCraftRecipe(selectedRecipe)" class="mt-1 text-center text-xs text-crimson">
-                {{ store.player.stats.intStat < selectedRecipe.minInsight ? `悟性需达 ${selectedRecipe.minInsight} 点方可控炉` : '药材、真气或纹银不足，无法起炉' }}
+                {{ store.martialStats.intStat < selectedRecipe.minInsight ? `悟性需达 ${selectedRecipe.minInsight} 点方可控炉` : '药材、真气或纹银不足，无法起炉' }}
               </p>
             </div>
           </div>
@@ -716,8 +751,8 @@ const FLAME_META = {
             </div>
             <p class="relative text-xs italic leading-snug text-ink3">“{{ fg.poem }}”</p>
             <div class="relative mt-auto space-y-2">
-              <div class="flex items-baseline justify-between text-xs"><span class="text-ink3">战力</span><b class="text-sm tabular-nums text-gold">{{ fg.power.toLocaleString() }}</b></div>
-              <button class="btn btn-block btn-danger" @click="challengeFiveGreats(fg)">挑战{{ fg.title }}</button>
+              <div class="flex items-baseline justify-between text-xs"><span class="text-ink3">战力</span><b class="text-sm tabular-nums text-gold">{{ fiveGreatsOpponent(fg).combatPower.toLocaleString() }}</b></div>
+              <button class="btn btn-block btn-danger" @click="store.interactNearbyPlayer(fiveGreatsOpponent(fg), 'SPAR')">挑战{{ fg.title }}</button>
             </div>
           </article>
         </div>
@@ -725,9 +760,10 @@ const FLAME_META = {
 
       <!-- ============ 兵器谱 ============ -->
       <div v-else class="view-scroll -mr-1 space-y-3 pr-1">
-        <p class="hint">兵器谱记着每件真品的主人和下次争夺时间。每件真品只有一件。</p>
+        <p v-if="IS_MOCK_MODE" class="hint">兵器谱记着每件真品的主人和下次争夺时间。每件真品只有一件。</p>
+        <p v-else-if="!staff" class="hint">{{ staffError ? '暂时无法读取兵器谱。' : '正在读取兵器谱。' }}</p>
         <div class="grid gap-3 sm:grid-cols-2">
-          <article v-for="art in store.uniqueArtifacts" :key="art.artifactCode" class="well t-red glow-border space-y-2 p-3.5">
+          <article v-for="art in artifacts" :key="art.artifactCode" class="well t-red glow-border space-y-2 p-3.5">
             <div class="flex items-start justify-between gap-2">
               <h4 class="font-brush tier-text text-2xl leading-tight">「{{ art.name }}」</h4>
               <span class="chip tier-chip shrink-0">全服唯一</span>
@@ -740,7 +776,7 @@ const FLAME_META = {
               </div>
             </div>
             <div class="flex items-center justify-between border-t border-line pt-2 text-xs text-ink3">
-              <span>已守住 <b class="text-ink2">{{ art.defendStreak }}</b> 届</span>
+              <span v-if="IS_MOCK_MODE">已守住 <b class="text-ink2">{{ art.defendStreak }}</b> 届</span>
               <span class="text-right">{{ art.nextContestLabel }}</span>
             </div>
           </article>

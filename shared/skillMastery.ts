@@ -1,9 +1,36 @@
-import type { SkillConfig } from './gameData.ts'
-import type { TierColor } from './protocol.ts'
+import { ITEMS, type SkillConfig } from './gameData.ts'
+import { huashanDay } from './huashan.ts'
+import { martialEffectiveness, type MartialSchoolMember } from './martialSchools.ts'
+import type { LoadoutPresetDTO, PlayerDTO, TierColor } from './protocol.ts'
+import { trialPartId } from './trialStages.ts'
 
 export const MAX_SKILL_MASTERY = 10
 
 const TIER_COST: Record<TierColor, number> = { green: 400, blue: 900, purple: 2200, orange: 5000, red: 11000 }
+export const QUSAN_CACHE_STAGE = 24
+export const QUSAN_CACHE_KEY = trialPartId('qianying_mixing', 'ACC')
+const QUSAN_FRAGMENT_IDS = ['luoying_zhang', 'lanhua_shou', 'jiuyin_baiguzhua', 'niqiu_gong'] as const
+
+export function qusanCacheBlockReason(player: PlayerDTO, preset: LoadoutPresetDTO, now: number) {
+  if (!player.trial.rewardedStageIds.includes(QUSAN_CACHE_STAGE) || player.trial.selectedStageId !== QUSAN_CACHE_STAGE) {
+    return '先通关第 24 关，再巡历牛家密室'
+  }
+  if (preset.accId !== QUSAN_CACHE_KEY) return '请在主角的佩饰栏装上曲三酒馆密室暗格铁八卦钥'
+  if (player.qusanCacheDay === huashanDay(now)) return '今日已搜过暗格，北京时间零点可再来'
+}
+
+export function searchQusanCache(
+  player: PlayerDTO, preset: LoadoutPresetDTO, now: number, rng = Math.random,
+): { error: string } | { skillId: string; count: number } {
+  const error = qusanCacheBlockReason(player, preset, now)
+  if (error) return { error }
+  const skillId = QUSAN_FRAGMENT_IDS[Math.floor(rng() * QUSAN_FRAGMENT_IDS.length)]
+  const fragments = player.skillFragments ??= {}
+  const count = (fragments[skillId] ?? 0) + 1
+  fragments[skillId] = count
+  player.qusanCacheDay = huashanDay(now)
+  return { skillId, count }
+}
 
 /**
  * 金庸原著【经脉关隘与重数封印】阶梯：
@@ -39,11 +66,21 @@ export function getSkillMasteryCap(tier: TierColor, playerLevel: number): number
   return MAX_SKILL_MASTERY
 }
 
-export function skillUpgradeCost(skill: SkillConfig, mastery: number, insight: number) {
-  return Math.round(TIER_COST[skill.tier] * mastery * (1 - insight / (insight + 180)))
+export function skillUpgradeCost(skill: SkillConfig, mastery: number, insight: number, accessoryId?: string | null) {
+  const accessory = accessoryId ? ITEMS[accessoryId] : undefined
+  const discount = accessory?.slot === 'ACC' ? accessory.masteryDiscount : undefined
+  const percent = discount && (!discount.sectId || discount.sectId === skill.sectId) ? discount.percent : 0
+  return Math.round(TIER_COST[skill.tier] * mastery * (1 - insight / (insight + 180)) * (1 - percent / 100))
 }
 
-export function skillPowerAtMastery(skill: SkillConfig, mastery = 1) {
+export function skillFragmentDiscount(skill: SkillConfig, cost: number, fragments: number) {
+  const full = skill.fragmentCount ?? 20
+  const count = Math.min(full, fragments)
+  const savedQi = Math.floor(cost * count / full)
+  return { count: savedQi > 0 ? count : 0, spentQi: cost - savedQi }
+}
+
+export function skillPowerAtMastery(skill: SkillConfig, mastery = 1, player?: MartialSchoolMember, freedom = false) {
   const level = Math.min(MAX_SKILL_MASTERY, Math.max(1, mastery))
-  return skill.powerRatio * ((100 + 5 * (level - 1)) / 100)
+  return skill.powerRatio * ((100 + 5 * (level - 1)) / 100) * (martialEffectiveness(skill, player, freedom) / 100)
 }

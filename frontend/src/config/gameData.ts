@@ -7,7 +7,7 @@ export * from '../../../shared/gameData.ts'
 
 // 第一卷主线 / 支线数据见 storyData.ts，这里统一再导出，保持对外 import 路径稳定
 export { STORY_ARCS, STORY_CHAPTERS, ADVENTURES, adventureById, STAT_LABEL } from './storyData'
-export type { StoryNodeConfig as StoryChapterConfig, Reward, AdventureConfig, AdventureChoice, AdventureCtx, StatKey } from './storyData'
+export type { StoryNodeConfig as StoryChapterConfig, Reward, AdventureBattle, AdventureConfig, AdventureChoice, AdventureCtx, StatKey } from './storyData'
 
 /**
  * 数据引用自检：任何 skill / item / companion / map / 节点 id 写错，都会在这里报出来。
@@ -34,6 +34,8 @@ export function validateGameData(): string[] {
     const w = `主线 ${n.code}`
     n.dropItemIds?.forEach((id) => chk(!!ITEMS[id], `${w}: 未知掉落装备 ${id}`))
     n.dropSkillIds?.forEach((id) => chk(!!SKILLS[id], `${w}: 未知掉落武学 ${id}`))
+    const inner = n.bossCombat?.innerEndurance
+    if (inner) chk(SKILLS[inner.skillId]?.slot === 'INNER', `${w}: 未知首领心法 ${inner.skillId}`)
     checkReward(n.firstClear, `${w} 首通`)
   }
 
@@ -47,6 +49,19 @@ export function validateGameData(): string[] {
     chk(a.afterNodeId === 0 || nodeIds.includes(a.afterNodeId), `${w}: afterNodeId=${a.afterNodeId} 不存在`)
     chk(a.choices.some((c) => !c.require && !c.costSilver), `${w}: 至少要有一个无门槛选项，否则可能卡死`)
     for (const c of a.choices) {
+      const battle = c.battle
+      if (battle) {
+        if ('nodeId' in battle) {
+          chk(nodeIds.includes(battle.nodeId), `${w}: 战斗引用的主线节点 ${battle.nodeId} 不存在`)
+        } else {
+          chk((battle.enemyGuards?.length ?? 0) <= 3, `${w}: 最多配置三名敌方随从`)
+          for (const ally of battle.escortAllies ?? []) {
+            chk(ally.hp > 0 && ally.hp <= ally.maxHp, `${w}: ${ally.name}的开场气血超出范围`)
+          }
+        }
+        const rounds = battle.surviveRounds
+        if (rounds !== undefined) chk(Number.isInteger(rounds) && rounds > 0, `${w}: 守战回合数须为正整数`)
+      }
       for (const ctx of ctxs) checkReward(typeof c.reward === 'function' ? c.reward(ctx) : c.reward, `${w} 选项${c.key}`)
     }
   }
@@ -55,13 +70,37 @@ export function validateGameData(): string[] {
   for (const s of SECTS) {
     chk(s.ranks.length === 5, `门派 ${s.name}: 必须五阶`)
     chk(s.signatureSkills.length === 5, `门派 ${s.name}: signatureSkills 必须与五阶等长`)
-    s.signatureSkills.forEach((id) => id && chk(!!SKILLS[id], `门派 ${s.name}: 未知武学 ${id}`))
+    s.signatureSkills.flat().forEach((id) => chk(!!SKILLS[id], `门派 ${s.name}: 未知武学 ${id}`))
     Object.values(s.signatureItems ?? {}).forEach((id) => chk(!!ITEMS[id], `门派 ${s.name}: 未知装备 ${id}`))
+    for (const [rank, exam] of Object.entries(s.promotionExams ?? {})) {
+      if (!exam) continue
+      const next = Number(rank)
+      const where = `门派 ${s.name}·${exam.title}`
+      chk(Number.isInteger(next) && next >= 2 && next <= s.ranks.length, `${where}: 晋升阶位超出范围`)
+      if (exam.guestCompanionId) chk(!!COMPANIONS[exam.guestCompanionId], `${where}: 未知协战伙伴 ${exam.guestCompanionId}`)
+      if (exam.objective) {
+        chk(Number.isInteger(exam.objective.rounds) && exam.objective.rounds > 0, `${where}: 考核回合数须为正整数`)
+        if (exam.objective.kind === 'DISARM') chk(!!exam.opponent.combat?.weapon, `${where}: 卸械对手须携带兵刃`)
+        if (exam.objective.kind === 'HOLD_FORMATION') {
+          const formation = exam.formation
+          const ids = formation && [formation.leftCompanionId, formation.rightCompanionId, ...formation.reserves.map(({ id }) => id)]
+          chk(!!ids && ids.length === 6 && new Set(ids).size === 6 && ids.every((id) => !!COMPANIONS[id]), `${where}: 须配置六位不同的阵员`)
+        }
+      }
+      for (const opponent of [exam.opponent, ...(exam.nextOpponents ?? [])]) {
+        const guards = opponent.guards ?? []
+        chk(guards.length <= 3, `${where}: 每阵最多三名随从`)
+        for (const enemy of [opponent, ...guards]) {
+          const rageSkillId = enemy.combat?.rageSkillId
+          if (rageSkillId) chk(!!SKILLS[rageSkillId], `${where}: 未知对手武学 ${rageSkillId}`)
+        }
+      }
+    }
   }
   for (const m of MAPS) chk(m.reqCleared === undefined || nodeIds.includes(m.reqCleared), `地图 ${m.name}: reqCleared 不存在`)
   // 剧情送的伙伴基础形态最多紫品（第12册 §一）；觉醒形态不受此限
   for (const c of Object.values(COMPANIONS)) {
-    if (c.route === 'STORY') chk(['green', 'blue', 'purple'].includes(c.tier), `伙伴 ${c.name}: 剧情送伙伴基础形态不得高于紫品`)
+    if (c.route === 'STORY' || c.route === 'TRIAL') chk(['green', 'blue', 'purple'].includes(c.tier), `伙伴 ${c.name}: 直接入队伙伴基础形态不得高于紫品`)
     if (c.route === 'GACHA') chk(!!c.meetHint, `伙伴 ${c.name}: 抽卡伙伴需要 meetHint`)
     if (c.grade) chk(c.tier === 'orange', `伙伴 ${c.name}: 资质仅用于橙品`)
     if (c.route === 'AFFINITY' && c.tier === 'orange') chk(c.grade === '下', `伙伴 ${c.name}: 好感线橙品应为「橙·下」`)
@@ -82,10 +121,6 @@ export function validateGameData(): string[] {
   }
   return errs
 }
-
-/** 客栈送礼的每日次数（以子时为界刷新，仅「新游戏」生效） */
-export const INN_TEA_DAILY = 3
-export const INN_GIFT_DAILY = 1
 
 /** 好感上限随主线推进抬高：通关第 3 章 → 600，通关第 5 章 → 1000，此前 300（第12册 §六） */
 export function affinityCapFor(maxChapterId: number): number {

@@ -2,7 +2,8 @@
  * 校验第一卷 30 关历练配置。
  * 运行：node scripts/validate_trial_data.ts
  */
-import { ITEMS } from '../shared/gameData.ts'
+import type { BattleEffect } from '../shared/battleEffects.ts'
+import { COMPANIONS, ITEMS, SKILLS } from '../shared/gameData.ts'
 import {
   TRIAL_ITEMS, TRIAL_PATROL_HOURS, TRIAL_SETS, TRIAL_STAGES,
   trialPartId, trialSetOf,
@@ -17,6 +18,16 @@ const REPLAY_STAGES = new Set([7, 13, 21, 26, 30])
 
 const errors: string[] = []
 const fail = (message: string) => errors.push(message)
+
+function validateStatBonuses(source: string, effects: readonly BattleEffect[] = []) {
+  for (const effect of effects) {
+    if (effect.kind !== 'STAT_BONUS') continue
+    const amounts = Object.values(effect.stats)
+    if (!amounts.length || amounts.some((amount) => !Number.isInteger(amount) || amount <= 0)) {
+      fail(`${source} 的战斗属性加成须为正整数`)
+    }
+  }
+}
 
 if (TRIAL_STAGES.length !== 30) fail(`关卡数量应为 30，实际 ${TRIAL_STAGES.length}`)
 TRIAL_STAGES.forEach((stage, index) => {
@@ -35,6 +46,14 @@ TRIAL_STAGES.forEach((stage, index) => {
     if (!set.parts.some((part) => part.slot === slot)) fail(`第 ${stage.id} 关首胜部位 ${slot} 不在套装内`)
   }
   if (stage.firstClearParts.length === 0) fail(`第 ${stage.id} 关没有首胜部件`)
+  if (stage.clearSkillId && !SKILLS[stage.clearSkillId]) fail(`第 ${stage.id} 关的胜利秘籍 ${stage.clearSkillId} 不存在`)
+  if (stage.clearItemId && !ITEMS[stage.clearItemId]) fail(`第 ${stage.id} 关的胜利装备 ${stage.clearItemId} 不存在`)
+  if (stage.clearItemRequiresPuzzle && (!stage.clearItemId || !stage.puzzle?.options.includes(stage.puzzle.answer))) {
+    fail(`第 ${stage.id} 关的答题奖励须配置装备与有效答案`)
+  }
+  const recruits = stage.clearCompanionIds ?? []
+  if (new Set(recruits).size !== recruits.length) fail(`第 ${stage.id} 关的入队伙伴重复`)
+  for (const id of recruits) if (!COMPANIONS[id]) fail(`第 ${stage.id} 关的入队伙伴 ${id} 不存在`)
   if (REPLAY_STAGES.has(stage.id)) {
     if (!stage.replayPartIds) fail(`第 ${stage.id} 关是章末关，缺少复战池`)
     else {
@@ -46,6 +65,12 @@ TRIAL_STAGES.forEach((stage, index) => {
     fail(`第 ${stage.id} 关不是章末关，却有复战池`)
   }
   if (stage.victory === 'SURVIVE_ROUNDS' && !stage.surviveRounds) fail(`第 ${stage.id} 关是生存战，缺少回合数`)
+  const { rageSkillId, periodicOnHit, crit } = stage.boss.combat ?? {}
+  if (rageSkillId && !SKILLS[rageSkillId]) fail(`第 ${stage.id} 关的怒气招式 ${rageSkillId} 不存在`)
+  if (crit !== undefined && (crit < 0 || crit > 100)) fail(`第 ${stage.id} 关暴击率应在 0% 到 100% 之间`)
+  if (periodicOnHit && (!Number.isInteger(periodicOnHit.rounds) || periodicOnHit.rounds < 1)) {
+    fail(`第 ${stage.id} 关持续伤害回合数须为正整数`)
+  }
 })
 
 TRIAL_SETS.forEach((set) => {
@@ -54,6 +79,9 @@ TRIAL_SETS.forEach((set) => {
   for (const slot of SLOTS) if (!slots.has(slot)) fail(`套装 ${set.id} 缺少部位 ${slot}`)
   if (slots.size !== set.parts.length) fail(`套装 ${set.id} 有重复部位`)
   if (!set.bonuses.two || !set.bonuses.four || !set.bonuses.six) fail(`套装 ${set.id} 缺少 2/4/6 件羁绊`)
+  const battleBonuses = set.battleBonuses ?? []
+  if (new Set(battleBonuses.map((bonus) => bonus.pieces)).size !== battleBonuses.length) fail(`套装 ${set.id} 有重复的战斗档位`)
+  for (const bonus of battleBonuses) validateStatBonuses(`${set.id}（${bonus.pieces}件）`, bonus.effects)
   if (set.parts.some((part) => part.slot === 'WEAPON') && !set.parts.some((part) => part.slot === 'WEAPON' && (part.atkBonus ?? 0) > 0)) {
     fail(`套装 ${set.id} 的兵刃没有攻击力`)
   }
@@ -68,6 +96,7 @@ for (const item of TRIAL_ITEMS) {
   itemIds.add(item.id)
   if (!ITEMS[item.id]) fail(`装备 ${item.id} 未并入 ITEMS`)
   if (item.id !== trialPartId(item.setId!, item.slot)) fail(`装备 id 命名不符：${item.id}`)
+  validateStatBonuses(item.id, item.battleEffects)
 }
 
 let totalHours = 0
