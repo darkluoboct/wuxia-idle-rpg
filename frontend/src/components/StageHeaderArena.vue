@@ -47,7 +47,7 @@ function inspectReward(id: string) {
         :shichen-idx="store.shichenIdx" battle />
       <div v-if="store.isBattlePlaying && store.slashBanner?.sanskrit" :key="store.slashBanner.key"
         class="sanskrit-flow pointer-events-none absolute inset-x-0 top-1/4 z-30 text-center text-3xl text-gold"
-        aria-hidden="true">ॐ　अ　इ　उ　ऋ　ऐ　औ　ॐ</div>
+        aria-hidden="true">ॐ&#x3000;अ&#x3000;इ&#x3000;उ&#x3000;ऋ&#x3000;ऐ&#x3000;औ&#x3000;ॐ</div>
 
       <!-- 破屏书法招式横幅 -->
       <div

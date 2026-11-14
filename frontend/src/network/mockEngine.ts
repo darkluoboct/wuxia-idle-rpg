@@ -1,4 +1,5 @@
 import type { GachaDrawDTO, LoadoutPresetDTO, RoomPlayerDTO, StanceType, UniqueArtifactStatusDTO } from './protocol'
+import type { GameActions } from './gameActions'
 import { REALMS, SECTS } from '@/config/gameData'
 import { computeDerivedStats } from '../../../shared/battle.ts'
 import { createStarterCharacter } from '../../../shared/player.ts'
@@ -16,6 +17,13 @@ import {
 } from '@/config/gachaData'
 
 export { calcNextLevelQi, computeDerivedStats, evaluateStanceAdvantage, simulateServerBattle } from '../../../shared/battle.ts'
+
+export const mockGameActions: GameActions = {
+  run(_action, _input, onResult, playLocally) {
+    const result = playLocally?.()
+    if (result !== undefined) onResult(result)
+  },
+}
 
 /** 同地图的试玩对手。战力显示由实战配装计算。 */
 export function generateRoomPlayers(mapId: string): RoomPlayerDTO[] {

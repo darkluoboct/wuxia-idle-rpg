@@ -57,7 +57,7 @@ function fight(nodeIndex: number, level: number, stance: LoadoutPresetDTO['stanc
 }
 
 describe('主线数值曲线', () => {
-  it.each(STORY_CHAPTERS.map((c, i) => [c.code, i] as const))('%s 在推荐等级下可胜，且余血 ≥ 60%%', (_code, i) => {
+  it.each(STORY_CHAPTERS.map((c, i) => [c.code, i] as const))('%s 在推荐等级下可胜，且余血 ≥ 55%%', (_code, i) => {
     for (const stance of ['FIERCE', 'TAICHI'] as const) {
       const r = fight(i, STORY_CHAPTERS[i].recLevel, stance)
       expect(r.winner).toBe('ALLY')

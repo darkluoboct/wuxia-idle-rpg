@@ -43,7 +43,7 @@ async function openModal(kind: typeof modalKind.value) {
 async function createCharacter() {
   if (submitting.value || store.authBusy || !canCreate.value) return
   const name = nickname.value.trim().normalize('NFKC')
-  if (!/^[\p{L}\p{N}·_\-]{2,16}$/u.test(name)) {
+  if (!/^[\p{L}\p{N}·_-]{2,16}$/u.test(name)) {
     formError.value = '侠客名须为 2–16 位汉字、字母或数字，可用 · _ -'
     return
   }

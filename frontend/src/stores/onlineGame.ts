@@ -2,13 +2,15 @@ import { computed, onScopeDispose, ref, shallowRef } from 'vue'
 import type { GameAction, PlayerAvatarId, PlayerSnapshot, WsServerEvent } from '@/network/protocol'
 import { apiClient, ApiError, IS_MOCK_MODE } from '@/network/apiClient'
 
-export function useOnlineGame(callbacks: {
+export interface OnlineGameCallbacks {
   snapshot: (value: PlayerSnapshot) => void
   event: (value: WsServerEvent) => void
   disconnected: () => void
   reset: () => void
   error: (message: string) => void
-}) {
+}
+
+export function useOnlineGame(callbacks: OnlineGameCallbacks, prepare: () => Promise<unknown>) {
   const phase = ref<'loading' | 'login' | 'create' | 'ready' | 'error'>(IS_MOCK_MODE ? 'ready' : 'loading')
   const authBusy = ref(false)
   const authError = ref('')
@@ -88,7 +90,10 @@ export function useOnlineGame(callbacks: {
     reconnectDelay = Math.min(reconnectDelay * 2, 15_000)
   }
 
-  function enter(snapshot: PlayerSnapshot) {
+  async function enter(snapshot: PlayerSnapshot) {
+    const started = session
+    await prepare()
+    if (started !== session) return
     apply(snapshot)
     phase.value = 'ready'
     connect()
@@ -96,7 +101,7 @@ export function useOnlineGame(callbacks: {
 
   async function restore() {
     try {
-      enter(await apiClient.request<PlayerSnapshot>('GET', '/player/me'))
+      await enter(await apiClient.request<PlayerSnapshot>('GET', '/player/me'))
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) phase.value = 'login'
       else if (error instanceof ApiError && error.code === 'PLAYER_NOT_CREATED') phase.value = 'create'
@@ -138,7 +143,7 @@ export function useOnlineGame(callbacks: {
 
   function create(nickname: string, avatarId: PlayerAvatarId = 'hero_sword') {
     return authorize(async () => {
-      enter(await apiClient.request<PlayerSnapshot>('POST', '/player/create', { nickname, avatarId }))
+      await enter(await apiClient.request<PlayerSnapshot>('POST', '/player/create', { nickname, avatarId }))
     })
   }
 

@@ -98,7 +98,7 @@ export function validateGameData(): string[] {
     }
   }
   for (const m of MAPS) chk(m.reqCleared === undefined || nodeIds.includes(m.reqCleared), `地图 ${m.name}: reqCleared 不存在`)
-  // 剧情送的伙伴基础形态最多紫品（第12册 §一）；觉醒形态不受此限
+  // 剧情送的伙伴基础形态最多紫品（伙伴专题 §一）；觉醒形态不受此限
   for (const c of Object.values(COMPANIONS)) {
     if (c.route === 'STORY' || c.route === 'TRIAL') chk(['green', 'blue', 'purple'].includes(c.tier), `伙伴 ${c.name}: 直接入队伙伴基础形态不得高于紫品`)
     if (c.route === 'GACHA') chk(!!c.meetHint, `伙伴 ${c.name}: 抽卡伙伴需要 meetHint`)
@@ -122,7 +122,7 @@ export function validateGameData(): string[] {
   return errs
 }
 
-/** 好感上限随主线推进抬高：通关第 3 章 → 600，通关第 5 章 → 1000，此前 300（第12册 §六） */
+/** 好感上限随主线推进抬高：通关第 3 章 → 600，通关第 5 章 → 1000，此前 300（伙伴专题 §六） */
 export function affinityCapFor(maxChapterId: number): number {
   const lastNodeOf = (chapter: number) => Math.max(...STORY_CHAPTERS.filter((n) => n.chapter === chapter).map((n) => n.id))
   if (maxChapterId > lastNodeOf(5)) return 1000

@@ -3,7 +3,7 @@ import { COMPANIONS, ITEMS, SKILLS } from './gameData'
 import { REUNION_QUESTS } from './questData'
 
 /**
- * 客栈「醉仙楼·结缘」抽卡配置（第 12 册 §七、§八）。
+ * 客栈「醉仙楼·结缘」抽卡配置（伙伴专题 §七、§八）。
  * 概率、保底与卡池内容在此集中定义，界面的「概率公示」直接读取这里，保证公示与实际一致。
  * 真实环境中抽取结果由服务端权威产出；前端 Demo 由 mockEngine.rollGacha 模拟。
  */
