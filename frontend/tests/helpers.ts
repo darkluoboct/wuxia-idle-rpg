@@ -1,12 +1,21 @@
-import { createPinia, setActivePinia } from 'pinia'
+import { createPinia, disposePinia } from 'pinia'
+import { createApp } from 'vue'
+import { afterEach } from 'vitest'
 import { useGameStore } from '@/stores/gameStore'
 
 export type Store = ReturnType<typeof useGameStore>
+const activeGames: ReturnType<typeof createPinia>[] = []
+
+afterEach(() => {
+  for (const pinia of activeGames.splice(0)) disposePinia(pinia)
+})
 
 /** 新建一个隔离的 store；可直接选择开局模式 */
 export function newStore(mode?: 'NEW' | 'DEMO'): Store {
-  setActivePinia(createPinia())
-  const s = useGameStore()
+  const pinia = createPinia()
+  createApp({}).use(pinia)
+  activeGames.push(pinia)
+  const s = useGameStore(pinia)
   if (mode) s.startGame(mode)
   return s
 }

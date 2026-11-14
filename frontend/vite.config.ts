@@ -4,6 +4,8 @@ import vue from '@vitejs/plugin-vue'
 import tailwindcss from '@tailwindcss/vite'
 import path from 'node:path'
 
+const gameServer = process.env.WUXIA_GAME_SERVER ?? 'http://127.0.0.1:8080'
+
 export default defineConfig({
   plugins: [vue(), tailwindcss()],
   resolve: {
@@ -12,7 +14,6 @@ export default defineConfig({
     },
   },
   test: {
-    // 纯逻辑测试：真实 store + mockEngine，在 node 环境运行，不渲染组件
     environment: 'node',
     include: ['tests/**/*.test.ts'],
     setupFiles: ['tests/setup.ts'],
@@ -23,11 +24,11 @@ export default defineConfig({
     fs: { allow: [searchForWorkspaceRoot(__dirname), path.resolve(__dirname, '../shared')] },
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:8080',
+        target: gameServer,
         changeOrigin: true,
       },
       '/ws': {
-        target: 'ws://127.0.0.1:8080',
+        target: gameServer.replace(/^http/, 'ws'),
         ws: true,
       },
     },

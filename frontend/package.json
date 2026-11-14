@@ -10,7 +10,10 @@
     "build:online": "vue-tsc -b && vite build --mode online",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "lint": "cd .. && eslint --config frontend/eslint.config.mjs frontend/src frontend/tests frontend/e2e frontend/*.ts frontend/*.mjs server/src server/tests shared scripts",
+    "format": "prettier --write"
   },
   "dependencies": {
     "lucide-vue-next": "^0.475.0",
@@ -18,11 +21,19 @@
     "vue": "^3.5.13"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.65.0",
     "@tailwindcss/vite": "^4.0.9",
     "@types/node": "^22.13.5",
     "@vitejs/plugin-vue": "^5.2.1",
+    "@vue/test-utils": "^2.5.1",
+    "eslint": "^10.14.0",
+    "eslint-plugin-vue": "^10.12.1",
+    "happy-dom": "^21.0.4",
+    "prettier": "^3.10.1",
     "tailwindcss": "^4.0.9",
     "typescript": "~5.7.3",
+    "typescript-eslint": "^8.72.2",
     "vite": "^6.2.0",
     "vitest": "^3.0.9",
     "vue-tsc": "^2.2.4"

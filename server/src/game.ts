@@ -439,7 +439,7 @@ export function getSnapshot(accountId: string) {
 async function createPlayer(accountId: string, input: unknown) {
   const { nickname: name, avatarId = 'hero_sword' } = objectBody(input)
   const nickname = typeof name === 'string' ? name.trim().normalize('NFKC') : ''
-  if (!/^[\p{L}\p{N}·_\-]{2,16}$/u.test(nickname)) {
+  if (!/^[\p{L}\p{N}·_-]{2,16}$/u.test(nickname)) {
     throw new GameError(400, 'INVALID_PLAYER', '取个 2 至 16 字的侠客名，可用文字、数字或 · _ -')
   }
   if (avatarId !== 'hero_sword' && avatarId !== 'hero_sword_male') {

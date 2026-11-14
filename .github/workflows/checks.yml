@@ -1,0 +1,44 @@
+name: Checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: wuxia
+          POSTGRES_PASSWORD: wuxia
+          POSTGRES_DB: wuxia_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U wuxia -d wuxia_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      GAME_TEST_DATABASE_URL: postgresql://wuxia:wuxia@127.0.0.1:5432/wuxia_test
+      WUXIA_E2E_DATABASE_URL: postgresql://wuxia:wuxia@127.0.0.1:5432/wuxia_test
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - run: npm install --global pnpm@11.1.2
+      - run: pnpm --dir frontend install --frozen-lockfile
+      - run: pnpm --dir server install --frozen-lockfile
+      - run: pnpm --dir frontend lint
+      - run: pnpm --dir frontend test
+      - run: pnpm --dir server check
+      - run: pnpm --dir server test:game
+      - run: node scripts/validate_trial_data.ts
+      - run: pnpm --dir frontend exec playwright install --with-deps chromium
+      - run: pnpm --dir frontend build
+      - run: pnpm --dir frontend test:e2e
+      - run: pnpm --dir frontend build:online

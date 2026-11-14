@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { Bell, Check, ChevronDown, ChevronRight, Eye, EyeOff, Gamepad2, LoaderCircle, LockKeyhole, Maximize2, Settings, ShieldCheck, Swords, UserRound, UserRoundPlus, X } from 'lucide-vue-next'
-import { useGameStore } from '@/stores/gameStore'
+import { useOnlineStore } from '@/stores/onlineStore'
 import { IS_MOCK_MODE } from '@/network/apiClient'
 import loginScene from '@/assets/login-jiaxing.webp'
 
 const emit = defineEmits<{ guest: [] }>()
-const store = useGameStore()
+const store = useOnlineStore()
 const gameWindow = window.frameElement?.id === 'game-frame' ? window.parent : window
 const mode = ref<'login' | 'register'>('login')
 let rememberedName = ''
@@ -123,7 +123,7 @@ async function toggleFullscreen() {
           <button type="button" class="login-server" aria-label="选择服务器：嘉兴烟雨" @click="openModal('server')"><span><i class="login-server-dot" />选择服务器</span><strong>嘉兴烟雨 · 江湖在线</strong><ChevronDown aria-hidden="true" /></button>
           <div class="login-options"><label><input v-model="rememberName" type="checkbox" name="remember-username" />记住账号</label><span><ShieldCheck aria-hidden="true" />江湖存档 · 随账号保存</span></div>
         </fieldset>
-        <div id="login-message" class="login-message" :class="{ 'login-error': errorMessage }" :role="errorMessage ? 'alert' : 'status'" aria-live="polite"><span v-if="errorMessage">{{ errorMessage }}</span><span v-else-if="store.authBusy"><LoaderCircle class="login-spinner" aria-hidden="true" />正在连接江湖…</span><button v-if="store.onlinePhase === 'error'" type="button" :disabled="busy" @click="store.resumeOnline()">重新连接</button></div>
+        <div id="login-message" class="login-message" :class="{ 'login-error': errorMessage }" :role="errorMessage ? 'alert' : 'status'" aria-live="polite"><span v-if="errorMessage">{{ errorMessage }}</span><span v-else-if="store.authBusy"><LoaderCircle class="login-spinner" aria-hidden="true" />正在连接江湖…</span><button v-if="store.phase === 'error'" type="button" :disabled="busy" @click="store.resume()">重新连接</button></div>
         <button type="submit" class="login-primary font-brush" :disabled="busy"><LoaderCircle v-if="busy" class="login-spinner" aria-hidden="true" /><span v-else class="login-button-ornament" aria-hidden="true">❖</span><span>{{ busy ? '静候片刻' : mode === 'register' ? '注册并启程' : '进入江湖' }}</span><ChevronRight v-if="!busy" aria-hidden="true" /></button>
       </form>
       <div class="login-secondary"><button type="button" :disabled="busy" @click="toggleMode"><UserRound v-if="mode === 'register'" aria-hidden="true" /><UserRoundPlus v-else aria-hidden="true" />{{ mode === 'register' ? '已有账号，去登录' : '注册账号' }}</button><button type="button" :disabled="submitting" @click="enterGuest"><Gamepad2 aria-hidden="true" />游客进入</button></div>

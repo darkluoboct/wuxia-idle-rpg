@@ -9,6 +9,7 @@
 | `frontend/` | Vue 游戏客户端与本地试玩 |
 | `server/` | Fastify 游戏服务、PostgreSQL 迁移与 WebSocket 房间 |
 | `shared/` | 前后端共用的装备配置、角色模板、战斗规则与通信类型 |
+| `scripts/` | 第一卷历练数据校验 |
 
 ---
 
@@ -48,14 +49,19 @@ pnpm dev:online --host localhost --strictPort
 ```bash
 cd frontend
 pnpm dev           # 本地试玩
-pnpm test          # 数据、剧情、战斗、抽卡与存档测试
+pnpm lint          # 检查前端、后端与共享代码
+pnpm test          # 数据、剧情、战斗、抽卡、存档与组件测试
 pnpm build         # 类型检查并构建本地试玩客户端
 pnpm build:online  # 类型检查并构建联机客户端
 ```
 
 从登录页进入试玩并选择角色后，可以从 Lv.1 开始新游戏，或进入 Lv.32 演武模式。试玩进度自动保存到浏览器，开局时可继续最近游玩的角色。设置 `VITE_LOCAL_SAVE=false` 可关闭试玩存档。开发时使用 `?mode=new` 或 `?mode=demo` 可直接进入对应开局。
 
-后端类型检查在 `server/` 下运行 `pnpm check`。
+在 `server/` 下运行 `pnpm check` 检查类型。设置 `GAME_TEST_DATABASE_URL` 指向专用 PostgreSQL 测试库后，运行 `pnpm test:game` 验证联机接口。仓库根目录可运行 `node scripts/validate_trial_data.ts` 校验 30 关历练配置。
+
+在 `frontend/` 下运行 `pnpm exec playwright install chromium` 安装测试浏览器。执行 `pnpm build` 后运行 `pnpm test:e2e`，可验证试玩、五个页签和读档。设置 `WUXIA_E2E_DATABASE_URL` 指向专用测试库后，同一命令会启动游戏服务，并验证双账号注册、创角、同图聊天和恢复角色。开发时可以用 `pnpm format <文件>` 格式化指定文件。
+
+GitHub Actions 在每次拉取请求和推送到 `main` 时运行代码检查、两种前端构建、历练数据校验及前后端测试。仓库可将 `checks` 设为 `main` 的必过检查。
 
 ---
 
@@ -71,7 +77,7 @@ pnpm build:online  # 类型检查并构建联机客户端
 | **门派** | 拜师晋升 | 七个试玩门派、五阶辈分考核与授武、散人特权、叛师规则 |
 | **市井** | 客栈鬼市 | 醉仙楼结缘、客栈结交、故人寻访、十道绝味、百草丹房、子时鬼市 |
 
-### 伙伴怎么来（详见 `docs/12_伙伴获取与抽卡系统设计.md`）
+### 伙伴怎么来（详见 `docs/专题_伙伴获取与抽卡系统设计.md`）
 
 25 位伙伴分三条路线：
 
@@ -97,9 +103,10 @@ pnpm build:online  # 类型检查并构建联机客户端
 - Vite 6 · Pinia 3 · Tailwind CSS 4 · lucide-vue-next 图标 · Vitest 3
 - 玄墨描金 / 宋宣双主题；嘉兴、终南、大漠、黑沼实景插画，嘉兴随时辰换景。宽屏显示人物、场景、江湖三栏，平板用右抽屉，手机用底部导航和双抽屉。
 
-**后端（设计蓝图，见 `docs/11`）**
-- 无轮询惰性离线结算 · 确定性战斗引擎 · 唯一真品神兵锁 · 和平 / 纷争 PK 区校验
-- PostgreSQL / MySQL + Redis，REST + WebSocket 接口与战报 JSON 契约
+**后端**
+
+- Node.js 24 · TypeScript 5.9 · Fastify 5 · PostgreSQL。
+- HTTP 接口处理角色存档和游戏结算，WebSocket 同步同图玩家、聊天与组队。接口与存档流程见[联网后端实施设计](docs/12_联网后端实施设计.md)。
 
 ---
 
@@ -107,27 +114,26 @@ pnpm build:online  # 类型检查并构建联机客户端
 
 ```
 .
-├── docs/                         # 策划案（18 册）
-│   ├── 00_README_策划案总目录.md
-│   ├── 01_产品总纲与版本演进蓝图.md
-│   ├── ...
-│   ├── 17_首日新手体验与前10分钟黄金心流策划案.md
-│   └── ui-art-prompts.md
-└── frontend/
-    ├── src/
-    │   ├── components/           # 立绘卡、战斗演武台、战报流、双栏侧边
-    │   ├── views/                # 江湖 / 武库 / 门派 / 市井
-    │   ├── stores/gameStore.ts   # 全局游戏状态（Pinia）
-    │   ├── network/              # protocol 契约 / apiClient / mockEngine
-    │   └── config/               # 武学、装备、伙伴、关卡静态数据
-    └── ...
+├── docs/                         # 策划案、实施设计和素材索引
+├── frontend/
+│   ├── src/
+│   │   ├── components/           # 角色选择、立绘、演武台、战报与侧栏
+│   │   ├── views/                # 修行 / 江湖 / 武库 / 门派 / 市井，按页签加载
+│   │   ├── stores/               # 角色、界面、联机会话及各玩法领域
+│   │   ├── network/              # 操作契约、联机客户端和试玩引擎
+│   │   └── config/               # 前端配置和展示数据
+│   ├── tests/                    # Vitest 规则与组件测试
+│   └── e2e/                      # Playwright 浏览器测试
+├── server/                       # Fastify 服务、数据库迁移和联机测试
+├── shared/                       # 共享规则、配置和通信类型
+└── scripts/                      # 历练数据校验
 ```
 
 ---
 
 ## 策划案索引
 
-从 [`docs/00_README_策划案总目录.md`](docs/00_README_策划案总目录.md) 开始阅读，含每册摘要与 MVP 落地建议。伙伴获取、抽卡及免费补救路线见 [伙伴获取与抽卡系统设计](docs/12_伙伴获取与抽卡系统设计.md)。
+从[策划案总目录](docs/00_README_策划案总目录.md)开始阅读，含每册摘要与 MVP 落地建议。伙伴获取、抽卡及免费补救路线见[伙伴获取与抽卡系统设计](docs/专题_伙伴获取与抽卡系统设计.md)。
 
 ---
 
