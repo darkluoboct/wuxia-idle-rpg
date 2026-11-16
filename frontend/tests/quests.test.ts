@@ -176,15 +176,13 @@ describe('鬼市一口价', () => {
     expect(store.ghostListingPrice(listing)).toBe(7650)
     store.equipItem(belt)
     expect(store.ghostListingPrice(listing)).toBe(7650)
-    const auction = store.ghostListings.find(({ listingType }) => listingType === 'AUCTION')!
-    expect(store.ghostListingPrice(auction)).toBe(auction.price)
     store.player.silver = 7649
-    store.buyOrBidMarketListing(listing.id)
+    store.buyMarketListing(listing.id)
     expect(store.player.silver).toBe(7649)
     expect(store.ownedItemIds).not.toContain(listing.itemId)
     store.player.silver = 7650
-    store.buyOrBidMarketListing(listing.id)
-    store.buyOrBidMarketListing(listing.id)
+    store.buyMarketListing(listing.id)
+    store.buyMarketListing(listing.id)
     expect(store.player.silver).toBe(0)
     expect(store.ownedItemIds.filter((id) => id === listing.itemId)).toEqual([listing.itemId])
     expect(store.player.ghostMarketPurchases).toEqual([listing.id])
@@ -209,7 +207,7 @@ describe('鬼市一口价', () => {
     expect(store.ghostListingPrice(listing)).toBe(7650)
     store.player.stats.karma--
     store.player.silver = 6800
-    store.buyOrBidMarketListing(listing.id)
+    store.buyMarketListing(listing.id)
     expect(store.player.silver).toBe(0)
     expect(store.ownedItemIds).toContain(listing.itemId)
   })

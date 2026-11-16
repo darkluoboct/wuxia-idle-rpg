@@ -46,6 +46,7 @@ import {
 import type { StanceType, UniqueArtifactStatusDTO } from '@/network/protocol'
 import InkFigure from '@/components/InkFigure.vue'
 import HuashanLadder from '@/components/HuashanLadder.vue'
+import GhostAuction from '@/components/GhostAuction.vue'
 import EquipmentForge from '@/components/EquipmentForge.vue'
 
 const store = useGameStore()
@@ -440,6 +441,8 @@ const FLAME_META = {
           </div>
         </div>
 
+        <GhostAuction />
+
         <div class="grid gap-3 sm:grid-cols-2">
           <article
             v-for="item in store.ghostListings" :key="item.id" class="well flex flex-col gap-2 p-3"
@@ -447,18 +450,18 @@ const FLAME_META = {
           >
             <div class="flex items-start justify-between gap-2">
               <h4 class="font-brush tier-text text-xl leading-tight">{{ item.itemName }}</h4>
-              <span class="chip shrink-0" :class="item.listingType === 'AUCTION' ? 'chip-gold' : ''">{{ item.listingType === 'AUCTION' ? '竞拍' : '一口价' }}</span>
+              <span class="chip shrink-0">一口价</span>
             </div>
             <div class="flex flex-wrap gap-1"><span class="chip tier-chip">{{ TIER_META[item.tier].label }}</span></div>
             <p class="hint">{{ item.desc }}</p>
-            <div class="text-xs text-ink3">摊主 {{ item.maskedSeller }}<template v-if="item.highestBidderMasked"> · 领先 <b class="text-ink2">{{ item.highestBidderMasked }}</b></template></div>
+            <div class="text-xs text-ink3">摊主 {{ item.maskedSeller }}</div>
             <div class="mt-auto flex items-center justify-between gap-2 border-t border-line pt-2">
               <span class="text-base font-bold tabular-nums text-gold">
                 <s v-if="store.ghostListingPrice(item) < item.price" class="mr-1 text-xs font-normal text-ink3">{{ item.price.toLocaleString() }}</s>
                 {{ store.ghostListingPrice(item).toLocaleString() }}<span class="ml-1 text-xs font-normal">{{ item.currency === 'GOLD' ? '元宝' : '两纹银' }}</span>
               </span>
-              <button class="btn btn-sm" :disabled="store.onlineActionBusy || (item.currency === 'SILVER' && !canAfford(store.ghostListingPrice(item)))"
-                @click="store.buyOrBidMarketListing(item.id)">{{ item.listingType === 'AUCTION' ? '加价 50 元宝' : '买下' }}</button>
+              <button class="btn btn-sm" :disabled="store.onlineActionBusy || !canAfford(store.ghostListingPrice(item))"
+                @click="store.buyMarketListing(item.id)">买下</button>
             </div>
           </article>
           <p v-if="!store.ghostListings.length" class="col-span-full py-10 text-center text-sm text-ink3">鬼市的货已经卖完了。</p>

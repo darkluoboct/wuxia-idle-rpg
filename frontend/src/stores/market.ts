@@ -1,7 +1,7 @@
-import { computed, ref } from 'vue'
-import type { GhostAppraisalResult, GhostMarketListingDTO } from '@/network/protocol'
+import { computed, ref, shallowRef } from 'vue'
+import type { AuctionAction, AuctionBoardDTO, AuctionLotDTO, AuctionResult, GhostAppraisalResult, GhostMarketListingDTO } from '@/network/protocol'
 import { MEDICINES, HERBS, PILL_RECIPES, GHOST_MARKET_LISTINGS, ITEMS, MAPS, marketListingPrice, SKILLS } from '@/config/gameData'
-import { IS_MOCK_MODE } from '@/network/apiClient'
+import { apiClient, IS_MOCK_MODE } from '@/network/apiClient'
 import { extractFurnaceResidue, FORAGE_QI_COST, gatherHerbs, pillDoubleRate, pillSuccessRate } from '../../../shared/alchemy.ts'
 import {
   appraiseGhostCurio as settleGhostAppraisal,
@@ -15,6 +15,7 @@ import { useGameUiStore } from './gameUiStore'
 import type { GameActions } from '@/network/gameActions'
 import type { useCultivation } from './cultivation'
 import { recordFtueForage, recordFtueRefine } from '../../../shared/ftueQuests.ts'
+import { auctionDay, auctionLot, auctionLotInfo, auctionWindow, nextAuctionBid, ownsAuctionLot, softCloseAt } from '../../../shared/ghostAuction.ts'
 
 export function useMarket({ actions, cultivation }: {
   actions: GameActions
@@ -32,17 +33,14 @@ export function useMarket({ actions, cultivation }: {
     pillInventory,
     furnaceResidue,
   } = storeToRefs(playerStore)
-  const { gainItem, markDaily } = playerStore
+  const { gainItem, learnSkill, markDaily } = playerStore
   const uiStore = useGameUiStore()
   const { shichenIdx } = storeToRefs(uiStore)
   const { appendLog, showToast } = uiStore
   const { changeMockKarma } = cultivation
 
-  const ghostAuction = ref({ ...GHOST_MARKET_LISTINGS.find((entry) => entry.listingType === 'AUCTION')! })
-  const ghostListings = computed(() => GHOST_MARKET_LISTINGS.flatMap((entry) => {
-    if (entry.listingType === 'AUCTION') return IS_MOCK_MODE ? [ghostAuction.value] : []
-    return player.value.ghostMarketPurchases?.includes(entry.id) || ownedItemIds.value.includes(entry.itemId) || learnedSkills.value[entry.itemId] ? [] : [entry]
-  }))
+  const ghostListings = computed(() => GHOST_MARKET_LISTINGS.filter((entry) =>
+    !player.value.ghostMarketPurchases?.includes(entry.id) && !ownedItemIds.value.includes(entry.itemId) && !learnedSkills.value[entry.itemId]))
 
   const ghostAppraiseCost = computed(() => ghostAppraisalCost(currentLoadout.value))
 
@@ -85,22 +83,9 @@ export function useMarket({ actions, cultivation }: {
   const ghostListingPrice = (listing: GhostMarketListingDTO) =>
     marketListingPrice(currentLoadout.value, listing, { ...player.value, stats: martialStats.value })
 
-  function buyOrBidMarketListing(listingId: string) {
+  function buyMarketListing(listingId: string) {
     const listing = ghostListings.value.find(({ id }) => id === listingId)
     if (!listing) return
-    if (listing.listingType === 'AUCTION') {
-      if (player.value.goldIngot < listing.price + 50) {
-        showToast('元宝不足以加价竞拍！', 'danger')
-        return
-      }
-      player.value.goldIngot -= 50
-      listing.price += 50
-      listing.highestBidderMasked = '蒙面客·你自己'
-      learnedSkills.value[listing.itemId] = 1
-      showToast('出价领先，已学会《凌波微步》。', 'gold')
-      return
-    }
-
     const announce = (spentSilver: number) => showToast(`花 ${spentSilver.toLocaleString()} 两买下 ${listing.itemName}`, 'gold')
     return actions.run('buy', { listingId }, ({ spentSilver }) => announce(spentSilver), () => {
       const price = ghostListingPrice(listing)
@@ -251,7 +236,122 @@ export function useMarket({ actions, cultivation }: {
     })
   }
 
+  // ==================== 子时鬼市压轴暗拍：全服竞拍，服务端结算；本地试玩只有你一位出价人 ====================
+  type LocalLot = { price: number; bids: number; closesAt: number; at: number; claimed: boolean }
+  const localAuctions = ref<Record<string, LocalLot>>({})
+  const auctionBoard = shallowRef<AuctionBoardDTO | null>(null)
+
+  function localLotView(day: number): AuctionLotDTO {
+    const config = auctionLot(day)
+    const window = auctionWindow(day)
+    const lot = localAuctions.value[day] ?? { price: config.startPrice, bids: 0 }
+    return {
+      day, itemId: config.itemId, seller: config.seller, startPrice: config.startPrice, price: lot.price, nextBid: nextAuctionBid(lot),
+      bids: lot.bids, opensAt: window.opensAt, closesAt: localAuctions.value[day]?.closesAt ?? window.closesAt,
+      leaderMasked: lot.bids ? '你' : null, leading: lot.bids > 0,
+    }
+  }
+
+  function localAuctionBoard(now: number): AuctionBoardDTO {
+    const day = auctionDay(now)
+    const current = localAuctions.value[day]
+    return {
+      serverTime: now,
+      lot: localLotView(day),
+      history: current ? [{ masked: '你', amount: current.price, at: current.at, self: true }] : [],
+      previous: localLotView(day - 1),
+      wins: Object.entries(localAuctions.value).flatMap(([won, lot]) => lot.bids && !lot.claimed && lot.closesAt <= now
+        ? [{ day: Number(won), itemId: auctionLot(Number(won)).itemId, price: lot.price }] : []),
+    }
+  }
+
+  async function refreshAuction() {
+    if (IS_MOCK_MODE) {
+      auctionBoard.value = localAuctionBoard(Date.now())
+      return
+    }
+    try {
+      auctionBoard.value = await apiClient.request<AuctionBoardDTO>('GET', '/market/auction')
+    } catch {
+      // 暗拍榜读不到时保留上一次的结果，下次进鬼市再取
+    }
+  }
+
+  function announceAuction(result: AuctionResult) {
+    const name = auctionLotInfo(result.action === 'bid' ? auctionLot(result.day).itemId : result.itemId).name
+    if (result.action === 'bid') {
+      appendLog('JIANGHU', [{ type: 'tag', text: '鬼市暗拍', tone: 'purple' }, { type: 'text', text: ` 你蒙面举牌，为${name}出价 ${result.price} 元宝，暂时领先。元宝已先冻结。` }])
+      showToast(`出价 ${result.price} 元宝，暂时领先`, 'gold')
+    } else if (result.refunded) {
+      appendLog('JIANGHU', [{ type: 'tag', text: '鬼市暗拍', tone: 'purple' }, { type: 'text', text: ` 你已有${name}，拍价 ${result.refunded} 元宝原数退还。` }])
+      showToast(`已有${name}，退还 ${result.refunded} 元宝`, 'info')
+    } else {
+      appendLog('ADVENTURE', [{ type: 'tag', text: '鬼市落槌', tone: 'gold' }, { type: 'text', text: ` 你取走了拍得的${name}。` }])
+      showToast(`拍得${name}`, 'gold')
+    }
+  }
+
+  /** 操作后无论成败都刷新暗拍榜：有人抢先加价时立刻看到新价 */
+  function runAuction(input: AuctionAction, playLocally: () => AuctionResult | void) {
+    return Promise.resolve(actions.run('auction', input, announceAuction, playLocally)).finally(refreshAuction)
+  }
+
+  function bidAuction() {
+    const lot = auctionBoard.value?.lot
+    if (!lot) return
+    if (player.value.goldIngot < lot.nextBid) {
+      showToast(`元宝不足：这一口要 ${lot.nextBid} 元宝`, 'danger')
+      return
+    }
+    return runAuction({ action: 'bid', day: lot.day, expectedPrice: lot.nextBid }, () => {
+      const now = Date.now()
+      const day = auctionDay(now)
+      const view = localLotView(day)
+      if (day !== lot.day) return showToast('暗拍已换场，请刷新', 'info')
+      if (now >= view.closesAt) return showToast('今晚的暗拍已经落槌', 'info')
+      if (view.leading) return showToast('你的出价仍然领先', 'info')
+      if (ownsAuctionLot(view.itemId, learnedSkills.value, ownedItemIds.value)) return showToast('你已拥有这件拍品', 'info')
+      player.value.goldIngot -= view.nextBid
+      const closesAt = softCloseAt(view.closesAt, now)
+      localAuctions.value[day] = { price: view.nextBid, bids: view.bids + 1, closesAt, at: now, claimed: false }
+      return { action: 'bid', day, price: view.nextBid, closesAt }
+    })
+  }
+
+  function claimAuction(day: number) {
+    return runAuction({ action: 'claim', day }, () => {
+      const lot = localAuctions.value[day]
+      if (!lot?.bids || lot.claimed || Date.now() < lot.closesAt) return showToast('这一场没有你的拍品可领', 'info')
+      const { itemId } = auctionLot(day)
+      let refunded = 0
+      if (ownsAuctionLot(itemId, learnedSkills.value, ownedItemIds.value)) {
+        refunded = lot.price
+        player.value.goldIngot += refunded
+      } else if (SKILLS[itemId]) {
+        learnSkill(itemId)
+      } else {
+        gainItem(itemId)
+      }
+      lot.claimed = true
+      return { action: 'claim', day, itemId, refunded }
+    })
+  }
+
+  /** 服务端推送：出价被超过，元宝已原数退还 */
+  function onAuctionOutbid({ itemId, refund, price }: { itemId: string; refund: number; price: number }) {
+    const { name } = auctionLotInfo(itemId)
+    appendLog('JIANGHU', [{ type: 'tag', text: '鬼市暗拍', tone: 'red' }, { type: 'text', text: ` 有人以 ${price} 元宝压过你对${name}的出价，你的 ${refund} 元宝已原数退还。` }])
+    showToast(`暗拍被超过：退还 ${refund} 元宝`, 'danger')
+    void refreshAuction()
+  }
+
   return {
+    localAuctions,
+    auctionBoard,
+    refreshAuction,
+    bidAuction,
+    claimAuction,
+    onAuctionOutbid,
     forageHerbs,
     refinePill,
     exchangeFurnaceResidue,
@@ -259,6 +359,6 @@ export function useMarket({ actions, cultivation }: {
     ghostListingPrice,
     ghostAppraiseCost,
     appraiseGhostCurio,
-    buyOrBidMarketListing,
+    buyMarketListing,
   }
 }

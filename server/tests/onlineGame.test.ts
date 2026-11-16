@@ -12,10 +12,11 @@ import { DAILY_TASKS, INGOT } from '../../shared/economy.ts'
 import { DISHES, FEAST_TARGET_FLAG } from '../../shared/feast.ts'
 import { FTUE_QUESTS } from '../../shared/ftueQuests.ts'
 import { GACHA_DUP_TOKENS, GACHA_HARD_PITY, GACHA_SINGLE_COST, REUNION_TICKET_COST } from '../../shared/gacha.ts'
+import { AUCTION_BID_STEP, AUCTION_SOFT_CLOSE_MS, auctionDay, auctionLot, auctionWindow } from '../../shared/ghostAuction.ts'
 import { computeDerivedStats } from '../../shared/battle.ts'
 import { huashanSeason } from '../../shared/huashan.ts'
 import { createStarterCharacter, legacyAcupoints } from '../../shared/player.ts'
-import type { AwakenResult, BattleReportDTO, BountyBoardDTO, BountyEntryDTO, FeastResult, FtueClaimResult, GachaResult, GameAction, HuashanBoardDTO, HuashanResult, IdleGain, LibraryResult, LibraryStatusDTO, PlayerSnapshot, RaidId, ReunionResult, SectContestBoardDTO, SectContestResult, SectResult, StoryAdventureResult, StoryChallengeResult, WsServerEvent } from '../../shared/protocol.ts'
+import type { AuctionBoardDTO, AuctionResult, AwakenResult, BattleReportDTO, BountyBoardDTO, BountyEntryDTO, FeastResult, FtueClaimResult, GachaResult, GameAction, HuashanBoardDTO, HuashanResult, IdleGain, LibraryResult, LibraryStatusDTO, PlayerSnapshot, RaidId, ReunionResult, SectContestBoardDTO, SectContestResult, SectResult, StoryAdventureResult, StoryChallengeResult, WsServerEvent } from '../../shared/protocol.ts'
 import { QUANZHEN_LIBRARY } from '../../shared/quanzhen.ts'
 import { BETRAYAL_BOUNTY, SECT_CHIEF_SALUTE_QI, SECT_SALUTE_QI, sectContestEndsAt, sectContestWeek } from '../../shared/sectProgress.ts'
 import { ONLINE_STORY_CHAPTERS, ONLINE_STORY_PROGRESS_VERSION } from '../../shared/storyData.ts'
@@ -996,5 +997,74 @@ describe('联机战斗', { skip: connection ? false : '请设置 GAME_TEST_DATAB
     assert.equal(claim.snapshot.player.ftue?.index, 1)
     assert.equal(claim.snapshot.player.silver, player.silver + FTUE_QUESTS[0].rewardSilver)
     assert.equal((await actor.post('/ftue/claim')).json().code, 'FTUE_NOT_READY')
+  })
+
+  it('鬼市暗拍：领先冻结元宝，被超过原数退还并推送，临近落槌顺延，落槌后由领先者领取', async () => {
+    const path = '/market/auction'
+    const [first, second] = await Promise.all([createRookie('bid_a'), createRookie('bid_b')])
+    await Promise.all([first, second].map(({ id }) => profile(id, { goldIngot: 2_000 })))
+    // 拿未来的一场来测，避开真实时间正好在落槌后的两小时
+    const day = auctionDay(Date.now()) + 2
+    const { opensAt, closesAt } = auctionWindow(day)
+    const { itemId, startPrice } = auctionLot(day)
+    const owns = (snapshot: PlayerSnapshot) => SKILLS[itemId] ? !!snapshot.learnedSkills[itemId] : snapshot.ownedItemIds.includes(itemId)
+    fixedServerTime = opensAt + 3_600_000
+    try {
+      const board = await first.read<AuctionBoardDTO>(path)
+      assert.deepEqual([board.lot.day, board.lot.itemId, board.lot.nextBid, board.lot.leaderMasked], [day, itemId, startPrice, null])
+
+      const opening = await first.act<AuctionResult>(path, { action: 'bid', day, expectedPrice: startPrice })
+      assert.equal(opening.snapshot.player.goldIngot, 2_000 - startPrice)
+      assert.equal((await first.post(path, { action: 'bid', day, expectedPrice: startPrice + AUCTION_BID_STEP })).json().code, 'AUCTION_LEADING')
+      assert.equal((await second.post(path, { action: 'bid', day, expectedPrice: startPrice })).json().code, 'AUCTION_PRICE_CHANGED')
+
+      const socket = await first.connect()
+      const notice = (async () => {
+        for await (const [message] of on(socket, 'message', { signal: AbortSignal.timeout(5_000) })) {
+          const parsed = JSON.parse(message.data) as WsServerEvent
+          if (parsed.event === 'AUCTION_OUTBID') return parsed.data
+        }
+      })()
+      const raised = startPrice + AUCTION_BID_STEP
+      const overtaken = await second.act<AuctionResult>(path, { action: 'bid', day, expectedPrice: raised })
+      assert.equal(overtaken.snapshot.player.goldIngot, 2_000 - raised)
+      assert.deepEqual(await notice, { day, itemId, refund: startPrice, price: raised })
+      socket.close()
+      assert.equal((await first.read()).player.goldIngot, 2_000)
+      const viewed = await second.read<AuctionBoardDTO>(path)
+      assert.equal(viewed.lot.leading, true)
+      assert.match(viewed.lot.leaderMasked ?? '', /^蒙面客·/)
+      assert.deepEqual(viewed.history.map(({ amount, self }) => [amount, self]), [[raised, true], [startPrice, false]])
+
+      fixedServerTime = closesAt - 60_000
+      const late = await first.act<AuctionResult>(path, { action: 'bid', day, expectedPrice: raised + AUCTION_BID_STEP })
+      assert.deepEqual(late.result, { action: 'bid', day, price: raised + AUCTION_BID_STEP, closesAt: closesAt - 60_000 + AUCTION_SOFT_CLOSE_MS })
+
+      fixedServerTime = closesAt + AUCTION_SOFT_CLOSE_MS
+      assert.equal((await second.post(path, { action: 'bid', day, expectedPrice: raised + 2 * AUCTION_BID_STEP })).json().code, 'AUCTION_CLOSED')
+      assert.equal((await second.post(path, { action: 'claim', day })).json().code, 'AUCTION_NOTHING_TO_CLAIM')
+      assert.deepEqual((await first.read<AuctionBoardDTO>(path)).wins, [{ day, itemId, price: raised + AUCTION_BID_STEP }])
+      const claimed = await first.act<AuctionResult>(path, { action: 'claim', day })
+      assert.deepEqual(claimed.result, { action: 'claim', day, itemId, refunded: 0 })
+      assert.ok(owns(claimed.snapshot))
+      assert.equal(claimed.snapshot.player.goldIngot, 2_000 - raised - AUCTION_BID_STEP)
+      assert.equal((await first.post(path, { action: 'claim', day })).json().code, 'AUCTION_NOTHING_TO_CLAIM')
+      assert.equal((await second.read()).player.goldIngot, 2_000)
+
+      // 下一场：领先者落槌前已从别处得到拍品，领取时原数退还
+      const next = auctionLot(day + 1)
+      fixedServerTime = auctionWindow(day + 1).opensAt + 60_000
+      await second.act(path, { action: 'bid', day: day + 1, expectedPrice: next.startPrice })
+      if (SKILLS[next.itemId]) await db.query('INSERT INTO player_skills VALUES ($1, $2, 1)', [second.id, next.itemId])
+      else await db.query('INSERT INTO player_items (player_id, item_id) VALUES ($1, $2)', [second.id, next.itemId])
+      fixedServerTime = auctionWindow(day + 1).closesAt
+      const refund = await second.act<AuctionResult>(path, { action: 'claim', day: day + 1 })
+      assert.deepEqual(refund.result, { action: 'claim', day: day + 1, itemId: next.itemId, refunded: next.startPrice })
+      assert.equal(refund.snapshot.player.goldIngot, 2_000)
+      const reasons = (await ledger(second.id)).map(({ reason }) => reason)
+      assert.deepEqual(reasons.slice(1), ['auction-bid', 'auction-refund', 'auction-bid', 'auction-refund'])
+    } finally {
+      fixedServerTime = undefined
+    }
   })
 })

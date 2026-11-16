@@ -619,6 +619,35 @@ export interface GhostMarketListingDTO {
   desc: string
 }
 
+/** 子时鬼市压轴暗拍 */
+export interface AuctionLotDTO {
+  day: number
+  itemId: string
+  seller: string
+  startPrice: number
+  price: number            // 当前最高出价；无人出价时为起拍价
+  nextBid: number
+  bids: number
+  opensAt: number
+  closesAt: number
+  leaderMasked: string | null
+  leading: boolean         // 当前领先的是不是自己
+}
+
+export interface AuctionBoardDTO {
+  serverTime: number
+  lot: AuctionLotDTO
+  history: { masked: string; amount: number; at: number; self: boolean }[]
+  previous: AuctionLotDTO | null   // 上一场成交公示
+  wins: { day: number; itemId: string; price: number }[] // 已落槌、待领取的拍品
+}
+
+export type AuctionAction = { action: 'bid'; day: number; expectedPrice: number } | { action: 'claim'; day: number }
+
+export type AuctionResult =
+  | { action: 'bid'; day: number; price: number; closesAt: number }
+  | { action: 'claim'; day: number; itemId: string; refunded: number }
+
 /** WebSocket 实时推送消息联合类型 */
 export type WsServerEvent =
   | { event: 'ROOM_SYNC'; data: { mapId: string; onlineCount: number; players: RoomPlayerDTO[] } }
@@ -632,6 +661,7 @@ export type WsServerEvent =
   | { event: 'WORLD_CHAT'; data: { id: string; channel: 'WORLD' | 'SECT' | 'RUMOR'; sender: string; sect: string; content: string; time: string } }
   | { event: 'SECT_BOUNTY_ISSUED'; data: { traitorName: string; sectName: string; stolenSkill: string; rewardSilver: number } }
   | { event: 'UNIQUE_ARTIFACT_CHANGED'; data: { artifactName: string; newOwner: string } }
+  | { event: 'AUCTION_OUTBID'; data: { day: number; itemId: string; refund: number; price: number } }
 
 /** 客栈结缘：单抽结果（真实环境由服务端产出并记审计日志，客户端只负责展示） */
 export interface GachaDrawDTO {

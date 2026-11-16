@@ -14,6 +14,7 @@ import type { useBattlePlayback } from './battlePlayback'
 import { useGameUiStore } from './gameUiStore'
 import type { GachaResultView, useCompanions } from './companions'
 import type { useWorld } from './world'
+import type { useMarket } from './market'
 import { legacyFtue } from './ftue'
 import { SHICHEN_LABELS } from './gameUiStore'
 
@@ -23,10 +24,11 @@ type LegacySave = {
   feast?: { ingredients: string[]; cooked: string[] }
 }
 
-export function useLocalGame({ battle, companions, world }: {
+export function useLocalGame({ battle, companions, world, market }: {
   battle: Pick<ReturnType<typeof useBattlePlayback>, 'closeBattleStage'>
   companions: Pick<ReturnType<typeof useCompanions>, 'gachaReveal' | 'gachaHistory' | 'reunion' | 'blankReunion'>
   world: Pick<ReturnType<typeof useWorld>, 'nearbyPlayers'>
+  market: Pick<ReturnType<typeof useMarket>, 'localAuctions'>
 }) {
   const playerStore = usePlayerStore()
   const {
@@ -61,6 +63,7 @@ export function useLocalGame({ battle, companions, world }: {
   const { toggleTheme, showToast } = uiStore
   const { gachaReveal, gachaHistory, reunion, blankReunion } = companions
   const { nearbyPlayers } = world
+  const { localAuctions } = market
 
   // 角色列表保留本次会话中各角色的进度，浏览器存档继续保存最近游玩的角色。
   type LocalCharacter = { player: PlayerDTO; progress?: SaveData }
@@ -141,6 +144,7 @@ export function useLocalGame({ battle, companions, world }: {
       innGiftsToday: innGiftsToday.value,
       gachaHistory: gachaHistory.value.slice(0, 30),
       reunion: reunion.value,
+      ghostAuctions: localAuctions.value,
       mapArrivedAt: mapArrivedAt.value,
       logs: logs.value.slice(0, 30),
     }
@@ -219,6 +223,7 @@ export function useLocalGame({ battle, companions, world }: {
     if (legacy.gacha && !player.value.gacha) player.value.gacha = { pulls: legacy.gacha.pulls, pity: legacy.gacha.pity }
     gachaHistory.value = data.gachaHistory ?? legacy.gacha?.history ?? []
     reunion.value = Object.fromEntries(Object.entries(saved.reunion).map(([id, r]) => [id, { ...blankReunion(), ...r }]))
+    localAuctions.value = data.ghostAuctions ?? {}
     if (legacy.feast && !player.value.feast) player.value.feast = { ingredients: legacy.feast.ingredients, cooked: legacy.feast.cooked, lastCookDay: 0 }
     player.value.ftue ??= legacyFtue(player.value.id)
     mapArrivedAt.value = saved.mapArrivedAt
@@ -323,6 +328,7 @@ export function useLocalGame({ battle, companions, world }: {
       innGiftsToday.value = {}
       gachaHistory.value = []
       reunion.value = {}
+      localAuctions.value = {}
       mapArrivedAt.value = Date.now()
       gachaReveal.value = null
       presets.value = start.presets

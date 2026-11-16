@@ -1,4 +1,6 @@
 import type {
+  AuctionAction,
+  AuctionResult,
   AwakenResult,
   BattleReportDTO,
   BountyEntryDTO,
@@ -84,6 +86,7 @@ interface Actions {
   dailyClaim: [undefined, { ingot: number }]
   appraise: [{ masked: boolean }, GhostAppraisalResult]
   buy: [{ listingId: string }, { spentSilver: number }]
+  auction: [AuctionAction, AuctionResult]
   sect: [SectAction, SectResult]
   move: [{ mapId: string; action?: 'depart' | 'arrive' }, MapMoveResult]
   huashan: [HuashanAction, HuashanResult]
@@ -138,6 +141,7 @@ const requests: { [K in keyof Actions]: (input: Actions[K][0]) => Request | unde
   dailyClaim: () => ['POST', '/daily/claim'],
   appraise: (body) => ['POST', '/market/ghost/appraise', body],
   buy: (body) => ['POST', '/market/ghost/buy', body],
+  auction: (body) => ['POST', '/market/auction', body],
   sect: (body) => ['POST', '/sect', body],
   move: (body) => ['POST', '/map/move', body],
   huashan: (body) => ['POST', '/huashan', body],

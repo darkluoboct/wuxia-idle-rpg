@@ -69,7 +69,7 @@ export const useGameStore = defineStore('wuxiaGame', () => {
 
   const market = useMarket({ actions, cultivation })
 
-  const local = useLocalGame({ battle, companions, world })
+  const local = useLocalGame({ battle, companions, world, market })
 
   const economy = useEconomy({ actions })
 
@@ -93,7 +93,7 @@ export const useGameStore = defineStore('wuxiaGame', () => {
       if (previous && pair && pair.id !== previousPair?.id) showToast(`已与「${pair.partner.nickname}」开始共修`, 'gold')
       else if (previousPair && !pair) showToast('共修已结束', 'info')
     },
-    event: world.handleRoomEvent,
+    event: (event) => (event.event === 'AUCTION_OUTBID' ? market.onAuctionOutbid(event.data) : world.handleRoomEvent(event)),
     disconnected: world.clearRoom,
     reset: () => {
       world.resetWorld()
@@ -331,7 +331,11 @@ export const useGameStore = defineStore('wuxiaGame', () => {
     innGiftGain: playerStore.innGiftGain,
     ghostAppraiseCost: market.ghostAppraiseCost,
     appraiseGhostCurio: market.appraiseGhostCurio,
-    buyOrBidMarketListing: market.buyOrBidMarketListing,
+    buyMarketListing: market.buyMarketListing,
+    auctionBoard: market.auctionBoard,
+    refreshAuction: market.refreshAuction,
+    bidAuction: market.bidAuction,
+    claimAuction: market.claimAuction,
     sendChatMessage: world.sendChatMessage,
   }
 })

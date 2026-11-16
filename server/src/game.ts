@@ -25,12 +25,13 @@ import { QUANZHEN_LIBRARY } from '../../shared/quanzhen.ts'
 import { claimDailyIngot, claimMilestoneIngots, huashanIngot, INGOT, markDailyTask, patrolCacheIngot, resolvedAdventures, type DailyTaskId } from '../../shared/economy.ts'
 import { awakenCompanion, blankCompanionState, pullGacha, REUNION_TICKET_COST } from '../../shared/gacha.ts'
 import { cookFeastDish, feastActive, gatherFeastIngredient } from '../../shared/feast.ts'
+import { AUCTION_MASK_COUNT, auctionDay, auctionLot, auctionWindow, bidderMask, nextAuctionBid, ownsAuctionLot, softCloseAt } from '../../shared/ghostAuction.ts'
 import { claimFtueQuest, emptyFtue, recordFtueForage, recordFtueRefine } from '../../shared/ftueQuests.ts'
 import { gainReunionClues, newReunion, reunionCluesToday, reunionEncounter, reunionWaitTime, REUNION_INQUIRE_COST, REUNION_QUESTS, REUNION_WAIT_HOURS, type ClueSource, type ReunionQuestConfig } from '../../shared/reunion.ts'
 import type {
-  AwakenResult, BattleReportDTO, BountyBoardDTO, BountyEntryDTO, ChapterOneStatueDTO, CoCultivationDTO, CoCultivationInviteDTO, CompanionState, CompanionWear, CultivationResult, DuelInviteDTO, FeastResult, ForgeInput, ForgeResult, FtueClaimResult, GachaResult, GameAction, HuashanBoardDTO, HuashanEntryDTO, HuashanResult, IdleGain, InnGiftResult, LibraryResult, LibraryStatusDTO, LoadoutPresetDTO, MapMoveResult, PersonalEquipSlot, PlayerDTO, PlayerSnapshot,
+  AuctionBoardDTO, AuctionLotDTO, AuctionResult, AwakenResult, BattleReportDTO, BountyBoardDTO, BountyEntryDTO, ChapterOneStatueDTO, CoCultivationDTO, CoCultivationInviteDTO, CompanionState, CompanionWear, CultivationResult, DuelInviteDTO, FeastResult, ForgeInput, ForgeResult, FtueClaimResult, GachaResult, GameAction, HuashanBoardDTO, HuashanEntryDTO, HuashanResult, IdleGain, InnGiftResult, LibraryResult, LibraryStatusDTO, LoadoutPresetDTO, MapMoveResult, PersonalEquipSlot, PlayerDTO, PlayerSnapshot,
   MirrorRankEntryDTO, ReunionResult, RichSegment, SectChiefDTO, SectContestBoardDTO, SectContestResult, SectResult, SkillSlotType, SkillUpgradeResult, StoryAdventureResult, StoryChallengeResult, StorySnakeChoiceResult, TrialChallengeResult, TrialDropDTO, TrialPatrolStatusDTO, TrialReplayResult,
-  UniqueArtifactStatusDTO,
+  UniqueArtifactStatusDTO, WsServerEvent,
 } from '../../shared/protocol.ts'
 import { requireSession } from './auth.ts'
 import { serverTime, transaction } from './db.ts'
@@ -1668,18 +1669,131 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
     const loadout = activeLoadout(character)
     const spentSilver = marketListingPrice(loadout, listing, { ...player, stats: effectiveMartialStats(player, loadout) })
     if (player.silver < spentSilver) throw new GameError(409, 'SILVER_INSUFFICIENT', '纹银不足')
-    if (skill) {
-      await client.query('INSERT INTO player_skills VALUES ($1, $2, 1)', [player.id, listing.itemId])
-      learnedSkills[listing.itemId] = 1
-    } else {
-      await client.query('INSERT INTO player_items (player_id, item_id) VALUES ($1, $2)', [player.id, listing.itemId])
-      ownedItemIds.push(listing.itemId)
-    }
+    if (skill) await grantSkill(client, character, listing.itemId)
+    else await grantItems(client, character, [listing.itemId])
     player.silver -= spentSilver
     const purchases = player.ghostMarketPurchases ??= []
     purchases.push(listing.id)
     return { result: { spentSilver }, changed: true }
   }))
+
+  interface AuctionRow {
+    day: number
+    item_id: string
+    start_price: number
+    price: number
+    leader_id: string | null
+    bids: number
+    closes_at: string
+    mask_salt: string
+    claimed: boolean
+  }
+
+  const maskOf = (salt: string, playerId: string) =>
+    bidderMask(createHash('sha256').update(`${salt}:${playerId}`).digest().readUInt32BE(0) % AUCTION_MASK_COUNT)
+
+  /** 还没人出价的场次没有数据行，按轮换表给出起拍状态 */
+  function auctionLotView(day: number, row: AuctionRow | undefined, viewerId: string): AuctionLotDTO {
+    const config = auctionLot(day)
+    const { opensAt, closesAt } = auctionWindow(day)
+    const lot = row ? { price: row.price, bids: row.bids } : { price: config.startPrice, bids: 0 }
+    return {
+      day, itemId: row?.item_id ?? config.itemId, seller: config.seller, startPrice: row?.start_price ?? config.startPrice,
+      price: lot.price, nextBid: nextAuctionBid(lot), bids: lot.bids, opensAt, closesAt: row ? Number(row.closes_at) : closesAt,
+      leaderMasked: row?.leader_id ? maskOf(row.mask_salt, row.leader_id) : null, leading: !!row && row.leader_id === viewerId,
+    }
+  }
+
+  app.get('/api/v1/market/auction', async (request): Promise<AuctionBoardDTO> => {
+    const { accountId } = await requireSession(request)
+    return transaction(async (client) => {
+      const { rows: [viewer] } = await client.query<{ id: string }>('SELECT id FROM players WHERE account_id = $1', [accountId])
+      if (!viewer) throw new GameError(404, 'PLAYER_NOT_CREATED', '先创建你的角色')
+      const now = await serverTime(client)
+      const day = auctionDay(now)
+      const { rows } = await client.query<AuctionRow>('SELECT * FROM ghost_auctions WHERE day = ANY($1::integer[])', [[day, day - 1]])
+      const row = rows.find((entry) => entry.day === day)
+      const { rows: bids } = await client.query<{ player_id: string; amount: number; created_at: string }>(
+        'SELECT player_id, amount, created_at FROM ghost_auction_bids WHERE day = $1 ORDER BY bid_no DESC LIMIT 8', [day])
+      const { rows: wins } = await client.query<{ day: number; item_id: string; price: number }>(
+        'SELECT day, item_id, price FROM ghost_auctions WHERE leader_id = $1 AND NOT claimed AND closes_at <= $2 ORDER BY day', [viewer.id, now])
+      return {
+        serverTime: now,
+        lot: auctionLotView(day, row, viewer.id),
+        history: bids.map(({ player_id, amount, created_at }) => ({
+          masked: maskOf(row!.mask_salt, player_id), amount, at: Number(created_at), self: player_id === viewer.id,
+        })),
+        previous: auctionLotView(day - 1, rows.find((entry) => entry.day === day - 1), viewer.id),
+        wins: wins.map(({ day: won, item_id, price }) => ({ day: won, itemId: item_id, price })),
+      }
+    }, true)
+  })
+
+  app.post('/api/v1/market/auction', async (request) => {
+    let outbid: { playerId: string; event: WsServerEvent } | undefined
+    const { response, updates } = await writeAction<AuctionResult>(request, async (character, now, client, readRelated) => {
+      outbid = undefined
+      const { action, day, expectedPrice } = objectBody(request.body)
+      if (typeof day !== 'number' || !Number.isInteger(day)) throw new GameError(400, 'INVALID_AUCTION', '请选择一场暗拍')
+      const { player, learnedSkills, ownedItemIds } = character
+
+      if (action === 'claim') {
+        const { rows: [won] } = await client.query<AuctionRow>(
+          'SELECT * FROM ghost_auctions WHERE day = $1 AND leader_id = $2 AND NOT claimed FOR UPDATE', [day, player.id])
+        if (!won) throw new GameError(409, 'AUCTION_NOTHING_TO_CLAIM', '这一场没有你的拍品可领')
+        if (now < Number(won.closes_at)) throw new GameError(409, 'AUCTION_STILL_OPEN', '这一场还没落槌')
+        let refunded = 0
+        if (ownsAuctionLot(won.item_id, learnedSkills, ownedItemIds)) {
+          // 落槌后已从别处得到同一件：原数退还元宝
+          refunded = won.price
+          player.goldIngot += refunded
+          logIngot(character, refunded, 'auction-refund')
+        } else if (SKILLS[won.item_id]) {
+          await grantSkill(client, character, won.item_id)
+        } else {
+          await grantItems(client, character, [won.item_id])
+        }
+        await client.query('UPDATE ghost_auctions SET claimed = true WHERE day = $1', [day])
+        return { result: { action, day, itemId: won.item_id, refunded }, changed: true }
+      }
+
+      if (action !== 'bid' || typeof expectedPrice !== 'number') throw new GameError(400, 'INVALID_AUCTION', '请选择出价')
+      if (day !== auctionDay(now)) throw new GameError(409, 'AUCTION_CHANGED', '暗拍已换场，请刷新')
+      await client.query('SELECT pg_advisory_xact_lock(833, $1)', [day])
+      const config = auctionLot(day)
+      await client.query(`INSERT INTO ghost_auctions (day, item_id, start_price, price, closes_at, mask_salt)
+        VALUES ($1, $2, $3, $3, $4, $5) ON CONFLICT (day) DO NOTHING`,
+      [day, config.itemId, config.startPrice, auctionWindow(day).closesAt, randomUUID()])
+      const { rows: [lot] } = await client.query<AuctionRow>('SELECT * FROM ghost_auctions WHERE day = $1 FOR UPDATE', [day])
+      if (now >= Number(lot.closes_at)) throw new GameError(409, 'AUCTION_CLOSED', '今晚的暗拍已经落槌')
+      if (lot.leader_id === player.id) throw new GameError(409, 'AUCTION_LEADING', '你的出价仍然领先')
+      if (ownsAuctionLot(lot.item_id, learnedSkills, ownedItemIds)) throw new GameError(409, 'AUCTION_OWNED', '你已拥有这件拍品')
+      const amount = nextAuctionBid(lot)
+      if (expectedPrice !== amount) throw new GameError(409, 'AUCTION_PRICE_CHANGED', `已有人抢先加价，现在要出 ${amount} 元宝`)
+      if (player.goldIngot < amount) throw new GameError(409, 'INGOT_INSUFFICIENT', `元宝不足：这一口要 ${amount} 元宝`)
+
+      const related: Character[] = []
+      if (lot.leader_id) {
+        // 上一位领先者的元宝原数退还，并实时告知
+        const [previous] = await readRelated([lot.leader_id])
+        previous.player.goldIngot += lot.price
+        logIngot(previous, lot.price, 'auction-refund')
+        related.push(previous)
+        outbid = { playerId: previous.player.id, event: { event: 'AUCTION_OUTBID', data: { day, itemId: lot.item_id, refund: lot.price, price: amount } } }
+      }
+      player.goldIngot -= amount
+      logIngot(character, -amount, 'auction-bid')
+      const closesAt = softCloseAt(Number(lot.closes_at), now)
+      await client.query('UPDATE ghost_auctions SET price = $2, leader_id = $3, bids = bids + 1, closes_at = $4 WHERE day = $1',
+        [day, amount, player.id, closesAt])
+      await client.query('INSERT INTO ghost_auction_bids (day, bid_no, player_id, amount, created_at) VALUES ($1, $2, $3, $4, $5)',
+        [day, lot.bids + 1, player.id, amount, now])
+      return { result: { action, day, price: amount, closesAt }, changed: true, related }
+    })
+    for (const updated of updates) rooms.publish(updated)
+    if (outbid) rooms.sendToPlayer(outbid.playerId, outbid.event)
+    return response
+  })
 
   app.post('/api/v1/alchemy/forage', (request) => respond(request, async (character, now) => {
     const { player } = character
