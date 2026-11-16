@@ -1,8 +1,8 @@
-import type { CoCultivationDTO, CompanionState, CultivationResult, GhostAppraisalResult, LoadoutPresetDTO, PlayerDTO, SixStats, VoyageResult } from './protocol.ts'
+import type { CoCultivationDTO, CompanionState, CultivationResult, GhostAppraisalResult, LoadoutPresetDTO, PatrolCacheReward, PlayerDTO, SixStats, VoyageResult } from './protocol.ts'
 import { calcNextLevelQi } from './battle.ts'
 import { resolveBattleLoadout } from './battleEffects.ts'
-import { battleEnvironmentAt, jianghuHour } from './combatMeta.ts'
-import { ACUPOINTS, ACUPOINT_PILLS, activeJianghuTitle, equipmentItem, GHOST_APPRAISE_COST, INN_GIFT_DAILY, INN_TEA_DAILY, isMapUnlocked, ITEMS, LINAN_CITY_MAP, MAPS, REALMS, SECTS, SKILLS, PILL_RECIPES, type AcupointConfig, type MapZoneConfig, type PillRecipeConfig } from './gameData.ts'
+import { battleEnvironmentAt, EQUIP_SLOT_META, jianghuHour } from './combatMeta.ts'
+import { ACUPOINTS, ACUPOINT_PILLS, activeJianghuTitle, COMPANIONS, equipmentItem, GHOST_APPRAISE_COST, INN_GIFT_DAILY, INN_TEA_DAILY, isMapUnlocked, ITEMS, LINAN_CITY_MAP, MAPS, meetsItemStatRequirement, REALMS, SECTS, SKILLS, PILL_RECIPES, type AcupointConfig, type MapZoneConfig, type PillRecipeConfig } from './gameData.ts'
 import { gaibangAttributeBonus, gaibangSilverGain } from './gaibang.ts'
 import { huashanDay } from './huashan.ts'
 import { clampKarma, effectiveMartialStats, hasMartialFreedom, martialEffectiveness } from './martialSchools.ts'
@@ -170,6 +170,102 @@ export function createStarterCharacter(identity: Pick<PlayerDTO, 'id' | 'nicknam
   }
 }
 
+/** 正式开局（本地「新游戏」与联机新角色共用）：Lv.1、无伙伴、主线 1-1 起步，伙伴靠剧情与客栈逐步结识 */
+export function createNewGameCharacter(identity: Pick<PlayerDTO, 'id' | 'nickname' | 'avatarId'>, now: number) {
+  const player: PlayerDTO = {
+    ...identity,
+    level: 1,
+    realmTier: 1,
+    realmStage: 1,
+    breakPityRate: 0,
+    qiExp: 0,
+    nextLevelQi: calcNextLevelQi(1),
+    silver: 600,
+    goldIngot: 300,
+    stats: { str: 10, con: 10, agi: 10, intStat: 10, luck: 10, karma: 0 },
+    shaQi: 0,
+    currentSectId: null,
+    sectRank: 1,
+    sectContribution: 0,
+    isGuardingLibrary: false,
+    currentMapId: 'jiaxing_suburb',
+    maxChapterId: 1,
+    qiPerHour: 600,
+    lastSettleAt: now,
+    coCultivatePartner: null,
+    bountyUntil: null,
+    wearingMask: false,
+    activePresetIdx: 1,
+    trial: {
+      selectedStageId: 1,
+      maxStageId: 1,
+      rewardedStageIds: [],
+      stageHours: {},
+      replayHours: {},
+      lastPatrolAt: now,
+      marks: {},
+      recentDrops: [],
+    },
+  }
+  const blank = (presetIdx: 1 | 2 | 3, name: string, stance: LoadoutPresetDTO['stance']): LoadoutPresetDTO => ({
+    presetIdx, name, stance,
+    innerSkillId: null, outerSkillId: null, lightSkillId: null, ultSkillId: null,
+    leftCompanionId: null, rightCompanionId: null,
+    weaponId: 'qinggang_sword', armorId: null, accId: null, relicBookId: null,
+  })
+  const companionAffinity: Record<string, CompanionState> = Object.fromEntries(Object.values(COMPANIONS).map((c) => [
+    c.id, { affinity: 0, recruited: false, taught: false, met: false, form: 'base' as const, grade: c.grade ?? null, tokens: 0 },
+  ]))
+  return {
+    player,
+    ownedItemIds: ['qinggang_sword'],
+    learnedSkills: {} as Record<string, number>,
+    companionAffinity,
+    presets: {
+      1: blank(1, '预设壹·刚猛强攻', 'FIERCE'),
+      2: blank(2, '预设贰·太极反震', 'TAICHI'),
+      3: blank(3, '预设叁·奇门极速', 'AGILE'),
+    } as Record<LoadoutPresetDTO['presetIdx'], LoadoutPresetDTO>,
+    pillCount: 0,
+    openedAcupointIds: [] as string[],
+    pillInventory: {} as Record<string, number>,
+    herbInventory: {} as Record<string, number>,
+    knownRecipeIds: Object.keys(PILL_RECIPES),
+    furnaceResidue: 0,
+    alchemyPity: {} as Record<string, number>,
+  }
+}
+
+const SKILL_FIELD = { INNER: 'innerSkillId', OUTER: 'outerSkillId', LIGHT: 'lightSkillId', ULT: 'ultSkillId' } as const
+
+/** 新学的武功自动填进各套配装的空槽，免去新手手动装配；返回是否改了配装 */
+export function autoEquipSkill(presets: Iterable<LoadoutPresetDTO>, skillId: string) {
+  const skill = SKILLS[skillId]
+  if (!skill) return false
+  const key = SKILL_FIELD[skill.slot]
+  let changed = false
+  for (const preset of presets) {
+    if (preset[key]) continue
+    preset[key] = skillId
+    changed = true
+  }
+  return changed
+}
+
+/** 新得的装备在属性达标时自动穿到空槽 */
+export function autoEquipItem(presets: Iterable<LoadoutPresetDTO>, itemId: string, stats: SixStats) {
+  const item = ITEMS[itemId]
+  if (!item || !meetsItemStatRequirement(item, stats)) return false
+  const key = EQUIP_SLOT_META[item.slot].field
+  let changed = false
+  for (const preset of presets) {
+    if (preset[key]) continue
+    Object.assign(preset, { [key]: itemId })
+    changed = true
+  }
+  return changed
+}
+
 export function cultivationRate(player: PlayerDTO, preset: LoadoutPresetDTO, collectionBonus = 0) {
   return cultivationRates(player, preset, collectionBonus).qi
 }
@@ -212,7 +308,7 @@ export function settlePatrolCaches(player: PlayerDTO, preset: LoadoutPresetDTO, 
   if (!count) return
   const silver = gaibangSilverGain(player, 120 * count)
   player.silver += silver
-  const reward = { count, silver }
+  const reward: PatrolCacheReward = { count, silver }
   player.trial.recentCache = { ...reward, at: now }
   return reward
 }

@@ -7,14 +7,18 @@ import cookie from '@fastify/cookie'
 import websocket from '@fastify/websocket'
 import Fastify from 'fastify'
 import pg from 'pg'
-import { COOP_RAIDS, INN_GIFT_COST } from '../../shared/gameData.ts'
+import { COMPANIONS, COOP_RAIDS, INN_GIFT_COST, SKILLS } from '../../shared/gameData.ts'
+import { DAILY_TASKS, INGOT } from '../../shared/economy.ts'
+import { DISHES, FEAST_TARGET_FLAG } from '../../shared/feast.ts'
+import { FTUE_QUESTS } from '../../shared/ftueQuests.ts'
+import { GACHA_DUP_TOKENS, GACHA_HARD_PITY, GACHA_SINGLE_COST, REUNION_TICKET_COST } from '../../shared/gacha.ts'
 import { computeDerivedStats } from '../../shared/battle.ts'
 import { huashanSeason } from '../../shared/huashan.ts'
-import { legacyAcupoints } from '../../shared/player.ts'
-import type { BattleReportDTO, BountyBoardDTO, BountyEntryDTO, GameAction, HuashanBoardDTO, HuashanResult, IdleGain, LibraryResult, LibraryStatusDTO, PlayerSnapshot, RaidId, ReunionResult, SectContestBoardDTO, SectContestResult, SectResult, StoryAdventureResult, StoryChallengeResult, WsServerEvent } from '../../shared/protocol.ts'
+import { createStarterCharacter, legacyAcupoints } from '../../shared/player.ts'
+import type { AwakenResult, BattleReportDTO, BountyBoardDTO, BountyEntryDTO, FeastResult, FtueClaimResult, GachaResult, GameAction, HuashanBoardDTO, HuashanResult, IdleGain, LibraryResult, LibraryStatusDTO, PlayerSnapshot, RaidId, ReunionResult, SectContestBoardDTO, SectContestResult, SectResult, StoryAdventureResult, StoryChallengeResult, WsServerEvent } from '../../shared/protocol.ts'
 import { QUANZHEN_LIBRARY } from '../../shared/quanzhen.ts'
 import { BETRAYAL_BOUNTY, SECT_CHIEF_SALUTE_QI, SECT_SALUTE_QI, sectContestEndsAt, sectContestWeek } from '../../shared/sectProgress.ts'
-import { ONLINE_STORY_CHAPTERS } from '../../shared/storyData.ts'
+import { ONLINE_STORY_CHAPTERS, ONLINE_STORY_PROGRESS_VERSION } from '../../shared/storyData.ts'
 import { GameError } from '../src/http.ts'
 
 const connection = process.env.GAME_TEST_DATABASE_URL ?? process.env.STORY_TEST_DATABASE_URL
@@ -70,7 +74,32 @@ describe('联机战斗', { skip: connection ? false : '请设置 GAME_TEST_DATAB
     await admin.end()
   })
 
-  async function createPlayer(name: string) {
+  /** 老手存档：联机新角色从 Lv.1 起步，规则类测试沿用原先 Lv.32 的演武阵容 */
+  async function veteran(id: string, created: PlayerSnapshot) {
+    const { player: created_player } = created
+    const starter = createStarterCharacter(
+      { id, nickname: created_player.nickname, avatarId: created_player.avatarId }, created_player.lastSettleAt)
+    delete starter.companionAffinity.meichaofeng
+    starter.presets[3].leftCompanionId = 'kezhene'
+    const { id: _id, nickname: _nickname, lastSettleAt: _settled, nextLevelQi: _next, qiPerHour: _rate, equipmentAffixes: _affixes,
+      chapterOneChampion: _champion, ...profile } = starter.player
+    Object.assign(profile, {
+      maxChapterId: 1, storyProgressVersion: ONLINE_STORY_PROGRESS_VERSION, trial: created_player.trial,
+      openedAcupointIds: starter.openedAcupointIds, acupointPills: { pozhang_dan: starter.pillCount },
+      alchemy: { herbs: starter.herbInventory, pity: {}, residue: 0 }, ftue: created_player.ftue,
+    })
+    await db.query('UPDATE players SET profile = $2, pill_count = $3 WHERE id = $1', [id, profile, starter.pillCount])
+    for (const table of ['player_items', 'player_skills', 'player_companions', 'player_loadouts']) {
+      await db.query(`DELETE FROM ${table} WHERE player_id = $1`, [id])
+    }
+    await db.query('INSERT INTO player_items (player_id, item_id) SELECT $1, unnest($2::text[])', [id, starter.ownedItemIds])
+    await db.query('INSERT INTO player_skills SELECT $1, key, value::int FROM jsonb_each_text($2::jsonb)', [id, starter.learnedSkills])
+    await db.query('INSERT INTO player_companions SELECT $1, key, value FROM jsonb_each($2::jsonb)', [id, starter.companionAffinity])
+    await db.query(`INSERT INTO player_loadouts SELECT $1, (value->>'presetIdx')::int, value FROM jsonb_array_elements($2::jsonb)`,
+      [id, JSON.stringify(Object.values(starter.presets))])
+  }
+
+  async function register(name: string, fresh: boolean) {
     const loginName = `story_${name}`
     const registration = await app.inject({ method: 'POST', url: '/api/v1/auth/register', payload: { loginName, password: randomUUID() } })
     assert.equal(registration.statusCode, 201)
@@ -78,8 +107,9 @@ describe('联机战斗', { skip: connection ? false : '请设置 GAME_TEST_DATAB
     const headers = { cookie: `${cookie.name}=${cookie.value}` }
     const creation = await app.inject({ method: 'POST', url: '/api/v1/player/create', headers, payload: { nickname: loginName } })
     assert.equal(creation.statusCode, 200, creation.body)
-    const snapshot = creation.json<PlayerSnapshot>()
+    let snapshot = creation.json<PlayerSnapshot>()
     const id = snapshot.player.id
+    if (!fresh) await veteran(id, snapshot)
     const write = (method: 'POST' | 'PUT', path: string, payload?: Record<string, unknown>, requestId: string = randomUUID()) =>
       app.inject({ method, url: `/api/v1${path}`, headers: { ...headers, 'idempotency-key': requestId }, payload })
     const post = (path: string, payload?: Record<string, unknown>, key?: string) => write('POST', path, payload, key)
@@ -94,6 +124,7 @@ describe('联机战斗', { skip: connection ? false : '请设置 GAME_TEST_DATAB
       assert.equal(response.statusCode, 200, response.body)
       return response.json<T>()
     }
+    if (!fresh) snapshot = await read()
     const connect = async () => {
       const options = { headers }
       const socket = new WebSocket(`ws://127.0.0.1:${(app.server.address() as { port: number }).port}/ws`, options)
@@ -105,6 +136,8 @@ describe('联机战斗', { skip: connection ? false : '请设置 GAME_TEST_DATAB
     }
     return { id, snapshot, get, post, act, read, connect }
   }
+  const createPlayer = (name: string) => register(name, false)
+  const createRookie = (name: string) => register(name, true)
 
   async function profile(id: string, patch: Record<string, unknown>) {
     await db.query('UPDATE players SET profile = profile || $2::jsonb WHERE id = $1', [id, patch])
@@ -232,6 +265,11 @@ describe('联机战斗', { skip: connection ? false : '请设置 GAME_TEST_DATAB
       assert.equal(chiefGreeting.snapshot.player.qiExp - afterGreeting.player.qiExp, SECT_SALUTE_QI)
       assert.equal((await winner.post(contestPath, mirror('baituo'))).json().code, 'SECT_CONTEST_WEEK_CHANGED')
       assert.equal((await peer.read<SectContestBoardDTO>(contestPath)).chief?.id, winner.id)
+      // 结榜后收功按上周名分发元宝：首席多得，未出战不得，每周只发一次
+      assert.equal((await winner.act<IdleGain>('/cultivate/settle')).result.contestIngot, INGOT.sectContestChief)
+      assert.equal((await peer.act<IdleGain>('/cultivate/settle')).result.contestIngot, INGOT.sectContestJoin)
+      assert.equal((await winner.act<IdleGain>('/cultivate/settle')).result.contestIngot, undefined)
+      assert.equal((await idle.act<IdleGain>('/cultivate/settle')).result.contestIngot, undefined)
     } finally {
       fixedServerTime = undefined
     }
@@ -825,5 +863,138 @@ describe('联机战斗', { skip: connection ? false : '请设置 GAME_TEST_DATAB
       assert.equal((await player.post(path, { action: 'battle' })).json().code, 'REUNION_UNAVAILABLE')
     }
     assert.equal((await player.read()).companionAffinity.yangtiexin.recruited, true)
+  })
+
+  async function ledger(id: string) {
+    const { rows } = await db.query<{ delta: number; balance: number; reason: string; ref: string | null }>(
+      'SELECT delta, balance, reason, ref FROM ingot_ledger WHERE player_id = $1 ORDER BY id', [id])
+    return rows
+  }
+
+  async function companionState(id: string, companionId: string, patch: Record<string, unknown>) {
+    await db.query('UPDATE player_companions SET state = state || $3::jsonb WHERE player_id = $1 AND companion_id = $2', [id, companionId, patch])
+  }
+
+  it('联机新角色与本地新游戏同为 Lv.1 开局，元宝里程碑由存档推出、只发一次并留流水', async () => {
+    const rookie = await createRookie('rookie')
+    const start = rookie.snapshot
+    assert.equal(start.player.level, 1)
+    assert.equal(start.player.goldIngot, INGOT.start)
+    assert.deepEqual(start.ownedItemIds, ['qinggang_sword'])
+    assert.deepEqual(start.learnedSkills, {})
+    assert.ok(Object.values(start.companionAffinity).every(({ met, recruited }) => !met && !recruited))
+    assert.ok(start.loadouts.every(({ weaponId, leftCompanionId }) => weaponId === 'qinggang_sword' && leftCompanionId === null))
+
+    await profile(rookie.id, { trial: { ...start.player.trial, rewardedStageIds: [1, 7] }, realmTier: 2 })
+    const settled = await rookie.act<IdleGain>('/cultivate/settle')
+    assert.equal(settled.snapshot.player.goldIngot, INGOT.start + INGOT.trialStage + INGOT.trialChapterEnd + INGOT.realmBreak)
+    const again = await rookie.act<IdleGain>('/cultivate/settle')
+    assert.equal(again.snapshot.player.goldIngot, settled.snapshot.player.goldIngot)
+    const rows = await ledger(rookie.id)
+    assert.deepEqual(rows.map(({ ref }) => ref), ['start', 'trial:1', 'trial:7', 'realm:2'])
+    assert.equal(rows.at(-1)?.balance, again.snapshot.player.goldIngot)
+  })
+
+  it('每日江湖事四件做完才能领元宝，当日只领一次', async () => {
+    const actor = await createRookie('daily_a')
+    await actor.act('/cultivate/settle')
+    assert.equal((await actor.post('/daily/claim')).json().code, 'DAILY_NOT_READY')
+    await companionState(actor.id, 'kezhene', { met: true })
+    await actor.act('/market/inn/gift', { companionId: 'kezhene', favorite: false })
+    assert.equal((await actor.post('/story/1-1/challenge')).statusCode, 200) // 胜负都算出战
+    await profile(actor.id, { qiExp: 1000 })
+    await actor.act('/alchemy/forage')
+    const before = await actor.read()
+    assert.deepEqual([...before.player.daily!.done].sort(), DAILY_TASKS.map(({ id }) => id).sort())
+    const claimed = await actor.act<{ ingot: number }>('/daily/claim')
+    assert.equal(claimed.result.ingot, INGOT.daily)
+    assert.equal(claimed.snapshot.player.goldIngot, before.player.goldIngot + INGOT.daily)
+    assert.equal((await actor.post('/daily/claim')).json().code, 'DAILY_NOT_READY')
+    assert.equal((await ledger(actor.id)).filter(({ reason }) => reason === 'daily').length, 1)
+  })
+
+  it('联机结缘由服务端出签、扣元宝并记审计，觉醒形态、信物与硬保底同本地规则', async () => {
+    const actor = await createRookie('gacha_a')
+    assert.equal((await actor.post('/market/gacha', { count: 10 })).json().code, 'INGOT_INSUFFICIENT')
+    assert.equal((await actor.post('/market/gacha', { count: 3 })).json().code, 'INVALID_GACHA_COUNT')
+    mock.method(Math, 'random', () => 0)
+    try {
+      const first = await actor.act<GachaResult>('/market/gacha', { count: 1 })
+      assert.deepEqual(first.result.draws.map(({ tier, kind, refId, isNew }) => ({ tier, kind, refId, isNew })),
+        [{ tier: 'red', kind: 'COMPANION', refId: 'hongqigong', isNew: true }])
+      assert.equal(first.snapshot.player.goldIngot, INGOT.start - GACHA_SINGLE_COST)
+      assert.deepEqual(first.snapshot.player.gacha, { pulls: 1, pity: 0 })
+      assert.equal(first.snapshot.companionAffinity.hongqigong.recruited, true)
+      assert.equal(first.snapshot.companionAffinity.hongqigong.form, 'awakened')
+      const duplicate = await actor.act<GachaResult>('/market/gacha', { count: 1 })
+      assert.equal(duplicate.result.draws[0].isNew, false)
+      assert.equal(duplicate.snapshot.companionAffinity.hongqigong.tokens, GACHA_DUP_TOKENS.red)
+    } finally {
+      mock.method(Math, 'random', () => 0.99)
+    }
+    // 第 90 抽必出神品；新学的绝技自动填进各套配装的空槽
+    await profile(actor.id, { gacha: { pulls: 2, pity: GACHA_HARD_PITY - 1 } })
+    mock.method(Math, 'random', () => 0.65)
+    try {
+      const pity = await actor.act<GachaResult>('/market/gacha', { count: 1 })
+      assert.deepEqual(pity.result.draws.map(({ tier, refId, pityTriggered }) => ({ tier, refId, pityTriggered })),
+        [{ tier: 'red', refId: 'kanglong_youhui', pityTriggered: true }])
+      assert.deepEqual(pity.snapshot.player.gacha, { pulls: 3, pity: 0 })
+      const slot = ({ INNER: 'innerSkillId', OUTER: 'outerSkillId', LIGHT: 'lightSkillId', ULT: 'ultSkillId' } as const)[SKILLS.kanglong_youhui.slot]
+      assert.ok(pity.snapshot.loadouts.every((preset) => preset[slot] === 'kanglong_youhui'))
+      assert.equal(pity.snapshot.player.goldIngot, 0)
+    } finally {
+      mock.method(Math, 'random', () => 0.99)
+    }
+    const { rows: audit } = await db.query('SELECT pull_no, tier FROM gacha_log WHERE player_id = $1 ORDER BY pull_no', [actor.id])
+    assert.deepEqual(audit, [1, 2, 3].map((pull_no) => ({ pull_no, tier: 'red' })))
+    const rows = await ledger(actor.id)
+    assert.deepEqual(rows.map(({ reason, delta }) => [reason, delta]), [['start', INGOT.start], ...Array(3).fill(['gacha', -GACHA_SINGLE_COST])])
+    assert.equal(rows.at(-1)?.balance, 0)
+  })
+
+  it('觉醒、故人重逢令、十道绝味与江湖行历都由服务端校验并结算', async () => {
+    const actor = await createRookie('pal_a')
+    assert.equal((await actor.post('/companions/awaken', { companionId: 'guojing' })).json().code, 'AWAKEN_UNAVAILABLE')
+    await companionState(actor.id, 'guojing', { met: true, recruited: true, affinity: 600, tokens: COMPANIONS.guojing.awakenTokens })
+    const awakened = await actor.act<AwakenResult>('/companions/awaken', { companionId: 'guojing' })
+    assert.equal(awakened.result.title, COMPANIONS.guojing.awakened?.title)
+    assert.equal(awakened.snapshot.companionAffinity.guojing.form, 'awakened')
+    assert.equal(awakened.snapshot.companionAffinity.guojing.tokens, 0)
+
+    const reunion = '/story/reunion/meichaofeng'
+    assert.equal((await actor.post(reunion, { action: 'ticket' })).json().code, 'REUNION_UNAVAILABLE')
+    await profile(actor.id, { storyAdventureChoices: { huangshan_bishou: 'A' } })
+    const ticket = await actor.act<ReunionResult>(reunion, { action: 'ticket' })
+    assert.equal(ticket.snapshot.companionAffinity.meichaofeng.recruited, true)
+    assert.equal(ticket.snapshot.player.reunions?.meichaofeng.step, 'DONE')
+    assert.equal(ticket.snapshot.player.goldIngot, INGOT.start + INGOT.adventure - REUNION_TICKET_COST)
+    assert.equal((await actor.post(reunion, { action: 'ticket' })).json().code, 'REUNION_UNAVAILABLE')
+
+    const [first, ...rest] = DISHES
+    const last = rest.at(-1)!
+    assert.equal((await actor.post('/market/feast', { dishId: first.id })).json().code, 'FEAST_INACTIVE')
+    await companionState(actor.id, 'hongqigong', { met: true, affinity: 120 })
+    await profile(actor.id, { silver: 50_000 })
+    await db.query('UPDATE players SET last_settle_at = last_settle_at - 1900000 WHERE id = $1', [actor.id])
+    assert.equal((await actor.act<IdleGain>('/cultivate/settle')).result.feastIngredient, first.id)
+    const cooked = await actor.act<FeastResult>('/market/feast', { dishId: first.id })
+    assert.deepEqual(cooked.result, { dishId: first.id, cooked: 1, affinity: 10, done: false })
+    assert.equal((await actor.post('/market/feast', { dishId: first.id })).json().code, 'FEAST_UNAVAILABLE')
+    await profile(actor.id, { feast: { ingredients: [last.id], cooked: [first, ...rest.slice(0, -1)].map(({ id }) => id), lastCookDay: 0 } })
+    const done = await actor.act<FeastResult>('/market/feast', { dishId: last.id })
+    assert.equal(done.result.done, true)
+    assert.equal(done.snapshot.companionAffinity.hongqigong.recruited, true)
+    assert.ok(done.snapshot.player.storyFlags?.includes(FEAST_TARGET_FLAG))
+    assert.equal((await actor.post('/market/feast', { dishId: first.id })).json().code, 'FEAST_INACTIVE')
+
+    assert.equal((await actor.post('/ftue/claim')).json().code, 'FTUE_NOT_READY')
+    const { player } = await actor.read()
+    await profile(actor.id, { trial: { ...player.trial, rewardedStageIds: [1] } })
+    const claim = await actor.act<FtueClaimResult>('/ftue/claim')
+    assert.equal(claim.result.questId, FTUE_QUESTS[0].id)
+    assert.equal(claim.snapshot.player.ftue?.index, 1)
+    assert.equal(claim.snapshot.player.silver, player.silver + FTUE_QUESTS[0].rewardSilver)
+    assert.equal((await actor.post('/ftue/claim')).json().code, 'FTUE_NOT_READY')
   })
 })

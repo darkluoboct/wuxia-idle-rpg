@@ -1,10 +1,14 @@
 import type {
+  AwakenResult,
   BattleReportDTO,
   BountyEntryDTO,
   CultivationResult,
   EquipSlotType,
+  FeastResult,
   ForgeInput,
   ForgeResult,
+  FtueClaimResult,
+  GachaResult,
   GhostAppraisalResult,
   HuashanAction,
   HuashanResult,
@@ -73,6 +77,11 @@ interface Actions {
   story: [{ code: string; retreat: boolean }, StoryChallengeResult]
   reunion: [{ id: string; action: ReunionResult['action'] }, ReunionResult]
   innGift: [{ companionId: string; favorite: boolean }, InnGiftResult]
+  gacha: [{ count: 1 | 10 }, GachaResult]
+  awaken: [{ companionId: string }, AwakenResult]
+  feast: [{ dishId: string }, FeastResult]
+  ftueClaim: [undefined, FtueClaimResult]
+  dailyClaim: [undefined, { ingot: number }]
   appraise: [{ masked: boolean }, GhostAppraisalResult]
   buy: [{ listingId: string }, { spentSilver: number }]
   sect: [SectAction, SectResult]
@@ -122,6 +131,11 @@ const requests: { [K in keyof Actions]: (input: Actions[K][0]) => Request | unde
   ],
   reunion: ({ id, action }) => ['POST', `/story/reunion/${id}`, { action }],
   innGift: (body) => ['POST', '/market/inn/gift', body],
+  gacha: (body) => ['POST', '/market/gacha', body],
+  awaken: (body) => ['POST', '/companions/awaken', body],
+  feast: (body) => ['POST', '/market/feast', body],
+  ftueClaim: () => ['POST', '/ftue/claim'],
+  dailyClaim: () => ['POST', '/daily/claim'],
   appraise: (body) => ['POST', '/market/ghost/appraise', body],
   buy: (body) => ['POST', '/market/ghost/buy', body],
   sect: (body) => ['POST', '/sect', body],

@@ -1,20 +1,9 @@
-import type { GachaDrawDTO, LoadoutPresetDTO, RoomPlayerDTO, StanceType, UniqueArtifactStatusDTO } from './protocol'
+import type { LoadoutPresetDTO, RoomPlayerDTO, StanceType, UniqueArtifactStatusDTO } from './protocol'
 import type { GameActions } from './gameActions'
 import { REALMS, SECTS } from '@/config/gameData'
 import { computeDerivedStats } from '../../../shared/battle.ts'
 import { createStarterCharacter } from '../../../shared/player.ts'
 import { trialPartId } from '../../../shared/trialStages.ts'
-import {
-  AWAKENABLE_IDS,
-  GACHA_BASE_RATES,
-  GACHA_HARD_PITY,
-  GACHA_ORANGE_TOP_GRADE_RATE,
-  GACHA_POOL,
-  GACHA_SOFT_PITY_START,
-  GACHA_SOFT_PITY_STEP,
-  type GachaEntry,
-  type GachaTier,
-} from '@/config/gachaData'
 
 export { calcNextLevelQi, computeDerivedStats, evaluateStanceAdvantage, simulateServerBattle } from '../../../shared/battle.ts'
 
@@ -120,68 +109,3 @@ export const INITIAL_UNIQUE_ARTIFACTS: UniqueArtifactStatusDTO[] = [
   { artifactCode: 'TRUE_RUANWEI', itemId: 'ruanwei_armor', name: '真·桃花岛软猬甲', holderNickname: '陆乘云', holderSect: '东海桃花岛', defendStreak: 5, nextContestLabel: '周六试剑亭守擂' },
   { artifactCode: 'TRUE_YITIAN', itemId: 'biyu_xiao', name: '真·倚天剑', holderNickname: null, holderSect: '万安寺秘境待择主', defendStreak: 0, nextContestLabel: '全服首通3.0倚天篇择主' },
 ]
-
-/**
- * 客栈结缘抽取（模拟服务端）：基础概率 + 软保底 + 硬保底 + 十连保底。
- * pity = 距上次神品已累计的抽数；返回本批结果与更新后的 pity。rng 可注入以便测试。
- */
-export function rollGacha(params: { count: number; pity: number; pullsSoFar: number; rng?: () => number }): {
-  draws: GachaDrawDTO[]
-  pity: number
-} {
-  const rng = params.rng ?? Math.random
-  let pity = params.pity
-  const draws: GachaDrawDTO[] = []
-
-  const pickEntry = (tier: GachaTier): GachaEntry => {
-    const pool = GACHA_POOL[tier]
-    let r = rng() * pool.reduce((s, e) => s + e.weight, 0)
-    for (const e of pool) {
-      r -= e.weight
-      if (r < 0) return e
-    }
-    return pool[pool.length - 1]
-  }
-  const toDraw = (tier: GachaTier, e: GachaEntry, pullNo: number, pityTriggered: boolean): GachaDrawDTO => {
-    const d: GachaDrawDTO = { pullNo, tier, kind: 'PILL', pityTriggered: pityTriggered || undefined }
-    switch (e.kind) {
-      case 'COMPANION':
-        Object.assign(d, { kind: 'COMPANION', refId: e.id })
-        if (tier === 'orange') d.grade = rng() * 100 < GACHA_ORANGE_TOP_GRADE_RATE ? '上' : '中'
-        break
-      case 'SKILL':
-      case 'ITEM':
-        Object.assign(d, { kind: e.kind, refId: e.id })
-        break
-      case 'TOKEN':
-        Object.assign(d, { kind: 'TOKEN', refId: e.id, qty: e.qty })
-        break
-      case 'TOKEN_RANDOM':
-        Object.assign(d, { kind: 'TOKEN', refId: AWAKENABLE_IDS[Math.floor(rng() * AWAKENABLE_IDS.length)], qty: e.qty })
-        break
-      default:
-        Object.assign(d, { kind: e.kind, qty: e.qty })
-    }
-    return d
-  }
-
-  for (let i = 0; i < params.count; i++) {
-    const n = pity + 1 // 本抽是距上次神品的第 n 抽
-    const redRate =
-      n >= GACHA_HARD_PITY ? 100 : n >= GACHA_SOFT_PITY_START ? GACHA_BASE_RATES.red + GACHA_SOFT_PITY_STEP * (n - GACHA_SOFT_PITY_START + 1) : GACHA_BASE_RATES.red
-    const roll = rng() * 100
-    // 软保底抬高的红品概率从蓝档里扣，橙 / 紫概率不变
-    const tier: GachaTier =
-      roll < redRate ? 'red' : roll < redRate + GACHA_BASE_RATES.orange ? 'orange' : roll < redRate + GACHA_BASE_RATES.orange + GACHA_BASE_RATES.purple ? 'purple' : 'blue'
-    const pityTriggered = tier === 'red' && n >= GACHA_SOFT_PITY_START
-    pity = tier === 'red' ? 0 : pity + 1
-    draws.push(toDraw(tier, pickEntry(tier), params.pullsSoFar + i + 1, pityTriggered))
-  }
-
-  // 十连保底：十抽中至少一个上品（紫）及以上，否则把最后一抽改为上品
-  if (params.count >= 10 && draws.every((d) => d.tier === 'blue')) {
-    const last = draws[draws.length - 1]
-    draws[draws.length - 1] = toDraw('purple', pickEntry('purple'), last.pullNo, true)
-  }
-  return { draws, pity }
-}

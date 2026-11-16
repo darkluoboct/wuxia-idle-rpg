@@ -17,7 +17,7 @@ export function useBattlePlayback({ claimNodeFirstClear, onStoryNodeWon, playPen
 }) {
   const playerStore = usePlayerStore()
   const { player } = storeToRefs(playerStore)
-  const { learnSkill, gainItem } = playerStore
+  const { learnSkill, gainItem, markDaily } = playerStore
   const uiStore = useGameUiStore()
   const { mobileDrawer } = storeToRefs(uiStore)
   const { appendLog, showToast } = uiStore
@@ -53,6 +53,8 @@ export function useBattlePlayback({ claimNodeFirstClear, onStoryNodeWon, playPen
   }
 
   function startLocalBattle(report: BattleReportDTO, storyNodeId: number | null = null, onWin: (() => void) | null = null) {
+    // 主线、历练、奇遇出战记一件每日江湖事，与服务端一致
+    if (report.mode === 'SOLO_STORY') markDaily('battle')
     playReport(report, true, storyNodeId, onWin)
   }
 

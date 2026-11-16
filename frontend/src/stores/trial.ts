@@ -6,6 +6,7 @@ import { IS_MOCK_MODE } from '@/network/apiClient'
 import { battleEnvironmentAt } from '../../../shared/combatMeta.ts'
 import { forgeMaterialLabel, forgeMaterials } from '../../../shared/equipmentForge.ts'
 import { enemySilverReward, settlePatrolCaches } from '../../../shared/player.ts'
+import { patrolCacheIngot } from '../../../shared/economy.ts'
 import {
   advancePatrol,
   collectTrialDrop,
@@ -74,13 +75,17 @@ export function useTrial({ actions, cultivation, battle }: {
       if (roll) logTrialDrop(awardMockTrialDrop(stage, roll, now))
     }
     const cache = settlePatrolCaches(player.value, currentLoadout.value, encounters, now)
-    if (cache) logPatrolCache(cache)
+    if (cache) {
+      const ingot = patrolCacheIngot(player.value, cache.count, now)
+      if (ingot) cache.ingot = ingot
+      logPatrolCache(cache)
+    }
     logForgeMaterials(encounters)
   }
 
   function logPatrolCache(reward: NonNullable<IdleGain['patrolCache']>) {
     appendLog('CULTIVATE', [{ type: 'tag', text: '秘境宝箱', tone: 'gold' },
-      { type: 'text', text: ` 巡历发现 ${reward.count} 个宝箱，获得 ${reward.silver.toLocaleString()} 两纹银。` }])
+      { type: 'text', text: ` 巡历发现 ${reward.count} 个宝箱，获得 ${reward.silver.toLocaleString()} 两纹银${reward.ingot ? `、${reward.ingot} 元宝` : ''}。` }])
   }
 
   function openQusanCache() {

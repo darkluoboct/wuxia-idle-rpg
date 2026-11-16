@@ -105,6 +105,20 @@ export interface PlayerDTO {
   qusanCacheDay?: number
   huashanRespectDay?: number
   chapterOneChampion?: true
+  ftue?: FtueStateDTO
+  ingotClaims?: string[]            // 已领的一次性元宝里程碑
+  daily?: { day: number; done: string[]; claimed: boolean }
+  patrolIngot?: { day: number; got: number }
+  gacha?: { pulls: number; pity: number }
+  feast?: { ingredients: string[]; cooked: string[]; lastCookDay: number }
+}
+
+/** 首日《江湖行历》进度 */
+export interface FtueStateDTO {
+  index: number
+  claimed: number[]
+  forageCount: number
+  refinedRecipeIds: string[]
 }
 
 export interface TrialDropDTO {
@@ -147,6 +161,7 @@ export interface TrialStateDTO {
 export interface PatrolCacheReward {
   count: number
   silver: number
+  ingot?: number
 }
 
 /** 装备/秘宝装配与阵容预设 */
@@ -243,6 +258,8 @@ export interface IdleGain {
   forgeMaterials?: number
   patrolCache?: PatrolCacheReward
   reunionClues?: Record<string, number>
+  feastIngredient?: string
+  contestIngot?: number
 }
 
 export type CultivationResult =
@@ -289,7 +306,7 @@ export interface ReunionStateDTO {
 
 export type ReunionResult =
   | { action: 'inquire'; clues: number }
-  | { action: 'wait' | 'gift' }
+  | { action: 'wait' | 'gift' | 'ticket' }
   | { action: 'battle'; report: BattleReportDTO }
 
 export interface TrialPatrolStatusDTO {
@@ -362,7 +379,7 @@ export type HuashanAction =
 export type HuashanResult =
   | { action: 'mirror' | 'inscription' }
   | { action: 'challenge'; report: BattleReportDTO; rating: number; ratingDelta: number }
-  | { action: 'claim' | 'respect'; qiExp: number; silver: number }
+  | { action: 'claim' | 'respect'; qiExp: number; silver: number; ingot?: number }
 
 export type SectChiefDTO = Pick<PlayerDTO, 'id' | 'nickname' | 'avatarId'>
 
@@ -537,6 +554,7 @@ export interface BattleReportDTO {
     items?: { id: string; name: string; tier: TierColor }[]
     companions?: string[]
     title?: string
+    ingot?: number
   }
 }
 
@@ -624,4 +642,30 @@ export interface GachaDrawDTO {
   qty?: number
   grade?: '下' | '中' | '上' // 橙品伙伴资质
   pityTriggered?: boolean // 本抽由保底（软/硬/十连）带出
+  detail?: string // 结算文案：新得入手 / 重复转化
+  isNew?: boolean
+}
+
+export interface GachaResult {
+  cost: number
+  draws: GachaDrawDTO[]
+}
+
+export interface AwakenResult {
+  title: string
+  spent: number
+}
+
+export interface FeastResult {
+  dishId: string
+  cooked: number
+  affinity: number
+  done: boolean
+}
+
+export interface FtueClaimResult {
+  questId: number
+  qiExp: number
+  silver: number
+  pillId?: string
 }

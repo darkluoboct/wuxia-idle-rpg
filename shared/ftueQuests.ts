@@ -1,3 +1,6 @@
+import type { CompanionState, FtueClaimResult, FtueStateDTO, PlayerDTO } from './protocol.ts'
+import { gaibangSilverGain } from './gaibang.ts'
+
 /**
  * 首日《江湖行历》十阶新手引导配置。
  * 对应 docs/17；目标全部落在现有系统上，便于前端直接驱动。
@@ -149,3 +152,65 @@ export const FTUE_QUESTS: FtueQuestConfig[] = [
 ]
 
 export const FTUE_TOTAL = FTUE_QUESTS.length
+
+export const emptyFtue = (): FtueStateDTO => ({ index: 0, claimed: [], forageCount: 0, refinedRecipeIds: [] })
+
+export interface FtueProgressState {
+  player: Pick<PlayerDTO, 'trial' | 'realmTier' | 'currentSectId' | 'ftue'>
+  openedAcupointIds: readonly string[]
+  companionAffinity: Record<string, Pick<CompanionState, 'recruited' | 'affinity'> | undefined>
+}
+
+/** 当前行历目标是否达成（0 / 1）。进度由现有系统状态推导，联机与本地共用 */
+export function ftueProgress(quest: FtueQuestConfig, { player, openedAcupointIds, companionAffinity }: FtueProgressState): number {
+  const ftue = player.ftue ?? emptyFtue()
+  switch (quest.targetType) {
+    case 'STORY':
+      return player.trial.rewardedStageIds.includes(Number(quest.targetValue)) ? 1 : 0
+    case 'PIERCE':
+      return openedAcupointIds.includes(String(quest.targetValue)) ? 1 : 0
+    case 'PIERCE_ALL':
+      return HAND_THREE_YANG.every((id) => openedAcupointIds.includes(id)) ? 1 : 0
+    case 'COMPANION': {
+      const state = companionAffinity[String(quest.targetValue)]
+      return state?.recruited && state.affinity >= 100 ? 1 : 0
+    }
+    case 'FORAGE':
+      return ftue.forageCount >= 1 ? 1 : 0
+    case 'REFINE':
+      return ftue.refinedRecipeIds.includes(String(quest.targetValue)) ? 1 : 0
+    case 'BREAKTHROUGH':
+      return player.realmTier >= Number(quest.targetValue) ? 1 : 0
+    case 'SECT':
+      return player.currentSectId ? 1 : 0
+  }
+}
+
+/** 领取当前一阶行历奖励：校验达成后发真气、纹银与丹药，并推进到下一阶 */
+export function claimFtueQuest(
+  state: FtueProgressState & { player: Pick<PlayerDTO, 'qiExp' | 'silver' | 'sectRank' | 'gaibangBranch'> },
+  pills: Record<string, number>,
+): { error: string } | FtueClaimResult {
+  const { player } = state
+  const ftue = player.ftue ?? emptyFtue()
+  const quest = FTUE_QUESTS[ftue.index]
+  if (!quest) return { error: '江湖行历已全部完成' }
+  if (ftueProgress(quest, state) < 1) return { error: `「${quest.title}」还没有达成` }
+  const silver = gaibangSilverGain(player, quest.rewardSilver)
+  player.qiExp += quest.rewardQi
+  player.silver += silver
+  if (quest.rewardPillId) pills[quest.rewardPillId] = (pills[quest.rewardPillId] ?? 0) + 1
+  player.ftue = { ...ftue, claimed: [...ftue.claimed, quest.id], index: Math.min(FTUE_QUESTS.length, ftue.index + 1) }
+  return { questId: quest.id, qiExp: quest.rewardQi, silver, pillId: quest.rewardPillId }
+}
+
+/** 采药、炼丹这两阶行历要记次数 */
+export function recordFtueForage(player: Pick<PlayerDTO, 'ftue'>) {
+  const ftue = player.ftue ?? emptyFtue()
+  player.ftue = { ...ftue, forageCount: ftue.forageCount + 1 }
+}
+
+export function recordFtueRefine(player: Pick<PlayerDTO, 'ftue'>, recipeId: string) {
+  const ftue = player.ftue ?? emptyFtue()
+  if (!ftue.refinedRecipeIds.includes(recipeId)) player.ftue = { ...ftue, refinedRecipeIds: [...ftue.refinedRecipeIds, recipeId] }
+}

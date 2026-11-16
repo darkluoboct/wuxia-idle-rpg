@@ -36,6 +36,7 @@ import {
 } from '../../../shared/player.ts'
 import { effectiveMartialStats, equippedMartialSkills, hasWandererMastery } from '../../../shared/martialSchools.ts'
 import { storyProgressFlags } from '../../../shared/storyData.ts'
+import { markDailyTask, type DailyTaskId } from '../../../shared/economy.ts'
 import { STORY_SNAKE_ADVENTURE } from '../../../shared/storySnake.ts'
 
 export const usePlayerStore = defineStore('wuxiaPlayer', () => {
@@ -71,7 +72,12 @@ export const usePlayerStore = defineStore('wuxiaPlayer', () => {
 
   // 开局模式：null=尚未选择（显示开局界面）；NEW=新游戏（正式规则）；DEMO=演武模式（旧版全伙伴 Demo，后续版本移除）
   const gameMode = ref<'NEW' | 'DEMO' | null>(null)
-  const limitsEnabled = computed(() => gameMode.value === 'NEW')
+  // 联机就是正式规则；本地只有「新游戏」按正式规则限制
+  const limitsEnabled = computed(() => !IS_MOCK_MODE || gameMode.value === 'NEW')
+  /** 本地试玩记一件每日江湖事；联机由服务端记 */
+  function markDaily(task: DailyTaskId) {
+    if (IS_MOCK_MODE) markDailyTask(player.value, task, Date.now())
+  }
 
   // 伙伴好感度与招募状态（met=已结识，客栈才会显示；recruited=好感≥100可编入左右翼）
   type CompanionState = {
@@ -278,6 +284,7 @@ export const usePlayerStore = defineStore('wuxiaPlayer', () => {
     nowTick,
     betrayedSectIds,
     limitsEnabled,
+    markDaily,
     companionOf,
     presets,
     affinityCap,

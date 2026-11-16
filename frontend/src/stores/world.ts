@@ -233,7 +233,7 @@ export function useWorld({ battle, actions, selectTab, cultivation, companions }
         showToast(`论剑积分 ${result.rating}（${delta}）`, result.ratingDelta > 0 ? 'gold' : 'info')
         startBattlePlayback(result.report)
       } else if (result.action === 'claim' || result.action === 'respect') {
-        showToast(`真气 +${result.qiExp.toLocaleString()}${result.silver ? ` · 纹银 +${result.silver.toLocaleString()}` : ''}`, 'gold')
+        showToast(`真气 +${result.qiExp.toLocaleString()}${result.silver ? ` · 纹银 +${result.silver.toLocaleString()}` : ''}${result.ingot ? ` · 元宝 +${result.ingot}` : ''}`, 'gold')
       } else {
         showToast(result.action === 'mirror' ? '论剑镜像已更新' : '五绝判词已保存', 'gold')
       }

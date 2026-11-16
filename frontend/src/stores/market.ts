@@ -14,12 +14,11 @@ import { storeToRefs } from 'pinia'
 import { useGameUiStore } from './gameUiStore'
 import type { GameActions } from '@/network/gameActions'
 import type { useCultivation } from './cultivation'
-import type { useFtue } from './ftue'
+import { recordFtueForage, recordFtueRefine } from '../../../shared/ftueQuests.ts'
 
-export function useMarket({ actions, cultivation, ftue: guide }: {
+export function useMarket({ actions, cultivation }: {
   actions: GameActions
   cultivation: Pick<ReturnType<typeof useCultivation>, 'changeMockKarma'>
-  ftue: Pick<ReturnType<typeof useFtue>, 'ftue' | 'saveFtue'>
 }) {
   const playerStore = usePlayerStore()
   const {
@@ -33,12 +32,11 @@ export function useMarket({ actions, cultivation, ftue: guide }: {
     pillInventory,
     furnaceResidue,
   } = storeToRefs(playerStore)
-  const { gainItem } = playerStore
+  const { gainItem, markDaily } = playerStore
   const uiStore = useGameUiStore()
   const { shichenIdx } = storeToRefs(uiStore)
   const { appendLog, showToast } = uiStore
   const { changeMockKarma } = cultivation
-  const { ftue, saveFtue } = guide
 
   const ghostAuction = ref({ ...GHOST_MARKET_LISTINGS.find((entry) => entry.listingType === 'AUCTION')! })
   const ghostListings = computed(() => GHOST_MARKET_LISTINGS.flatMap((entry) => {
@@ -147,8 +145,8 @@ export function useMarket({ actions, cultivation, ftue: guide }: {
       player.value.qiExp -= FORAGE_QI_COST
       for (const { id, count } of gathered) herbInventory.value[id] = (herbInventory.value[id] ?? 0) + count
       announce(gathered, mapId)
-      ftue.value.forageCount += 1
-      saveFtue()
+      recordFtueForage(player.value)
+      markDaily('alchemy')
     })
   }
 
@@ -190,6 +188,7 @@ export function useMarket({ actions, cultivation, ftue: guide }: {
       for (const req of recipe.requiredHerbs) {
         herbInventory.value[req.herbId] -= req.count
       }
+      markDaily('alchemy')
 
       // 成功率计算 (基础 + 悟性超额加成 + 福缘加成 + 保底)
       const pity = alchemyPity.value[recipeId] ?? 0
@@ -216,10 +215,7 @@ export function useMarket({ actions, cultivation, ftue: guide }: {
           { type: 'text', text: ` 依照《${recipe.name}》起炉炼药，${critText} 炼得「${medName}」x${yieldCount}！` },
         ])
         showToast(`炼丹大成！获得「${medName}」x${yieldCount}${isDouble ? '（一炉双丹！）' : ''}`, 'gold')
-        if (!ftue.value.refinedRecipeIds.includes(recipeId)) {
-          ftue.value.refinedRecipeIds.push(recipeId)
-          saveFtue()
-        }
+        recordFtueRefine(player.value, recipeId)
       } else {
         // 失败补偿
         alchemyPity.value[recipeId] = pity + 6

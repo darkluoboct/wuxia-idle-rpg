@@ -1,25 +1,28 @@
 import { computed, ref } from 'vue'
-import type { GachaDrawDTO, InnGiftResult, ReunionResult, ReunionStateDTO, RichSegment } from '@/network/protocol'
-import { rollGacha } from '@/network/mockEngine'
-import { COMPANIONS, INN_GIFT_COST, INN_TEA_COST, ITEMS, MAPS, SKILLS, type CompanionGrade } from '@/config/gameData'
+import type { FeastResult, GachaDrawDTO, InnGiftResult, ReunionResult, ReunionStateDTO, RichSegment } from '@/network/protocol'
+import { COMPANIONS, INN_GIFT_COST, INN_TEA_COST, ITEMS, MAPS, SKILLS } from '@/config/gameData'
 import { EQUIP_SLOT_META, SKILL_SLOT_META } from '@/config/uiMeta'
 import { IS_MOCK_MODE } from '@/network/apiClient'
 import { battleEnvironmentAt } from '../../../shared/combatMeta.ts'
 import { innVisitDay } from '../../../shared/player.ts'
 import { gainReunionClues, reunionCluesToday, reunionEncounter, reunionWaitTime } from '../../../shared/reunion.ts'
 import {
-  GACHA_DUP_SILVER,
-  GACHA_DUP_TOKENS,
+  awakenCompanion as awakenState,
   GACHA_SINGLE_COST,
   GACHA_TEN_COST,
+  pullGacha as drawGacha,
   REUNION_AFTER,
   REUNION_TICKET_COST,
 } from '@/config/gachaData'
 import type { PortraitStyle } from '@/config/typesHelper'
 import {
+  cookFeastDish,
   DISHES,
+  emptyFeast,
   FEAST_GATHER_MINUTES,
   FEAST_TARGET_FLAG,
+  feastActive as feastInProgress,
+  gatherFeastIngredient,
   REUNION_CLUE_SOURCES,
   REUNION_CLUE_TARGET,
   REUNION_INQUIRE_COST,
@@ -63,7 +66,7 @@ export function useCompanions({ actions, battle }: {
     currentLoadout,
     storyFlags,
   } = storeToRefs(playerStore)
-  const { giftsLeft, dayKey, innGiftGain, recruitable, learnSkill, gainItem, simulateServerBattle } = playerStore
+  const { giftsLeft, dayKey, innGiftGain, recruitable, learnSkill, gainItem, simulateServerBattle, markDaily } = playerStore
   const uiStore = useGameUiStore()
   const { showToast, appendLog } = uiStore
   const { isBattlePlaying, startBattlePlayback, startLocalBattle } = battle
@@ -106,6 +109,7 @@ export function useCompanions({ actions, battle }: {
         return
       }
       player.value.silver -= cost
+      markDaily('inn')
       if (limitsEnabled.value) {
         if (innDay.value !== dayKey()) {
           innDay.value = dayKey()
@@ -131,126 +135,60 @@ export function useCompanions({ actions, battle }: {
   /** 觉醒进阶：好感 ≥600（生死之交）+ 消耗伙伴信物，基础形态 → 觉醒形态（伙伴专题 §四） */
   function awakenCompanion(compId: string) {
     const c = COMPANIONS[compId]
-    const st = companionAffinity.value[compId]
-    if (!c?.awakened || !st) return
-    if (st.form === 'awakened') {
-      showToast(`【${c.name}】已是觉醒形态`, 'info')
-      return
-    }
-    if (!st.recruited || st.affinity < 600) {
-      showToast(`觉醒需与【${c.name}】结为生死之交（好感 ≥ 600）`, 'danger')
-      return
-    }
-    const need = c.awakenTokens ?? 30
-    if (st.tokens < need) {
-      showToast(`伙伴信物不足：需 ${need}，现有 ${st.tokens}`, 'danger')
-      return
-    }
-    st.tokens -= need
-    st.form = 'awakened'
-    appendLog('JIANGHU', [
-      { type: 'tag', text: '觉醒进阶', tone: 'gold' },
-      { type: 'actor', name: c.name, isAlly: true },
-      { type: 'text', text: `以信物为引，功力臻至新境，化作【${c.awakened.title}】！` },
-    ])
-    showToast(`【${c.name}】觉醒为「${c.awakened.title}」！`, 'gold')
+    if (!c?.awakened) return
+    return actions.run('awaken', { companionId: compId }, ({ title }) => {
+      appendLog('JIANGHU', [
+        { type: 'tag', text: '觉醒进阶', tone: 'gold' },
+        { type: 'actor', name: c.name, isAlly: true },
+        { type: 'text', text: `以信物为引，功力臻至新境，化作【${title}】！` },
+      ])
+      showToast(`【${c.name}】觉醒为「${title}」！`, 'gold')
+    }, () => {
+      const result = awakenState(compId, companionAffinity.value[compId])
+      if ('error' in result) {
+        showToast(result.error, companionAffinity.value[compId]?.form === 'awakened' ? 'info' : 'danger')
+        return
+      }
+      return result
+    })
   }
 
-  // 客栈「醉仙楼·结缘」抽卡（伙伴专题 §七、§八）
-  const gacha = ref({ pulls: 0, pity: 0, history: [] as GachaResultView[] })
+  // 客栈「醉仙楼·结缘」抽卡（伙伴专题 §七、§八）：结果由服务端出签，本地试玩调用同一份规则
+  const gachaHistory = ref<GachaResultView[]>([])
+  const gacha = computed(() => ({ pulls: player.value.gacha?.pulls ?? 0, pity: player.value.gacha?.pity ?? 0, history: gachaHistory.value }))
   /** 当前待播放的揭晓动画；为 null 时不显示 */
   const gachaReveal = ref<{ key: number; results: GachaResultView[] } | null>(null)
-  const GRADE_RANK: Record<CompanionGrade, number> = { 下: 1, 中: 2, 上: 3 }
 
-  /** 结算一抽：新得入手 / 重复转化，并生成展示信息 */
-  function applyGachaDraw(d: GachaDrawDTO): GachaResultView {
-    const p = player.value
+  /** 结果卡片：名字、水墨人像或印章字 */
+  function gachaView(d: GachaDrawDTO): GachaResultView {
+    const base = { draw: d, detail: d.detail ?? '', isNew: !!d.isNew }
     switch (d.kind) {
       case 'COMPANION': {
         const cfg = COMPANIONS[d.refId!]
-        const st = companionAffinity.value[d.refId!]
-        if (!st.recruited) {
-          st.met = true
-          st.recruited = true
-          st.affinity = Math.max(st.affinity, 100)
-          // 神品档抽到“好感线”大侠：直接以觉醒形态入队（等于跳过免费线）
-          if (d.tier === 'red' && cfg.awakened) st.form = 'awakened'
-          if (d.grade) st.grade = d.grade
-          const formTxt = st.form === 'awakened' ? `觉醒形态「${cfg.awakened!.title}」` : '已入队'
-          return { draw: d, name: cfg.name, detail: `新结缘 · ${formTxt}${d.grade ? ` · 橙·${d.grade}` : ''}`, isNew: true, portrait: cfg.portraitStyle, glyph: '缘' }
-        }
-        const tokens = GACHA_DUP_TOKENS[d.tier] ?? 10
-        st.tokens += tokens
-        const parts = [`重复 → 信物 ×${tokens}`]
-        if (d.grade && (!st.grade || GRADE_RANK[d.grade] > GRADE_RANK[st.grade])) {
-          st.grade = d.grade
-          parts.push(`资质提升至「${d.grade}」`)
-        }
-        if (!cfg.awakened && st.affinity < affinityCap.value) {
-          const gain = Math.min(60, affinityCap.value - st.affinity)
-          st.affinity += gain
-          parts.push(`好感 +${gain}`)
-        }
-        return { draw: d, name: cfg.name, detail: parts.join('，'), isNew: false, portrait: cfg.portraitStyle, glyph: '缘' }
+        return { ...base, name: cfg.name, portrait: cfg.portraitStyle, glyph: '缘' }
       }
       case 'SKILL': {
         const sk = SKILLS[d.refId!]
-        const lv = learnedSkills.value[sk.id] ?? 0
-        const base = { draw: d, name: `《${sk.name}》`, glyph: SKILL_SLOT_META[sk.slot].glyph }
-        if (lv <= 0) {
-          learnSkill(sk.id)
-          return { ...base, detail: `习得${SKILL_SLOT_META[sk.slot].label}`, isNew: true }
-        }
-        if (lv < 10) {
-          learnedSkills.value[sk.id] = lv + 1
-          return { ...base, detail: `已会 → 参悟至第 ${lv + 1} 重`, isNew: false }
-        }
-        p.silver += GACHA_DUP_SILVER[sk.tier]
-        return { ...base, detail: `已臻圆满 → 纹银 +${GACHA_DUP_SILVER[sk.tier]}`, isNew: false }
+        return { ...base, name: `《${sk.name}》`, glyph: SKILL_SLOT_META[sk.slot].glyph }
       }
       case 'ITEM': {
         const it = ITEMS[d.refId!]
-        const base = { draw: d, name: `【${it.name}】`, glyph: EQUIP_SLOT_META[it.slot].glyph }
-        if (!ownedItemIds.value.includes(it.id)) {
-          gainItem(it.id)
-          return { ...base, detail: `入手${EQUIP_SLOT_META[it.slot].label}`, isNew: true }
-        }
-        p.silver += GACHA_DUP_SILVER[it.tier]
-        return { ...base, detail: `重复 → 纹银 +${GACHA_DUP_SILVER[it.tier]}`, isNew: false }
+        return { ...base, name: `【${it.name}】`, glyph: EQUIP_SLOT_META[it.slot].glyph }
       }
-      case 'TOKEN': {
-        const cfg = COMPANIONS[d.refId!]
-        companionAffinity.value[d.refId!].tokens += d.qty ?? 0
-        return { draw: d, name: `${cfg.name}信物`, detail: `×${d.qty}（觉醒进阶用）`, isNew: false, glyph: '信' }
-      }
-      case 'PILL': {
-        const stock = p.battleMedicines ??= {}
-        const qty = d.qty ?? 1
-        stock.jiuhua_yulu_wan = (stock.jiuhua_yulu_wan ?? 0) + qty
-        return { draw: d, name: '九花玉露丸', detail: `×${qty}（战斗保命）`, isNew: false, glyph: '丹' }
-      }
+      case 'TOKEN':
+        return { ...base, name: `${COMPANIONS[d.refId!].name}信物`, glyph: '信' }
+      case 'PILL':
+        return { ...base, name: '九花玉露丸', glyph: '丹' }
       case 'SILVER':
-        p.silver += d.qty ?? 0
-        return { draw: d, name: '纹银', detail: `+${(d.qty ?? 0).toLocaleString()} 两`, isNew: false, glyph: '银' }
+        return { ...base, name: '纹银', glyph: '银' }
       case 'QI':
-        p.qiExp += d.qty ?? 0
-        return { draw: d, name: '真气', detail: `+${(d.qty ?? 0).toLocaleString()}`, isNew: false, glyph: '气' }
+        return { ...base, name: '真气', glyph: '气' }
     }
   }
 
-  function pullGacha(count: 1 | 10) {
-    if (gachaReveal.value) return
-    const cost = count === 10 ? GACHA_TEN_COST : GACHA_SINGLE_COST
-    if (player.value.goldIngot < cost) {
-      showToast(`元宝不足：结缘 ${count} 次需 ${cost} 元宝`, 'danger')
-      return
-    }
-    player.value.goldIngot -= cost
-    const { draws, pity } = rollGacha({ count, pity: gacha.value.pity, pullsSoFar: gacha.value.pulls })
-    gacha.value.pity = pity
-    gacha.value.pulls += count
-    const results = draws.map(applyGachaDraw)
-    gacha.value.history = [...results.slice().reverse(), ...gacha.value.history].slice(0, 60)
+  function revealGacha(count: number, cost: number, draws: GachaDrawDTO[]) {
+    const results = draws.map(gachaView)
+    gachaHistory.value = [...results.slice().reverse(), ...gachaHistory.value].slice(0, 60)
     gachaReveal.value = { key: Date.now(), results }
 
     const notable = results.filter((r) => r.draw.tier !== 'blue')
@@ -268,6 +206,29 @@ export function useCompanions({ actions, battle }: {
       { type: 'text', text: ` 你于醉仙楼雅间焚香求签，结缘 ${count} 次（−${cost} 元宝）${notable.length ? '，得：' : '，皆是寻常机缘。'}` },
       ...segs,
     ])
+  }
+
+  function pullGacha(count: 1 | 10) {
+    if (gachaReveal.value) return
+    const cost = count === 10 ? GACHA_TEN_COST : GACHA_SINGLE_COST
+    if (player.value.goldIngot < cost) {
+      showToast(`元宝不足：结缘 ${count} 次需 ${cost} 元宝`, 'danger')
+      return
+    }
+    return actions.run('gacha', { count }, (result) => revealGacha(count, result.cost, result.draws), () => {
+      const outcome = drawGacha({
+        player: player.value, companionAffinity: companionAffinity.value, learnedSkills: learnedSkills.value,
+        ownedItemIds: ownedItemIds.value, affinityCap: affinityCap.value,
+      }, count)
+      if ('error' in outcome) {
+        showToast(outcome.error, 'danger')
+        return
+      }
+      // 新得的武学、装备按开局规则自动填空槽
+      outcome.changes.newSkills.forEach(learnSkill)
+      outcome.changes.newItems.forEach(gainItem)
+      return { cost: outcome.cost, draws: outcome.draws }
+    })
   }
 
   function closeGachaReveal() {
@@ -288,24 +249,29 @@ export function useCompanions({ actions, battle }: {
       showToast(`元宝不足：故人重逢令需 ${REUNION_TICKET_COST} 元宝`, 'danger')
       return
     }
-    player.value.goldIngot -= REUNION_TICKET_COST
-    const st = companionAffinity.value[compId]
-    st.met = true
-    st.recruited = true
-    st.affinity = Math.max(st.affinity, 100)
-    appendLog('JIANGHU', [
-      { type: 'tag', text: '故人重逢', tone: 'gold' },
-      { type: 'text', text: ' 醉仙楼的伙计递来一封旧信，你循着信中所约来到渡口——' },
-      { type: 'actor', name: c.name, isAlly: true },
-      { type: 'text', text: '已在那里等你多时。前尘往事，一笑而过，从此同行。' },
-    ])
-    showToast(`故人重逢：【${c.name}】已入队`, 'gold')
+    return actions.run('reunion', { id: compId, action: 'ticket' }, () => {
+      appendLog('JIANGHU', [
+        { type: 'tag', text: '故人重逢', tone: 'gold' },
+        { type: 'text', text: ' 醉仙楼的伙计递来一封旧信，你循着信中所约来到渡口——' },
+        { type: 'actor', name: c.name, isAlly: true },
+        { type: 'text', text: '已在那里等你多时。前尘往事，一笑而过，从此同行。' },
+      ])
+      showToast(`故人重逢：【${c.name}】已入队`, 'gold')
+    }, () => {
+      player.value.goldIngot -= REUNION_TICKET_COST
+      const st = companionAffinity.value[compId]
+      st.met = true
+      st.recruited = true
+      st.affinity = Math.max(st.affinity, 100)
+      reunionOf(compId).step = 'DONE'
+      return { action: 'ticket' as const }
+    })
   }
 
   // 故人寻访与北丐·十道绝味（伙伴专题 §十六）
   type ReunionState = Omit<ReunionStateDTO, 'day'> & { day: string }
   const reunion = ref<Record<string, ReunionState>>({})
-  const feast = ref<{ ingredients: string[]; cooked: string[]; lastCookDay: string }>({ ingredients: [], cooked: [], lastCookDay: '' })
+  const feast = computed(() => player.value.feast ?? emptyFeast())
 
   const blankReunion = (): ReunionState => ({ clues: 0, day: '', got: { closed: 0, replay: 0, inn: 0 }, step: 'CLUES', waitSince: null, waitMs: 0 })
   const reunionOf = (id: string) => (reunion.value[id] ??= blankReunion())
@@ -364,19 +330,18 @@ export function useCompanions({ actions, battle }: {
         ])
       }
     }
-    if (feastActive.value && elapsedSec >= FEAST_GATHER_MINUTES * 60) {
-      const dish = DISHES.find(
-        (d) => d.mapId === player.value.currentMapId && !feast.value.ingredients.includes(d.id) && !feast.value.cooked.includes(d.id)
-      )
-      if (dish) {
-        feast.value.ingredients.push(dish.id)
-        appendLog('ADVENTURE', [
-          { type: 'tag', text: '采办食材', tone: 'jade' },
-          { type: 'text', text: ` 你在当地寻得上好的「${dish.ingredient}」，可回客栈为洪七公烹一道【${dish.name}】。` },
-        ])
-        showToast(`采得食材：${dish.ingredient}`, 'gold')
-      }
-    }
+    const dish = feastActive.value ? gatherFeastIngredient(player.value, elapsedSec) : undefined
+    if (dish) logFeastIngredient(dish.id)
+  }
+
+  function logFeastIngredient(dishId: string) {
+    const dish = DISHES.find((d) => d.id === dishId)
+    if (!dish) return
+    appendLog('ADVENTURE', [
+      { type: 'tag', text: '采办食材', tone: 'jade' },
+      { type: 'text', text: ` 你在当地寻得上好的「${dish.ingredient}」，可回客栈为洪七公烹一道【${dish.name}】。` },
+    ])
+    showToast(`采得食材：${dish.ingredient}`, 'gold')
   }
 
   /** 主线节点获胜：与错过伙伴相关的节点给“旧地重游”线索 */
@@ -505,21 +470,17 @@ export function useCompanions({ actions, battle }: {
   }
 
   /** 十道绝味进行中：已结识洪七公、尚未入队（抽卡 / 演武模式已得者无需再做）、尚未呈齐 */
-  const feastActive = computed(() => {
-    const hq = companionAffinity.value.hongqigong
-    return !!hq?.met && !hq.recruited && !storyFlags.value.includes(FEAST_TARGET_FLAG)
-  })
+  const feastActive = computed(() => feastInProgress(companionAffinity.value.hongqigong, storyFlags.value))
 
   function cookDish(dishId: string) {
     const dish = DISHES.find((d) => d.id === dishId)
-    if (!dish || !feastActive.value) return
-    if (feast.value.cooked.includes(dishId)) return
+    if (!dish || !feastActive.value || feast.value.cooked.includes(dishId)) return
     if (!feast.value.ingredients.includes(dishId)) {
       const m = MAPS.find((x) => x.id === dish.mapId)
       showToast(`缺少「${dish.ingredient}」：在【${m?.name}】挂机 ≥${FEAST_GATHER_MINUTES} 分钟后收功即可采得`, 'danger')
       return
     }
-    if (feast.value.lastCookDay === dayKey()) {
+    if (feast.value.lastCookDay === innVisitDay(worldTime.value)) {
       showToast('今日已为洪七公掌过勺，明日子时再来', 'info')
       return
     }
@@ -527,36 +488,40 @@ export function useCompanions({ actions, battle }: {
       showToast(`烹制需 ${dish.silver} 两纹银`, 'danger')
       return
     }
-    player.value.silver -= dish.silver
-    feast.value.cooked.push(dishId)
-    feast.value.ingredients = feast.value.ingredients.filter((x) => x !== dishId)
-    feast.value.lastCookDay = dayKey()
-    const hq = companionAffinity.value.hongqigong
-    const gain = Math.max(0, Math.min(10, affinityCap.value - hq.affinity))
-    hq.affinity += gain
+    return actions.run('feast', { dishId }, (result) => announceDish(result), () => {
+      const result = cookFeastDish(player.value, companionAffinity.value.hongqigong, dishId, Date.now(), affinityCap.value)
+      if ('error' in result) {
+        showToast(result.error, 'danger')
+        return
+      }
+      if (result.done && !storyFlags.value.includes(FEAST_TARGET_FLAG)) storyFlags.value.push(FEAST_TARGET_FLAG)
+      return { dishId, cooked: result.cooked, affinity: result.affinity, done: result.done }
+    })
+  }
+
+  function announceDish({ dishId, cooked, affinity, done }: FeastResult) {
+    const dish = DISHES.find((d) => d.id === dishId)!
     appendLog('JIANGHU', [
-      { type: 'tag', text: `绝味 ${feast.value.cooked.length}/${DISHES.length}`, tone: 'gold' },
-      { type: 'text', text: ` 你呈上一道【${dish.name}】——${dish.poem}洪七公吃得眉飞色舞${gain ? `（好感 +${gain}）` : ''}。` },
+      { type: 'tag', text: `绝味 ${cooked}/${DISHES.length}`, tone: 'gold' },
+      { type: 'text', text: ` 你呈上一道【${dish.name}】——${dish.poem}洪七公吃得眉飞色舞${affinity ? `（好感 +${affinity}）` : ''}。` },
     ])
-    if (feast.value.cooked.length === DISHES.length) {
-      storyFlags.value.push(FEAST_TARGET_FLAG)
-      hq.met = true
-      hq.recruited = true
-      hq.affinity = Math.max(hq.affinity, 100)
-      appendLog('ADVENTURE', [
-        { type: 'tag', text: '十道绝味', tone: 'gold' },
-        { type: 'actor', name: '洪七公', isAlly: true },
-        { type: 'text', text: '抹抹嘴，拍着肚皮长笑：“十道菜，道道有心思！老叫化这辈子没吃得这般痛快——走，这江湖老叫化陪你闯一闯！”洪七公已加入你的江湖行列。' },
-      ])
-      showToast('十道绝味呈齐：洪七公入队！', 'gold')
-    } else {
-      showToast(`呈上【${dish.name}】（${feast.value.cooked.length}/${DISHES.length}）`, 'gold')
+    if (!done) {
+      showToast(`呈上【${dish.name}】（${cooked}/${DISHES.length}）`, 'gold')
+      return
     }
+    appendLog('ADVENTURE', [
+      { type: 'tag', text: '十道绝味', tone: 'gold' },
+      { type: 'actor', name: '洪七公', isAlly: true },
+      { type: 'text', text: '抹抹嘴，拍着肚皮长笑：“十道菜，道道有心思！老叫化这辈子没吃得这般痛快——走，这江湖老叫化陪你闯一闯！”洪七公已加入你的江湖行列。' },
+    ])
+    showToast('十道绝味呈齐：洪七公入队！', 'gold')
   }
 
   return {
     onStoryNodeWon,
     onOfflineSettled,
+    logFeastIngredient,
+    gachaHistory,
     feast,
     accrueReunionWait,
     gachaReveal,

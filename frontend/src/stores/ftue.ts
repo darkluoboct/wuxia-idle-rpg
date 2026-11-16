@@ -1,15 +1,27 @@
-import { computed, ref, watch } from 'vue'
-import { IS_MOCK_MODE } from '@/network/apiClient'
-import { gaibangSilverGain } from '../../../shared/gaibang.ts'
-import { FTUE_QUESTS, HAND_THREE_YANG, type FtueQuestConfig } from '../../../shared/ftueQuests.ts'
-import { LOCAL_SAVE_ENABLED } from './persistence'
+import { computed } from 'vue'
+import { claimFtueQuest, emptyFtue, FTUE_QUESTS, ftueProgress, type FtueQuestConfig } from '../../../shared/ftueQuests.ts'
+import type { FtueStateDTO } from '@/network/protocol'
+import type { GameActions } from '@/network/gameActions'
 import { usePlayerStore } from './playerStore'
 import { storeToRefs } from 'pinia'
 import { useGameUiStore } from './gameUiStore'
 import { type MainTab } from './gameUiStore'
 
-export function useFtue({ selectTab }: {
+/** 旧版本地存档把行历进度单独存在 localStorage，读档时并回角色 */
+export function legacyFtue(playerId: string): FtueStateDTO | undefined {
+  try {
+    const raw = localStorage.getItem(`wuxia-ftue-${playerId}`)
+    if (!raw) return
+    const saved = JSON.parse(raw) as Partial<FtueStateDTO>
+    return { ...emptyFtue(), ...saved, claimed: saved.claimed ?? [], refinedRecipeIds: saved.refinedRecipeIds ?? [] }
+  } catch {
+    return
+  }
+}
+
+export function useFtue({ selectTab, actions }: {
   selectTab: (tab: MainTab) => void
+  actions: GameActions
 }) {
   const playerStore = usePlayerStore()
   const { player, openedAcupointIds, companionAffinity, pillInventory } = storeToRefs(playerStore)
@@ -17,55 +29,13 @@ export function useFtue({ selectTab }: {
   const { jianghuTab, marketTab } = storeToRefs(uiStore)
   const { appendLog, showToast } = uiStore
 
-  // 首日《江湖行历》：进度按现有系统状态推导，领取记录按角色本地保存
-  interface FtueState { index: number; claimed: number[]; forageCount: number; refinedRecipeIds: string[] }
-  const FTUE_KEY = (id: string) => `wuxia-ftue-${id}`
-  const emptyFtue = (): FtueState => ({ index: 0, claimed: [], forageCount: 0, refinedRecipeIds: [] })
-  function loadFtue(id: string): FtueState {
-    if (IS_MOCK_MODE && !LOCAL_SAVE_ENABLED) return emptyFtue()
-    try {
-      const raw = localStorage.getItem(FTUE_KEY(id))
-      if (!raw) return emptyFtue()
-      const saved = JSON.parse(raw) as Partial<FtueState>
-      return { ...emptyFtue(), ...saved, claimed: saved.claimed ?? [], refinedRecipeIds: saved.refinedRecipeIds ?? [] }
-    } catch {
-      return emptyFtue()
-    }
-  }
-  const ftue = ref<FtueState>(loadFtue(player.value.id))
-  function saveFtue() {
-    if (IS_MOCK_MODE && !LOCAL_SAVE_ENABLED) return
-    try {
-      if (typeof localStorage !== 'undefined') localStorage.setItem(FTUE_KEY(player.value.id), JSON.stringify(ftue.value))
-    } catch {
-      // 仍可在当前会话中继续江湖行历。
-    }
-  }
-  watch(() => player.value.id, (id) => { ftue.value = loadFtue(id) }, { flush: 'sync' })
-
+  // 首日《江湖行历》：进度按现有系统状态推导，领取记录随角色存档（联机由服务端校验发奖）
+  const ftue = computed(() => player.value.ftue ?? emptyFtue())
   const ftueQuest = computed(() => FTUE_QUESTS[ftue.value.index] ?? null)
+  const progressState = () => ({ player: player.value, openedAcupointIds: openedAcupointIds.value, companionAffinity: companionAffinity.value })
 
   function ftueProgressOf(quest: FtueQuestConfig): number {
-    switch (quest.targetType) {
-      case 'STORY':
-        return player.value.trial.rewardedStageIds.includes(Number(quest.targetValue)) ? 1 : 0
-      case 'PIERCE':
-        return openedAcupointIds.value.includes(String(quest.targetValue)) ? 1 : 0
-      case 'PIERCE_ALL':
-        return HAND_THREE_YANG.every((id) => openedAcupointIds.value.includes(id)) ? 1 : 0
-      case 'COMPANION': {
-        const state = companionAffinity.value[String(quest.targetValue)]
-        return state?.recruited && state.affinity >= 100 ? 1 : 0
-      }
-      case 'FORAGE':
-        return ftue.value.forageCount >= 1 ? 1 : 0
-      case 'REFINE':
-        return ftue.value.refinedRecipeIds.includes(String(quest.targetValue)) ? 1 : 0
-      case 'BREAKTHROUGH':
-        return player.value.realmTier >= Number(quest.targetValue) ? 1 : 0
-      case 'SECT':
-        return player.value.currentSectId ? 1 : 0
-    }
+    return ftueProgress(quest, progressState())
   }
 
   const ftueReady = computed(() => {
@@ -76,20 +46,16 @@ export function useFtue({ selectTab }: {
   function claimFtueReward() {
     const quest = ftueQuest.value
     if (!quest || ftueProgressOf(quest) < 1) return
-    const silver = gaibangSilverGain(player.value, quest.rewardSilver)
-    player.value.qiExp += quest.rewardQi
-    player.value.silver += silver
-    if (quest.rewardPillId) {
-      pillInventory.value[quest.rewardPillId] = (pillInventory.value[quest.rewardPillId] ?? 0) + 1
-    }
-    ftue.value.claimed.push(quest.id)
-    ftue.value.index = Math.min(FTUE_QUESTS.length, ftue.value.index + 1)
-    saveFtue()
-    appendLog('JIANGHU', [
-      { type: 'tag', text: '江湖行历', tone: 'gold' },
-      { type: 'text', text: ` 达成「${quest.title}」，领得真气 ${quest.rewardQi.toLocaleString()}、纹银 ${silver.toLocaleString()}${quest.rewardPillId ? '，并获赠一枚丹药' : ''}。` },
-    ])
-    showToast(`行历达成：${quest.title}`, 'gold')
+    return actions.run('ftueClaim', undefined, ({ qiExp, silver, pillId }) => {
+      appendLog('JIANGHU', [
+        { type: 'tag', text: '江湖行历', tone: 'gold' },
+        { type: 'text', text: ` 达成「${quest.title}」，领得真气 ${qiExp.toLocaleString()}、纹银 ${silver.toLocaleString()}${pillId ? '，并获赠一枚丹药' : ''}。` },
+      ])
+      showToast(`行历达成：${quest.title}`, 'gold')
+    }, () => {
+      const result = claimFtueQuest(progressState(), pillInventory.value)
+      return 'error' in result ? undefined : result
+    })
   }
 
   function gotoFtueTarget() {
@@ -106,8 +72,6 @@ export function useFtue({ selectTab }: {
 
   return {
     ftue,
-    saveFtue,
-    emptyFtue,
     ftueQuest,
     ftueReady,
     ftueProgressOf,

@@ -49,7 +49,7 @@ export const useGameUiStore = defineStore('wuxiaUi', () => {
 
   // 点击富文本词条弹出的详情浮窗
   const inspectModal = ref<{ title: string; subtitle: string; tier: TierColor; desc: string; extra?: string } | null>(null)
-  const marketTab = ref<'INN' | 'GHOST' | 'ALCHEMY' | 'HUASHAN' | 'ARTIFACTS'>(IS_MOCK_MODE ? 'INN' : 'ALCHEMY')
+  const marketTab = ref<'INN' | 'GHOST' | 'ALCHEMY' | 'HUASHAN' | 'ARTIFACTS'>('INN')
 
   // 滚动富文本日志流
   const logs = ref<GameLogEntry[]>(IS_MOCK_MODE ? [

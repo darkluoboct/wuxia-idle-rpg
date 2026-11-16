@@ -9,6 +9,10 @@ export const GAIBANG_FINAL_DISHES = [
 
 export const gaibangDishFlag = (id: string) => `gaibang_baiwei_${id}`
 
+/** 百味考核的菜：亲手备办过，或已为洪七公呈过同一道（十道绝味），都算备好 */
+export const gaibangDishPrepared = (id: string, flags: readonly string[], feastCooked: readonly string[] = []) =>
+  flags.includes(gaibangDishFlag(id)) || feastCooked.includes(id)
+
 export const GAIBANG_BRANCHES = {
   WUYI: { name: '污衣派', conPercent: 15, defensePercent: 15, agiPercent: 0, silverPercent: 0 },
   JINGYI: { name: '净衣派', conPercent: 0, defensePercent: 0, agiPercent: 20, silverPercent: 20 },

@@ -1,9 +1,10 @@
 import { computed, onScopeDispose, ref, watch } from 'vue'
-import type { LoadoutPresetDTO, PlayerAvatarId, PlayerDTO, StanceType } from '@/network/protocol'
-import { calcNextLevelQi, generateRoomPlayers } from '@/network/mockEngine'
+import type { PlayerAvatarId, PlayerDTO } from '@/network/protocol'
+import { generateRoomPlayers } from '@/network/mockEngine'
 import { MEDICINES, STORY_CHAPTERS } from '@/config/gameData'
 import { IS_MOCK_MODE } from '@/network/apiClient'
-import { createStarterCharacter } from '../../../shared/player.ts'
+import { createNewGameCharacter, createStarterCharacter } from '../../../shared/player.ts'
+import { emptyFtue } from '../../../shared/ftueQuests.ts'
 import { recruitTrialCompanions } from '../../../shared/trialStages.ts'
 import { STORY_SNAKE_ADVENTURE } from '../../../shared/storySnake.ts'
 import { clearSave, LOCAL_SAVE_ENABLED, readSave, writeSave } from './persistence'
@@ -11,16 +12,21 @@ import { usePlayerStore } from './playerStore'
 import { storeToRefs } from 'pinia'
 import type { useBattlePlayback } from './battlePlayback'
 import { useGameUiStore } from './gameUiStore'
-import type { useCompanions } from './companions'
+import type { GachaResultView, useCompanions } from './companions'
 import type { useWorld } from './world'
-import type { useFtue } from './ftue'
+import { legacyFtue } from './ftue'
 import { SHICHEN_LABELS } from './gameUiStore'
 
-export function useLocalGame({ battle, companions, world, ftue: guide }: {
+/** 旧版存档把结缘计数、十道绝味放在角色之外 */
+type LegacySave = {
+  gacha?: { pulls: number; pity: number; history?: GachaResultView[] }
+  feast?: { ingredients: string[]; cooked: string[] }
+}
+
+export function useLocalGame({ battle, companions, world }: {
   battle: Pick<ReturnType<typeof useBattlePlayback>, 'closeBattleStage'>
-  companions: Pick<ReturnType<typeof useCompanions>, 'gachaReveal' | 'gacha' | 'reunion' | 'feast' | 'blankReunion'>
+  companions: Pick<ReturnType<typeof useCompanions>, 'gachaReveal' | 'gachaHistory' | 'reunion' | 'blankReunion'>
   world: Pick<ReturnType<typeof useWorld>, 'nearbyPlayers'>
-  ftue: Pick<ReturnType<typeof useFtue>, 'ftue' | 'emptyFtue' | 'saveFtue'>
 }) {
   const playerStore = usePlayerStore()
   const {
@@ -53,9 +59,8 @@ export function useLocalGame({ battle, companions, world, ftue: guide }: {
   const uiStore = useGameUiStore()
   const { activeTab, jianghuTab, mobileDrawer, inspectModal, confirmDialog, toasts, isMidnightTheme, logs, shichenIdx } = storeToRefs(uiStore)
   const { toggleTheme, showToast } = uiStore
-  const { gachaReveal, gacha, reunion, feast, blankReunion } = companions
+  const { gachaReveal, gachaHistory, reunion, blankReunion } = companions
   const { nearbyPlayers } = world
-  const { ftue, emptyFtue, saveFtue } = guide
 
   // 角色列表保留本次会话中各角色的进度，浏览器存档继续保存最近游玩的角色。
   type LocalCharacter = { player: PlayerDTO; progress?: SaveData }
@@ -134,9 +139,8 @@ export function useLocalGame({ battle, companions, world, ftue: guide }: {
       presets: presets.value,
       innDay: innDay.value,
       innGiftsToday: innGiftsToday.value,
-      gacha: { ...gacha.value, history: gacha.value.history.slice(0, 30) },
+      gachaHistory: gachaHistory.value.slice(0, 30),
       reunion: reunion.value,
-      feast: feast.value,
       mapArrivedAt: mapArrivedAt.value,
       logs: logs.value.slice(0, 30),
     }
@@ -211,9 +215,12 @@ export function useLocalGame({ battle, companions, world, ftue: guide }: {
     presets.value = { ...defaults.presets, ...saved.presets }
     innDay.value = saved.innDay
     innGiftsToday.value = saved.innGiftsToday
-    gacha.value = { ...defaults.gacha, ...saved.gacha }
+    const legacy = data as LegacySave
+    if (legacy.gacha && !player.value.gacha) player.value.gacha = { pulls: legacy.gacha.pulls, pity: legacy.gacha.pity }
+    gachaHistory.value = data.gachaHistory ?? legacy.gacha?.history ?? []
     reunion.value = Object.fromEntries(Object.entries(saved.reunion).map(([id, r]) => [id, { ...blankReunion(), ...r }]))
-    feast.value = { ...defaults.feast, ...saved.feast }
+    if (legacy.feast && !player.value.feast) player.value.feast = { ingredients: legacy.feast.ingredients, cooked: legacy.feast.cooked, lastCookDay: 0 }
+    player.value.ftue ??= legacyFtue(player.value.id)
     mapArrivedAt.value = saved.mapArrivedAt
     logs.value = saved.logs
     toggleTheme(saved.isMidnightTheme)
@@ -294,42 +301,17 @@ export function useLocalGame({ battle, companions, world, ftue: guide }: {
     if (mode === 'NEW') {
       const now = Date.now()
       const { id, nickname, avatarId } = player.value
-      player.value = {
-        id,
-        nickname,
-        avatarId,
-        level: 1,
-        realmTier: 1,
-        realmStage: 1,
-        breakPityRate: 0,
-        qiExp: 0,
-        nextLevelQi: calcNextLevelQi(1),
-        silver: 600,
-        goldIngot: 300,
-        stats: { str: 10, con: 10, agi: 10, intStat: 10, luck: 10, karma: 0 },
-        shaQi: 0,
-        currentSectId: null,
-        sectRank: 1,
-        sectContribution: 0,
-        isGuardingLibrary: false,
-        currentMapId: 'jiaxing_suburb',
-        maxChapterId: 1,
-        qiPerHour: 600,
-        lastSettleAt: now - 5 * 60_000,
-        coCultivatePartner: null,
-        bountyUntil: null,
-        wearingMask: false,
-        activePresetIdx: 1,
-        trial: { ...cloneSave(demoInitial).player.trial, lastPatrolAt: now },
-      }
-      learnedSkills.value = {}
-      ownedItemIds.value = ['qinggang_sword']
-      openedAcupointIds.value = []
-      pillInventory.value = {}
-      herbInventory.value = {}
-      knownRecipeIds.value = [...demoInitial.knownRecipeIds]
-      furnaceResidue.value = 0
-      alchemyPity.value = {}
+      // 与联机新角色同一套开局；首次收功能看到几分钟的打坐收益
+      const start = createNewGameCharacter({ id, nickname, avatarId }, now)
+      player.value = { ...start.player, lastSettleAt: now - 5 * 60_000 }
+      learnedSkills.value = start.learnedSkills
+      ownedItemIds.value = start.ownedItemIds
+      openedAcupointIds.value = start.openedAcupointIds
+      pillInventory.value = start.pillInventory
+      herbInventory.value = start.herbInventory
+      knownRecipeIds.value = start.knownRecipeIds
+      furnaceResidue.value = start.furnaceResidue
+      alchemyPity.value = start.alchemyPity
       betrayedSectIds.value = []
       storyFlags.value = []
       claimedNodeIds.value = []
@@ -339,31 +321,11 @@ export function useLocalGame({ battle, companions, world, ftue: guide }: {
       companionAffinity.value = blankCompanionStates()
       innDay.value = ''
       innGiftsToday.value = {}
-      gacha.value = { pulls: 0, pity: 0, history: [] }
+      gachaHistory.value = []
       reunion.value = {}
-      feast.value = { ingredients: [], cooked: [], lastCookDay: '' }
       mapArrivedAt.value = Date.now()
       gachaReveal.value = null
-      const blank = (idx: 1 | 2 | 3, name: string, stance: StanceType): LoadoutPresetDTO => ({
-        presetIdx: idx,
-        name,
-        stance,
-        innerSkillId: null,
-        outerSkillId: null,
-        lightSkillId: null,
-        ultSkillId: null,
-        leftCompanionId: null,
-        rightCompanionId: null,
-        weaponId: 'qinggang_sword',
-        armorId: null,
-        accId: null,
-        relicBookId: null,
-      })
-      presets.value = {
-        1: blank(1, '预设壹·刚猛强攻', 'FIERCE'),
-        2: blank(2, '预设贰·太极反震', 'TAICHI'),
-        3: blank(3, '预设叁·奇门极速', 'AGILE'),
-      }
+      presets.value = start.presets
       nearbyPlayers.value = generateRoomPlayers('jiaxing_suburb')
       logs.value = [
         {
@@ -385,8 +347,7 @@ export function useLocalGame({ battle, companions, world, ftue: guide }: {
       activeTab.value = 'CULTIVATE'
       jianghuTab.value = 'TRIAL'
     }
-    ftue.value = emptyFtue()
-    saveFtue()
+    player.value.ftue = emptyFtue()
     closeBattleStage()
     gachaReveal.value = null
     gameMode.value = mode

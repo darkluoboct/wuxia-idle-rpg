@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { useGameStore } from '@/stores/gameStore'
 import { apiClient, IS_MOCK_MODE } from '@/network/apiClient'
 import { pillDoubleRate, pillSuccessRate } from '../../../shared/alchemy.ts'
-import { recipeForPlayer, SNAKE_FEEDING_RECIPE } from '../../../shared/player.ts'
+import { innVisitDay, recipeForPlayer, SNAKE_FEEDING_RECIPE } from '../../../shared/player.ts'
 import { computeDerivedStats, mockDuelOpponent } from '@/network/mockEngine'
 import {
   COMPANIONS,
@@ -96,11 +96,7 @@ const daysLeft = (id: string) => {
   return Math.ceil((REUNION_CLUE_TARGET - store.reunionView(id).clues) / perDay)
 }
 const mapName = (id: string) => MAPS.find((x) => x.id === id)?.name.replace(/（.*?）/, '') ?? id
-const todayKey = () => {
-  const d = new Date(Date.now() + 3600_000)
-  return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`
-}
-const cookedToday = computed(() => store.feast.lastCookDay === todayKey())
+const cookedToday = computed(() => store.feast.lastCookDay === innVisitDay(store.worldTime))
 
 const fmtRate = (r: number) => (r >= 1 ? r.toFixed(2) : r.toFixed(3)) + '%'
 /** 伙伴当前形态视图（形态 / 资质已套用） */
@@ -125,7 +121,7 @@ function willTrigger(id: string) {
   const st = store.companionAffinity[id]
   return !!st && !st.taught && st.affinity < 600 && st.affinity + store.innGiftGain(id, true) >= 600
 }
-const innCompanions = computed(() => Object.values(COMPANIONS).filter((companion) => IS_MOCK_MODE || store.companionAffinity[companion.id]?.met))
+const innCompanions = Object.values(COMPANIONS)
 
 /* 五绝（东邪 / 西毒 / 南帝 / 北丐 / 中神通），数据与策划案 01、08 册一致 */
 const fiveGreats: { title: string; nickname: string; sect: string; stance: StanceType; poem: string }[] = [
@@ -213,7 +209,7 @@ const FLAME_META = {
       <div v-if="sub === 'INN'" class="view-scroll -mr-1 space-y-3 pr-1">
         <p v-if="store.jianghuTitle && !store.jianghuTitle.marketDiscount" class="well p-3 text-sm text-ink2">{{ store.jianghuTitle.greetingText }}</p>
         <!-- 醉仙楼·结缘（抽卡入口） -->
-        <article v-if="IS_MOCK_MODE" class="well relative overflow-hidden p-4" style="background-image: radial-gradient(ellipse at 100% 0, color-mix(in srgb, var(--tier-red) 14%, transparent), transparent 60%)">
+        <article class="well relative overflow-hidden p-4" style="background-image: radial-gradient(ellipse at 100% 0, color-mix(in srgb, var(--tier-red) 14%, transparent), transparent 60%)">
           <div class="relative grid items-center gap-3 md:grid-cols-[1fr_auto]">
             <div class="min-w-0">
               <div class="flex items-center gap-2.5">
@@ -251,11 +247,11 @@ const FLAME_META = {
         <!-- 故人寻访：错过的剧情伙伴。免费线约 30 天；重逢令可随时跳过 -->
         <article v-if="store.reunionCandidates.length" class="well space-y-3 p-3.5">
           <div class="flex items-center gap-2"><span class="seal h-7 w-7 text-base">逢</span><b class="font-brush text-xl">故人寻访</b></div>
-          <p class="hint">这些故人曾与你擦肩而过。日积月累打听线索（每日有数），集齐后赴故地相候、以礼相邀、了却前尘，便可重续前缘。<template v-if="IS_MOCK_MODE">也可直接以「故人重逢令」相邀。</template></p>
+          <p class="hint">这些故人曾与你擦肩而过。日积月累打听线索（每日有数），集齐后赴故地相候、以礼相邀、了却前尘，便可重续前缘。也可直接以「故人重逢令」相邀。</p>
           <div v-for="id in store.reunionCandidates" :key="id" class="space-y-2 border-t border-line pt-2.5">
             <div class="flex flex-wrap items-center justify-between gap-2">
               <b class="font-brush text-lg">{{ COMPANIONS[id].name }}</b>
-              <button v-if="IS_MOCK_MODE" class="btn btn-sm btn-gold" :disabled="store.player.goldIngot < REUNION_TICKET_COST" @click="store.redeemReunionTicket(id)">
+              <button class="btn btn-sm btn-gold" :disabled="store.player.goldIngot < REUNION_TICKET_COST" @click="store.redeemReunionTicket(id)">
                 重逢令 · {{ REUNION_TICKET_COST }} 元宝
               </button>
             </div>
@@ -317,7 +313,7 @@ const FLAME_META = {
         </article>
 
         <!-- 北丐·十道绝味：每日一道，食材需在各地挂机采办 -->
-        <article v-if="IS_MOCK_MODE && store.feastActive" class="well space-y-2.5 p-3.5">
+        <article v-if="store.feastActive" class="well space-y-2.5 p-3.5">
           <div class="flex flex-wrap items-center justify-between gap-2">
             <div class="flex items-center gap-2"><span class="seal h-7 w-7 text-base">味</span><b class="font-brush text-xl">北丐 · 十道绝味</b></div>
             <span class="chip chip-gold tabular-nums">{{ store.feast.cooked.length }} / {{ DISHES.length }}</span>
@@ -409,7 +405,7 @@ const FLAME_META = {
 
               <!-- 觉醒进阶：好感 600 + 伙伴信物 -->
               <button
-                v-if="IS_MOCK_MODE && c.awakened && store.companionAffinity[c.id]?.form === 'base'"
+                v-if="c.awakened && store.companionAffinity[c.id]?.form === 'base'"
                 class="btn btn-sm w-full flex-col !gap-0" :class="canAwaken(c.id) ? 'btn-seal anim-pulse-glow' : ''"
                 :disabled="!canAwaken(c.id)" :title="`觉醒为「${c.awakened.title}」：好感 ≥600，消耗信物 ${c.awakenTokens ?? 30}`" @click="store.awakenCompanion(c.id)"
               >

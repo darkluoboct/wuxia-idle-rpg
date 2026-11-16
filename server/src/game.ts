@@ -12,19 +12,23 @@ import {
   switchPatrolStage, TRIAL_PATROL_HOURS, TRIAL_REPLAY_HOURS, TRIAL_STAGES, trialFirstClearKarma, trialItemOf, trialPartId, trialPuzzleOutcome,
   trialStageOf, upgradesPatrolYield, type TrialStageConfig,
 } from '../../shared/trialStages.ts'
-import { appraiseGhostCurio, canEnterMap, canReceiveSnakeRecipe, cityInspectionDue, coCultivationRate, createStarterCharacter, cultivatePlayer, cultivationRate, cultivationRates, enemySilverReward, GHOST_APPRAISAL_SWORD, idleQiNumerator, innAffinityGain, innGiftsRemaining, innVisitDay, karmaAfterEvent, legacyAcupoints, planMapJourney, recipeForPlayer, resolveSeaVoyage, settlePatrolCaches } from '../../shared/player.ts'
+import { appraiseGhostCurio, autoEquipItem, autoEquipSkill, canEnterMap, canReceiveSnakeRecipe, cityInspectionDue, coCultivationRate, createNewGameCharacter, createStarterCharacter, cultivatePlayer, cultivationRate, cultivationRates, enemySilverReward, GHOST_APPRAISAL_SWORD, idleQiNumerator, innAffinityGain, innGiftsRemaining, innVisitDay, karmaAfterEvent, legacyAcupoints, planMapJourney, recipeForPlayer, resolveSeaVoyage, settlePatrolCaches } from '../../shared/player.ts'
 import { HUASHAN_HONORS, HUASHAN_RESPECT_QI, huashanDay, huashanRankReward, huashanRatingSwing, huashanSeason, huashanSeasonEndsAt } from '../../shared/huashan.ts'
-import { GAIBANG_DEBATE, GAIBANG_FINAL_DISHES, gaibangDishFlag, gaibangSilverGain } from '../../shared/gaibang.ts'
+import { GAIBANG_DEBATE, GAIBANG_FINAL_DISHES, gaibangDishFlag, gaibangDishPrepared, gaibangSilverGain } from '../../shared/gaibang.ts'
 import { BETRAYAL_BOUNTY, SECT_CHIEF_SALUTE_QI, SECT_CONTEST_MIN_RANK, SECT_SALUTE_QI, sectContestEndsAt, sectContestWeek, sectContributionGain, sectExamBlockReason, sectPromotion, sectPromotionRewards, simulateSectTrial } from '../../shared/sectProgress.ts'
 import { eligibleWandererEquipment, gaibangBeggingSilver, sectEquipmentRewardIds, WANDERER_EQUIPMENT } from '../../shared/sectEquipment.ts'
 import { MAX_SKILL_MASTERY, QUSAN_CACHE_KEY, searchQusanCache, skillFragmentDiscount, skillPowerAtMastery, skillUpgradeCost } from '../../shared/skillMastery.ts'
 import { effectiveMartialStats, hasMartialFreedom } from '../../shared/martialSchools.ts'
-import { addAdventureObjective, adventureById, adventureEncounter, onlineStoryChapter, ONLINE_STORY_PROGRESS_VERSION, restoreOnlineStoryProgress, STAT_LABEL, storyFirstClearReward, storyProgressFlags, type AdventureBattle, type Reward, type StatKey } from '../../shared/storyData.ts'
+import { addAdventureObjective, adventureById, adventureEncounter, affinityCapFor, onlineStoryChapter, ONLINE_STORY_PROGRESS_VERSION, restoreOnlineStoryProgress, STAT_LABEL, storyFirstClearReward, storyProgressFlags, type AdventureBattle, type Reward, type StatKey } from '../../shared/storyData.ts'
 import { canChooseStorySnake, STORY_SNAKE_ADVENTURE, storyEncounter } from '../../shared/storySnake.ts'
 import { QUANZHEN_LIBRARY } from '../../shared/quanzhen.ts'
+import { claimDailyIngot, claimMilestoneIngots, huashanIngot, INGOT, markDailyTask, patrolCacheIngot, resolvedAdventures, type DailyTaskId } from '../../shared/economy.ts'
+import { awakenCompanion, blankCompanionState, pullGacha, REUNION_TICKET_COST } from '../../shared/gacha.ts'
+import { cookFeastDish, feastActive, gatherFeastIngredient } from '../../shared/feast.ts'
+import { claimFtueQuest, emptyFtue, recordFtueForage, recordFtueRefine } from '../../shared/ftueQuests.ts'
 import { gainReunionClues, newReunion, reunionCluesToday, reunionEncounter, reunionWaitTime, REUNION_INQUIRE_COST, REUNION_QUESTS, REUNION_WAIT_HOURS, type ClueSource, type ReunionQuestConfig } from '../../shared/reunion.ts'
 import type {
-  BattleReportDTO, BountyBoardDTO, BountyEntryDTO, ChapterOneStatueDTO, CoCultivationDTO, CoCultivationInviteDTO, CompanionState, CompanionWear, CultivationResult, DuelInviteDTO, ForgeInput, ForgeResult, GameAction, HuashanBoardDTO, HuashanEntryDTO, HuashanResult, IdleGain, InnGiftResult, LibraryResult, LibraryStatusDTO, LoadoutPresetDTO, MapMoveResult, PersonalEquipSlot, PlayerDTO, PlayerSnapshot,
+  AwakenResult, BattleReportDTO, BountyBoardDTO, BountyEntryDTO, ChapterOneStatueDTO, CoCultivationDTO, CoCultivationInviteDTO, CompanionState, CompanionWear, CultivationResult, DuelInviteDTO, FeastResult, ForgeInput, ForgeResult, FtueClaimResult, GachaResult, GameAction, HuashanBoardDTO, HuashanEntryDTO, HuashanResult, IdleGain, InnGiftResult, LibraryResult, LibraryStatusDTO, LoadoutPresetDTO, MapMoveResult, PersonalEquipSlot, PlayerDTO, PlayerSnapshot,
   MirrorRankEntryDTO, ReunionResult, RichSegment, SectChiefDTO, SectContestBoardDTO, SectContestResult, SectResult, SkillSlotType, SkillUpgradeResult, StoryAdventureResult, StoryChallengeResult, StorySnakeChoiceResult, TrialChallengeResult, TrialDropDTO, TrialPatrolStatusDTO, TrialReplayResult,
   UniqueArtifactStatusDTO,
 } from '../../shared/protocol.ts'
@@ -65,6 +69,43 @@ type Character = Omit<PlayerSnapshot, 'serverTime' | 'derivedStats' | 'idlePrevi
   patrolCache?: IdleGain['patrolCache']
   patrolIdleGain?: IdleGain
   patrolIdleFrom?: number
+  /** 本次操作改了存档里不随返回值体现的部分（每日江湖事等） */
+  dirty?: boolean
+  loadoutsDirty?: boolean
+  ingotLog?: { delta: number; reason: string; ref?: string }[]
+}
+
+/** 元宝变动先记在角色上，随存档一起写流水 */
+function logIngot(character: Character, delta: number, reason: string, ref?: string) {
+  if (!delta) return
+  ;(character.ingotLog ??= []).push({ delta, reason, ref })
+  character.dirty = true
+}
+
+/** 每人只发一次的周期奖励：流水里已有同一 ref 就不再发 */
+async function grantIngotOnce(client: PoolClient, character: Character, amount: number, reason: string, ref: string) {
+  const { rowCount } = await client.query('SELECT 1 FROM ingot_ledger WHERE player_id = $1 AND ref = $2', [character.player.id, ref])
+  if (rowCount || (character.ingotLog ?? []).some((entry) => entry.ref === ref)) return 0
+  character.player.goldIngot += amount
+  logIngot(character, amount, reason, ref)
+  return amount
+}
+
+async function saveCompanion(client: PoolClient, character: Character, id: string) {
+  await client.query(`INSERT INTO player_companions (player_id, companion_id, state) VALUES ($1, $2, $3)
+    ON CONFLICT (player_id, companion_id) DO UPDATE SET state = EXCLUDED.state`, [character.player.id, id, character.companionAffinity[id]])
+}
+
+function markDaily(character: Character, task: DailyTaskId, now: number) {
+  if (markDailyTask(character.player, task, now)) character.dirty = true
+}
+
+function learnedSkill(character: Character, id: string) {
+  if (autoEquipSkill(character.loadouts, id)) character.loadoutsDirty = true
+}
+
+function gainedItem(character: Character, id: string) {
+  if (autoEquipItem(character.loadouts, id, character.player.stats)) character.loadoutsDirty = true
 }
 
 function profileOf(player: PlayerDTO): Profile {
@@ -174,7 +215,7 @@ function enterMap(player: PlayerDTO, mapId: string, now: number) {
 function equippedCompanion(character: Character, id: string) {
   const state = character.companionAffinity[id]
   const config = COMPANIONS[id]
-  return state?.recruited && config ? companionView(config, { ...state, form: state.form ?? 'awakened' }) : undefined
+  return state?.recruited && config ? companionView(config, state) : undefined
 }
 
 function collectionBonus(character: Character) {
@@ -233,7 +274,7 @@ function mirrorFighter({ fighter, companionStates }: DefenseMirror) {
     ...fighter,
     companionOf: (id: string) => {
       const state = companionStates[id]
-      return state?.recruited && COMPANIONS[id] ? companionView(COMPANIONS[id], { ...state, form: state.form ?? 'awakened' }) : undefined
+      return state?.recruited && COMPANIONS[id] ? companionView(COMPANIONS[id], state) : undefined
     },
   }
 }
@@ -353,7 +394,14 @@ async function settlePatrol(character: Character, now: number, client: PoolClien
       const roll = rollTrialDrop(stage, 'PATROL')
       if (roll) (character.patrolDrops ??= []).push(await awardTrialDrop(character, stage, roll, now, client))
     }
-    character.patrolCache = settlePatrolCaches(player, activeLoadout(character), encounters, now)
+    const cache = settlePatrolCaches(player, activeLoadout(character), encounters, now)
+    const ingot = cache ? patrolCacheIngot(player, cache.count, now) : 0
+    if (cache && ingot) {
+      cache.ingot = ingot
+      if (player.trial.recentCache) player.trial.recentCache.ingot = ingot
+      logIngot(character, ingot, 'patrol')
+    }
+    character.patrolCache = cache
   }
   return true
 }
@@ -367,6 +415,7 @@ async function awardTrialDrop(
     character.patrolIdleGain = creditIdle(character, now)
   }
   const drop = collectTrialDrop(player, character.ownedItemIds, stage, roll, now)
+  if (drop.outcome === 'NEW') gainedItem(character, drop.id)
   if (drop.outcome !== 'DUPLICATE') {
     await client.query(
       `INSERT INTO player_items (player_id, item_id, affix_roll) VALUES ($1, $2, $3)
@@ -460,19 +509,19 @@ async function createPlayer(accountId: string, input: unknown) {
     }
 
     const id = randomUUID()
-    const starter = createStarterCharacter({ id, nickname, avatarId }, now)
-    starter.player.maxChapterId = 1
-    delete starter.companionAffinity.meichaofeng
-    starter.presets[3].leftCompanionId = 'kezhene'
+    const starter = createNewGameCharacter({ id, nickname, avatarId }, now)
     starter.player.openedAcupointIds = starter.openedAcupointIds
     starter.player.acupointPills = { pozhang_dan: starter.pillCount }
     starter.player.alchemy = { herbs: starter.herbInventory, pity: {}, residue: 0 }
+    starter.player.ftue = emptyFtue()
     const { rowCount } = await client.query(
       `INSERT INTO players (id, account_id, nickname, profile, pill_count, last_settle_at)
        VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (nickname) DO NOTHING`,
       [id, accountId, nickname, profileOf(starter.player), starter.pillCount, now],
     )
     if (!rowCount) throw new GameError(409, 'NICKNAME_TAKEN', '这位侠客的名字已有人用')
+    await client.query(`INSERT INTO ingot_ledger (player_id, delta, balance, reason, ref, created_at)
+      VALUES ($1, $2, $2, 'start', 'start', $3)`, [id, starter.player.goldIngot, now])
 
     await client.query('INSERT INTO player_items (player_id, item_id) SELECT $1, unnest($2::text[])', [id, starter.ownedItemIds])
     await client.query('INSERT INTO player_skills SELECT $1, key, value::int FROM jsonb_each_text($2::jsonb)', [id, starter.learnedSkills])
@@ -498,8 +547,30 @@ class RelatedLocksNeeded extends Error {
   }
 }
 
-async function saveCharacter(client: PoolClient, character: Character) {
+async function flushIngots(client: PoolClient, character: Character, now: number) {
+  const entries = character.ingotLog ?? []
+  character.ingotLog = undefined
+  if (!entries.length) return
+  // 流水按发生顺序重放余额；同一 ref 已入账过的条目跳过并从余额里退回
+  let balance = character.player.goldIngot - entries.reduce((sum, { delta }) => sum + delta, 0)
+  for (const { delta, reason, ref } of entries) {
+    const { rowCount } = await client.query(`INSERT INTO ingot_ledger (player_id, delta, balance, reason, ref, created_at)
+      VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING`, [character.player.id, delta, balance + delta, reason, ref ?? null, now])
+    if (rowCount) balance += delta
+  }
+  character.player.goldIngot = balance
+}
+
+async function saveCharacter(client: PoolClient, character: Character, now: number) {
   const { player } = character
+  await flushIngots(client, character, now)
+  if (character.loadoutsDirty) {
+    for (const preset of character.loadouts) {
+      await client.query('UPDATE player_loadouts SET preset = $3 WHERE player_id = $1 AND preset_idx = $2', [player.id, preset.presetIdx, preset])
+    }
+    character.loadoutsDirty = false
+  }
+  character.dirty = false
   character.revision += 1
   await client.query(
     `UPDATE players SET profile = $2, last_settle_at = $3, qi_remainder = $4, silver_remainder = $5,
@@ -558,9 +629,13 @@ async function writeAction<T>(request: FastifyRequest, apply: ApplyAction<T>): P
           }
           return characters
         })
-        const changed = patrolChanged || applied
-        if (changed) await saveCharacter(client, character)
-        for (const other of related) await saveCharacter(client, other)
+        for (const { key, amount } of claimMilestoneIngots({
+          player: character.player, rewardedChapters: character.rewardedChapters,
+          adventureIds: resolvedAdventures(character.player), companionAffinity: character.companionAffinity,
+        })) logIngot(character, amount, 'milestone', key)
+        const changed = patrolChanged || applied || !!character.dirty || !!character.loadoutsDirty
+        if (changed) await saveCharacter(client, character, now)
+        for (const other of related) await saveCharacter(client, other, now)
         await client.query('INSERT INTO player_actions VALUES ($1, $2, $3, $4)', [row.id, requestId, fingerprint, result])
         const latest = snapshot(character, now)
         const updates = changed ? [latest] : []
@@ -890,7 +965,8 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
     award.silver = gaibangSilverGain(character.player, award.silver)
     character.player.qiExp += award.qiExp
     character.player.silver += award.silver
-    return { result: { action, ...award }, changed: true }
+    const ingot = await grantIngotOnce(client, character, huashanIngot(entry.rank), 'huashan', `huashan:${seasonId}`)
+    return { result: { action, ...award, ingot }, changed: true }
   }))
 
   app.get('/api/v1/sect/contest', async (request): Promise<SectContestBoardDTO> => {
@@ -961,10 +1037,17 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
     return { result: { action, report, rating: attacker.rating + delta, ratingDelta: delta }, changed: false }
   }))
 
-  app.post('/api/v1/cultivate/settle', (request) => respond(request, async (character, now) => {
+  app.post('/api/v1/cultivate/settle', (request) => respond(request, async (character, now, client) => {
     let changed = now > character.player.lastSettleAt || !!(character.coCultivation && character.coCultivation.endsAt <= now)
+    markDaily(character, 'settle', now)
     const reunionClues: NonNullable<IdleGain['reunionClues']> = {}
-    if (now - (character.patrolIdleFrom ?? character.player.lastSettleAt) >= 3_600_000) {
+    const elapsed = now - (character.patrolIdleFrom ?? character.player.lastSettleAt)
+    const flags = storyProgressFlags(character.rewardedChapters, character.player.storyFlags)
+    const feastIngredient = feastActive(character.companionAffinity.hongqigong, flags)
+      ? gatherFeastIngredient(character.player, elapsed / 1000)?.id : undefined
+    if (feastIngredient) changed = true
+    const contestIngot = await claimSectContestIngots(client, character, now)
+    if (elapsed >= 3_600_000) {
       for (const quest of Object.values(REUNION_QUESTS)) {
         if (!reunionAvailable(character, quest)) continue
         const gained = recordReunionClue(character, quest, 'closed', now)
@@ -975,8 +1058,29 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
       }
     }
     const gain = settle(character, now)
-    return { result: { ...gain, drops: character.patrolDrops, forgeMaterials: character.patrolForgeMaterials, patrolCache: character.patrolCache, reunionClues }, changed }
+    return {
+      result: {
+        ...gain, drops: character.patrolDrops, forgeMaterials: character.patrolForgeMaterials, patrolCache: character.patrolCache, reunionClues,
+        ...(feastIngredient ? { feastIngredient } : {}), ...(contestIngot ? { contestIngot } : {}),
+      },
+      changed,
+    }
   }))
+
+  /** 门派演武：已结榜的往周按参与 / 首席发元宝，每周一次 */
+  async function claimSectContestIngots(client: PoolClient, character: Character, now: number) {
+    const { rows } = await client.query<{ week_id: number; chief: boolean }>(`
+      SELECT e.week_id, r.chief_id IS NOT DISTINCT FROM e.player_id AS chief
+      FROM sect_contest_entries e JOIN sect_contest_results r ON r.sect_id = e.sect_id AND r.week_id = e.week_id
+      WHERE e.player_id = $1 AND e.matches > 0 AND e.week_id < $2
+        AND NOT EXISTS (SELECT 1 FROM ingot_ledger l WHERE l.player_id = e.player_id AND l.ref = 'sect-contest:' || e.week_id)`,
+    [character.player.id, sectContestWeek(now)])
+    let total = 0
+    for (const { week_id: week, chief } of rows) {
+      total += await grantIngotOnce(client, character, chief ? INGOT.sectContestChief : INGOT.sectContestJoin, 'sect-contest', `sect-contest:${week}`)
+    }
+    return total
+  }
 
   app.post('/api/v1/equipment/forge', (request) => respond<ForgeResult>(request, async (character, now, client) => {
     const { action, itemId, lock } = objectBody(request.body)
@@ -1026,6 +1130,7 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
     if (!skill || character.learnedSkills[id]) return
     await client.query('INSERT INTO player_skills VALUES ($1, $2, 1)', [character.player.id, id])
     character.learnedSkills[id] = 1
+    learnedSkill(character, id)
     return { id, name: skill.name, tier: skill.tier }
   }
 
@@ -1036,6 +1141,7 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
       const { rowCount } = await client.query('INSERT INTO player_items (player_id, item_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [character.player.id, id])
       if (rowCount) {
         character.ownedItemIds.push(id)
+        gainedItem(character, id)
         added.push(id)
       }
     }
@@ -1191,7 +1297,10 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
         ON CONFLICT (player_id, skill_id) DO UPDATE SET mastery = EXCLUDED.mastery`, [player.id, id, mastery])
       character.learnedSkills[id] = mastery
       addDelta(`《${skill.name}》参悟`, mastery - before, ' 重')
-      if (!before) items.push({ id, name: skill.name, tier: skill.tier })
+      if (!before) {
+        learnedSkill(character, id)
+        items.push({ id, name: skill.name, tier: skill.tier })
+      }
     }
     for (const id of await grantItems(client, character, reward.items ?? [])) {
       items.push({ id, name: ITEMS[id].name, tier: ITEMS[id].tier })
@@ -1201,10 +1310,10 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
     for (const [id, amount] of Object.entries(reward.affinity ?? {})) {
       const companion = COMPANIONS[id]
       if (!companion) continue
-      const state = character.companionAffinity[id] ??= { affinity: 0, recruited: false, taught: false, form: 'base' }
+      const state = character.companionAffinity[id] ??= blankCompanionState(id)
       const before = state.affinity
       state.met = true
-      state.affinity = Math.min(1000, before + amount)
+      state.affinity = Math.max(before, Math.min(affinityCapFor(player.maxChapterId), before + amount))
       if (!state.recruited && state.affinity >= 100 && (!companion.recruitFlag || flags.includes(companion.recruitFlag))) {
         state.recruited = true
         companions.push(id)
@@ -1220,6 +1329,7 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
   }
 
   function storyBattle(character: Character, now: number, sceneTitle: string, battle: AdventureBattle, retreat: boolean, mapId = character.player.currentMapId) {
+    markDaily(character, 'battle', now)
     const report = simulateServerBattle({
       ...duelFighter(character), ...battle, sceneTitle, mode: 'SOLO_STORY', tryRetreat: retreat,
       ownedItemIds: character.ownedItemIds,
@@ -1337,7 +1447,7 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
         const dish = GAIBANG_FINAL_DISHES.find(({ id }) => id === dishId)
         if (sect.id !== 'gaibang' || !finale || !dish) throw new GameError(409, 'SECT_DISH_UNAVAILABLE', '现在没有这道考核菜品可备办')
         const flag = gaibangDishFlag(dish.id)
-        if (flags.includes(flag)) throw new GameError(409, 'SECT_DISH_PREPARED', '这道菜已经备好了')
+        if (gaibangDishPrepared(dish.id, flags, player.feast?.cooked)) throw new GameError(409, 'SECT_DISH_PREPARED', '这道菜已经备好了')
         if (player.currentMapId !== dish.mapId) throw new GameError(409, 'SECT_DISH_MAP', '请到菜谱所示地点备办')
         settle(character, now)
         if (player.silver < dish.silver) throw new GameError(409, 'NOT_ENOUGH_SILVER', `备办${dish.name}需 ${dish.silver} 两纹银`)
@@ -1365,7 +1475,7 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
       }
       if (!available) throw new GameError(409, 'SECT_RANK_MAX', '你已完成本门考核')
       if (branch !== (choosing ? 'WUYI' : undefined)) throw new GameError(409, 'SECT_BRANCH_REQUIRED', '请到轩辕台选择合适的考核')
-      const dishesReady = sect.id !== 'gaibang' || !finale || GAIBANG_FINAL_DISHES.every(({ id }) => flags.includes(gaibangDishFlag(id)))
+      const dishesReady = sect.id !== 'gaibang' || !finale || GAIBANG_FINAL_DISHES.every(({ id }) => gaibangDishPrepared(id, flags, player.feast?.cooked))
       const blocked = sectExamBlockReason(exam, player.stats.con, loadout, (id) => !!character.companionAffinity[id]?.recruited, dishesReady)
       if (blocked) throw new GameError(409, 'SECT_EXAM_REQUIREMENTS', blocked)
       const report = simulateSectTrial(sect, promotion, {
@@ -1444,15 +1554,20 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
     if (player.silver < cost) throw new GameError(409, 'SILVER_INSUFFICIENT', '纹银不足')
     const loadout = activeLoadout(character)
     const title = activeJianghuTitle({ ...player, stats: effectiveMartialStats(player, loadout) }, loadout)
-    const affinityGained = Math.max(0, Math.min(innAffinityGain(companion.id, favorite, title?.id), 1000 - state.affinity))
-    if (!affinityGained) throw new GameError(409, 'AFFINITY_FULL', '好感已满')
+    const cap = affinityCapFor(player.maxChapterId)
+    const affinityGained = Math.max(0, Math.min(innAffinityGain(companion.id, favorite, title?.id), cap - state.affinity))
+    if (!affinityGained) {
+      throw new GameError(409, 'AFFINITY_FULL', cap < 1000 ? '此情已满，待江湖历练更深（通关更多章节可提高上限）' : '好感已满')
+    }
 
-    if (!state.recruited && state.affinity + affinityGained >= 100 && !companion.recruitFlag) {
+    const flags = storyProgressFlags(character.rewardedChapters, player.storyFlags)
+    if (!state.recruited && state.affinity + affinityGained >= 100 && (!companion.recruitFlag || flags.includes(companion.recruitFlag))) {
       settle(character, now)
       state.recruited = true
     }
     player.silver -= cost
     player.innVisits = visits
+    markDaily(character, 'inn', now)
     const counters = visits.gifts[companion.id] ??= { tea: 0, gift: 0 }
     counters[kind]++
     state.affinity += affinityGained
@@ -1461,6 +1576,81 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
     await client.query(`INSERT INTO player_companions (player_id, companion_id, state) VALUES ($1, $2, $3)
       ON CONFLICT (player_id, companion_id) DO UPDATE SET state = EXCLUDED.state`, [player.id, companion.id, state])
     return { result: { affinityGained, taughtSkillId: taught?.id }, changed: true }
+  }))
+
+  app.post('/api/v1/market/gacha', (request) => respond<GachaResult>(request, async (character, now, client) => {
+    const { count } = objectBody(request.body)
+    if (count !== 1 && count !== 10) throw new GameError(400, 'INVALID_GACHA_COUNT', '请选择单抽或十连')
+    const { player } = character
+    // 新伙伴入队会改变收集羁绊的打坐加成，先按旧阵容结算
+    settle(character, now)
+    const outcome = pullGacha({
+      player, companionAffinity: character.companionAffinity, learnedSkills: character.learnedSkills,
+      ownedItemIds: character.ownedItemIds, affinityCap: affinityCapFor(player.maxChapterId),
+    }, count)
+    if ('error' in outcome) throw new GameError(409, 'INGOT_INSUFFICIENT', outcome.error)
+    logIngot(character, -outcome.cost, 'gacha')
+    const { changes, draws } = outcome
+    for (const id of changes.companions) await saveCompanion(client, character, id)
+    for (const id of changes.skills) {
+      await client.query(`INSERT INTO player_skills VALUES ($1, $2, $3)
+        ON CONFLICT (player_id, skill_id) DO UPDATE SET mastery = EXCLUDED.mastery`, [player.id, id, character.learnedSkills[id]])
+    }
+    for (const id of changes.newSkills) learnedSkill(character, id)
+    for (const id of changes.newItems) {
+      await client.query('INSERT INTO player_items (player_id, item_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [player.id, id])
+      gainedItem(character, id)
+    }
+    for (const draw of draws) {
+      await client.query(`INSERT INTO gacha_log (player_id, pull_no, tier, kind, ref_id, qty, grade, pity_triggered, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [player.id, draw.pullNo, draw.tier, draw.kind, draw.refId ?? null, draw.qty ?? null, draw.grade ?? null, !!draw.pityTriggered, now])
+    }
+    return { result: { cost: outcome.cost, draws }, changed: true }
+  }))
+
+  app.post('/api/v1/companions/awaken', (request) => respond<AwakenResult>(request, async (character, _now, client) => {
+    const { companionId } = objectBody(request.body)
+    if (typeof companionId !== 'string' || !Object.hasOwn(COMPANIONS, companionId)) {
+      throw new GameError(400, 'INVALID_COMPANION', '请选择一位伙伴')
+    }
+    const result = awakenCompanion(companionId, character.companionAffinity[companionId])
+    if ('error' in result) throw new GameError(409, 'AWAKEN_UNAVAILABLE', result.error)
+    await saveCompanion(client, character, companionId)
+    return { result, changed: true }
+  }))
+
+  app.post('/api/v1/market/feast', (request) => respond<FeastResult>(request, async (character, now, client) => {
+    const { dishId } = objectBody(request.body)
+    if (typeof dishId !== 'string') throw new GameError(400, 'INVALID_DISH', '请选择一道菜')
+    const { player } = character
+    const hong = character.companionAffinity.hongqigong
+    if (!hong || !feastActive(hong, storyProgressFlags(character.rewardedChapters, player.storyFlags))) {
+      throw new GameError(409, 'FEAST_INACTIVE', '眼下用不着为洪七公掌勺')
+    }
+    // 十道呈齐时洪七公入队，收集羁绊随之变化
+    settle(character, now)
+    const result = cookFeastDish(player, hong, dishId, now, affinityCapFor(player.maxChapterId))
+    if ('error' in result) throw new GameError(409, 'FEAST_UNAVAILABLE', result.error)
+    await saveCompanion(client, character, 'hongqigong')
+    return { result: { dishId, cooked: result.cooked, affinity: result.affinity, done: result.done }, changed: true }
+  }))
+
+  app.post('/api/v1/ftue/claim', (request) => respond<FtueClaimResult>(request, async (character) => {
+    const { player } = character
+    const result = claimFtueQuest(
+      { player, openedAcupointIds: player.openedAcupointIds ?? [], companionAffinity: character.companionAffinity },
+      player.acupointPills ??= {},
+    )
+    if ('error' in result) throw new GameError(409, 'FTUE_NOT_READY', result.error)
+    return { result, changed: true }
+  }))
+
+  app.post('/api/v1/daily/claim', (request) => respond<{ ingot: number }>(request, async (character, now) => {
+    const result = claimDailyIngot(character.player, now)
+    if ('error' in result) throw new GameError(409, 'DAILY_NOT_READY', result.error)
+    logIngot(character, result.ingot, 'daily', `daily:${character.player.daily!.day}`)
+    return { result, changed: true }
   }))
 
   app.post('/api/v1/market/ghost/buy', (request) => respond(request, async (character, _now, client) => {
@@ -1499,10 +1689,12 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
     const alchemy = player.alchemy ??= { herbs: {}, pity: {}, residue: 0 }
     player.qiExp -= FORAGE_QI_COST
     for (const herb of herbs) alchemy.herbs[herb.id] = (alchemy.herbs[herb.id] ?? 0) + herb.count
+    recordFtueForage(player)
+    markDaily(character, 'alchemy', now)
     return { result: { herbs }, changed: true }
   }))
 
-  app.post('/api/v1/alchemy/refine', (request) => respond(request, async (character) => {
+  app.post('/api/v1/alchemy/refine', (request) => respond(request, async (character, now) => {
     const { player } = character
     const { recipeId } = objectBody(request.body)
     const baseRecipe = typeof recipeId === 'string' && Object.hasOwn(PILL_RECIPES, recipeId) ? PILL_RECIPES[recipeId] : undefined
@@ -1523,10 +1715,12 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
       const stock = recipe.category === 'BATTLE' ? (player.battleMedicines ??= {}) : (player.acupointPills ??= {})
       stock[recipe.targetMedicineId] = (stock[recipe.targetMedicineId] ?? 0) + count
       delete alchemy.pity[recipe.id]
+      recordFtueRefine(player, recipe.id)
     } else {
       alchemy.pity[recipe.id] = (alchemy.pity[recipe.id] ?? 0) + 6
       alchemy.residue++
     }
+    markDaily(character, 'alchemy', now)
     return { result: { medicineId: recipe.targetMedicineId, count }, changed: true }
   }))
 
@@ -1882,7 +2076,8 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
           player.silver += silver
           const granted = relic && (await grantItems(client, member, [relic.id])).length > 0
           const items = granted ? [{ id: relic.id, name: relic.name, tier: relic.tier }] : []
-          reports.set(player.id, { ...battle, rewards: { qiExp, silver, items } })
+          const ingot = await grantIngotOnce(client, member, INGOT.raidWeekly, 'raid', `raid:${sectContestWeek(now)}`)
+          reports.set(player.id, { ...battle, rewards: { qiExp, silver, items, ...(ingot ? { ingot } : {}) } })
         }
         return {
           result: reports.get(leader.player.id)!,
@@ -2078,6 +2273,20 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
     const { action } = objectBody(request.body)
     const { player } = character
     const state = player.reunions?.[id]
+    if (action === 'ticket') {
+      if (player.goldIngot < REUNION_TICKET_COST) throw new GameError(409, 'INGOT_INSUFFICIENT', `元宝不足：故人重逢令需 ${REUNION_TICKET_COST} 元宝`)
+      settle(character, now)
+      player.goldIngot -= REUNION_TICKET_COST
+      logIngot(character, -REUNION_TICKET_COST, 'reunion-ticket', undefined)
+      const companion = character.companionAffinity[id] ??= blankCompanionState(id)
+      companion.met = true
+      companion.recruited = true
+      companion.affinity = Math.max(companion.affinity, 100)
+      const reunions = player.reunions ??= {}
+      reunions[id] = { ...(state ?? newReunion()), step: 'DONE' }
+      await saveCompanion(client, character, id)
+      return { result: { action }, changed: true }
+    }
     if (action === 'inquire' && (!state || state.step === 'CLUES')) {
       if (player.silver < REUNION_INQUIRE_COST) throw new GameError(409, 'SILVER_INSUFFICIENT', '纹银不足')
       const clues = recordReunionClue(character, quest, 'inn', now)
@@ -2148,6 +2357,7 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
   function trialBattle(
     character: Character, stage: TrialStageConfig, now: number, rewards?: BattleReportDTO['rewards'], answer?: string, tryRetreat = false,
   ) {
+    markDaily(character, 'battle', now)
     return simulateServerBattle({
       sceneTitle: `${stage.code} ${stage.title}`,
       mode: 'SOLO_STORY',
@@ -2222,6 +2432,7 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
     if (skillDrop) {
       await client.query('INSERT INTO player_skills VALUES ($1, $2, 1) ON CONFLICT DO NOTHING', [player.id, skillDrop.id])
       character.learnedSkills[skillDrop.id] = 1
+      learnedSkill(character, skillDrop.id)
     }
     if (recruits.length) {
       const states = recruitTrialCompanions(character.companionAffinity, [stage.id])
@@ -2232,6 +2443,7 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
     for (const drop of drops) {
       await client.query('INSERT INTO player_items (player_id, item_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [player.id, drop.id])
       character.ownedItemIds.push(drop.id)
+      gainedItem(character, drop.id)
     }
     const champion = await awardChapterOneTitle(player, stage.id, report, client)
     if (!firstClear) {

@@ -178,6 +178,7 @@ function inspectReward(id: string) {
             <span class="chip chip-gold tabular-nums">纹银 +{{ rewards.silver.toLocaleString() }}</span>
             <span v-if="rewards.sectContrib" class="chip tabular-nums">门派贡献 +{{ rewards.sectContrib }}</span>
             <span v-if="rewards.karma" class="chip tabular-nums">侠义 +{{ rewards.karma }}</span>
+            <span v-if="rewards.ingot" class="chip chip-gold tabular-nums">元宝 +{{ rewards.ingot }}</span>
             <button
               v-for="it in rewards.items ?? []" :key="it.id"
               class="chip tier-chip" :class="TIER_META[it.tier].cls" @click="inspectReward(it.id)"

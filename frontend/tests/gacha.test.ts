@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { GACHA_HARD_PITY, gachaEffectiveRedRate, REUNION_AFTER } from '@/config/gachaData'
-import { rollGacha } from '@/network/mockEngine'
+import { GACHA_BASE_RATES, GACHA_HARD_PITY, gachaEffectiveRedRate, REUNION_AFTER, rollGacha } from '@/config/gachaData'
 import { newStore } from './helpers'
 
 /** 可复现的线性同余随机数 */
@@ -29,22 +28,22 @@ describe('抽取引擎（模拟服务端）', () => {
     }
     const pct = (k: keyof typeof cnt) => (cnt[k] / N) * 100
     expect(maxGap).toBeLessThanOrEqual(GACHA_HARD_PITY)
-    expect(Math.abs(pct('orange') - 8)).toBeLessThan(0.4)
-    expect(Math.abs(pct('purple') - 30)).toBeLessThan(0.7)
+    expect(Math.abs(pct('orange') - GACHA_BASE_RATES.orange)).toBeLessThan(0.4)
+    expect(Math.abs(pct('purple') - GACHA_BASE_RATES.purple)).toBeLessThan(0.7)
     // 含保底的综合出率：公示的解析值应与模拟吻合
     expect(Math.abs(pct('red') - gachaEffectiveRedRate())).toBeLessThan(0.15)
   })
 
-  it('软保底边界：第 59 抽仍是基础 1.5%，第 60 抽起神品概率升到 6.5%', () => {
-    // 掷点 6%：第 59 抽时神品只有 1.5%，落入绝品档；第 60 抽软保底升到 6.5%，同一掷点即为神品
+  it('软保底边界：第 69 抽仍是基础 0.8%，第 70 抽起神品概率升到 7.8%', () => {
+    // 掷点 6%：第 69 抽时神品只有 0.8%，落入绝品档；第 70 抽软保底升到 7.8%，同一掷点即为神品
     const at = (pity: number) => rollGacha({ count: 1, pity, pullsSoFar: 0, rng: () => 0.06 }).draws[0].tier
-    expect(at(58)).not.toBe('red') // 第 59 抽
-    expect(at(59)).toBe('red') // 第 60 抽
+    expect(at(68)).not.toBe('red') // 第 69 抽
+    expect(at(69)).toBe('red') // 第 70 抽
   })
 
-  it('公示的综合神品出率约 2.4%（规则改动必须同步修改公示）', () => {
-    expect(gachaEffectiveRedRate()).toBeGreaterThan(2.3)
-    expect(gachaEffectiveRedRate()).toBeLessThan(2.5)
+  it('公示的综合神品出率约 1.8%（规则改动必须同步修改公示）', () => {
+    expect(gachaEffectiveRedRate()).toBeGreaterThan(1.7)
+    expect(gachaEffectiveRedRate()).toBeLessThan(1.9)
   })
 
   it('十连必出上品及以上', () => {
@@ -88,11 +87,11 @@ describe('客栈结缘：结算', () => {
     expect(s.companionOf('qiuchuji')?.baseHp).toBe(Math.round(7000 * 1.12))
   })
 
-  it('第 80 抽硬保底出神品，计数清零；十连保底上品；扣费正确', () => {
+  it('第 90 抽硬保底出神品，计数清零；十连保底上品；扣费正确', () => {
     const s = newStore('NEW')
     s.player.goldIngot = 5000
     vi.spyOn(Math, 'random').mockReturnValue(0.99) // 永远落在良品档
-    s.gacha.pity = GACHA_HARD_PITY - 1
+    s.player.gacha = { pulls: 0, pity: GACHA_HARD_PITY - 1 }
     s.pullGacha(1)
     expect(s.gachaReveal?.results[0].draw).toMatchObject({ tier: 'red', pityTriggered: true })
     expect(s.gacha.pity).toBe(0)

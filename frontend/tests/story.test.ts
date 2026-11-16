@@ -147,7 +147,7 @@ describe('丐帮污净抉择与君山大会', () => {
       hero.challengeSectPromotion()
       expect(hero.activeBattle).toBeNull()
 
-      hero.feast.cooked.push('jiaohuaji')
+      hero.player.feast = { ingredients: [], cooked: ['jiaohuaji'], lastCookDay: 0 }
       const silver = hero.player.silver
       hero.prepareGaibangDish('jiaohuaji')
       hero.prepareGaibangDish('haoqiu_tang')
@@ -219,7 +219,7 @@ describe('丐帮污净抉择与君山大会', () => {
     old.joinSect('gaibang')
     Object.assign(old.player, { sectRank: 5, gaibangBranch: 'WUYI' })
     old.learnedSkills.xianglong_18 = 3
-    old.feast.cooked.push(...GAIBANG_FINAL_DISHES.map((dish) => dish.id))
+    old.player.feast = { ingredients: [], cooked: GAIBANG_FINAL_DISHES.map((dish) => dish.id), lastCookDay: 0 }
     old.saveNow()
     const hero = newStore()
     hero.continueGame()

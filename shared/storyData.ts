@@ -613,6 +613,14 @@ export const ADVENTURES: AdventureConfig[] = [
 
 export const adventureById = (id: string) => ADVENTURES.find((a) => a.id === id)
 
+/** 好感上限随主线章节推进抬高：三章前 300，五章前 600，通关第一卷 1000 */
+export function affinityCapFor(maxChapterId: number): number {
+  const lastNodeOf = (chapter: number) => Math.max(...STORY_CHAPTERS.filter((n) => n.chapter === chapter).map((n) => n.id))
+  if (maxChapterId > lastNodeOf(5)) return 1000
+  if (maxChapterId > lastNodeOf(3)) return 600
+  return 300
+}
+
 export function storyFirstClearReward(chapter: StoryNodeConfig) {
   const plot = chapter.firstClear
   return {

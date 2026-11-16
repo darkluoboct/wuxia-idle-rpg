@@ -16,7 +16,7 @@ export function useCultivation({ actions, selectTab, logTrialDrop, logForgeMater
   logForgeMaterials: (count: number) => void
   logPatrolCache: (reward: NonNullable<IdleGain['patrolCache']>) => void
   mockSettlePatrol: (now?: number) => void
-  companions: Pick<ReturnType<typeof useCompanions>, 'onOfflineSettled'>
+  companions: Pick<ReturnType<typeof useCompanions>, 'onOfflineSettled' | 'logFeastIngredient'>
 }) {
   const playerStore = usePlayerStore()
   const {
@@ -32,7 +32,8 @@ export function useCultivation({ actions, selectTab, logTrialDrop, logForgeMater
   } = storeToRefs(playerStore)
   const uiStore = useGameUiStore()
   const { showToast, appendLog } = uiStore
-  const { onOfflineSettled } = companions
+  const { onOfflineSettled, logFeastIngredient } = companions
+  const { markDaily } = playerStore
 
   function getIdleRewards(now = Date.now()) {
     const live = onlineState.value
@@ -69,10 +70,15 @@ export function useCultivation({ actions, selectTab, logTrialDrop, logForgeMater
           { type: 'text', text: ` 得到${COMPANIONS[id].name}的寻访线索 +${gain}` },
         ])
       }
+      if (result.feastIngredient) logFeastIngredient(result.feastIngredient)
+      if (result.contestIngot) {
+        appendLog('JIANGHU', [{ type: 'tag', text: '门派演武', tone: 'gold' }, { type: 'text', text: ` 上周演武论功，领得 ${result.contestIngot} 元宝。` }])
+      }
     }, () => {
       const now = Date.now()
       settleMockIdle(now, true)
       mockSettlePatrol(now)
+      markDaily('settle')
     })
   }
 

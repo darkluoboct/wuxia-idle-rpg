@@ -6,7 +6,7 @@ import type { AdventureCtx, Reward } from './storyData'
 export * from '../../../shared/gameData.ts'
 
 // 第一卷主线 / 支线数据见 storyData.ts，这里统一再导出，保持对外 import 路径稳定
-export { STORY_ARCS, STORY_CHAPTERS, ADVENTURES, adventureById, STAT_LABEL } from './storyData'
+export { STORY_ARCS, STORY_CHAPTERS, ADVENTURES, adventureById, affinityCapFor, STAT_LABEL } from './storyData'
 export type { StoryNodeConfig as StoryChapterConfig, Reward, AdventureBattle, AdventureConfig, AdventureChoice, AdventureCtx, StatKey } from './storyData'
 
 /**
@@ -120,12 +120,4 @@ export function validateGameData(): string[] {
     if (l && r) chk(l.role !== 'RIGHT' && r.role !== 'LEFT', `羁绊 ${t.name}: 伙伴站位与左右翼冲突`)
   }
   return errs
-}
-
-/** 好感上限随主线推进抬高：通关第 3 章 → 600，通关第 5 章 → 1000，此前 300（伙伴专题 §六） */
-export function affinityCapFor(maxChapterId: number): number {
-  const lastNodeOf = (chapter: number) => Math.max(...STORY_CHAPTERS.filter((n) => n.chapter === chapter).map((n) => n.id))
-  if (maxChapterId > lastNodeOf(5)) return 1000
-  if (maxChapterId > lastNodeOf(3)) return 600
-  return 300
 }

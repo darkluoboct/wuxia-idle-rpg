@@ -94,18 +94,27 @@ test('联机注册、创角、同图聊天、领取收益和换装读档', async
     await alice.game.getByRole('button', { name: '领取修行收益' }).click()
     expect((await settlement).ok()).toBe(true)
     const stage = alice.game.getByRole('region', { name: '江湖舞台' })
+    const worn = stage.getByRole('button', { name: '查看已穿戴的青钢长剑' })
     await tab(alice.game, '武库').click()
     await stage.getByRole('tab', { name: '装备', exact: true }).click()
-    await stage.getByRole('button', { name: '青钢长剑', exact: true }).click()
-    await stage.getByRole('button', { name: '装备青钢长剑', exact: true }).click()
-    await expect(stage.getByRole('button', { name: '查看已穿戴的青钢长剑' })).toBeVisible()
+    // 新角色开局佩着青钢长剑：卸下后读档仍是空手，再从背包换上
+    await expect(worn).toBeVisible()
+    const saved = alice.page.waitForResponse(
+      (response) => response.url().includes('/api/v1/loadout/') && response.request().method() === 'PUT',
+    )
+    await stage.getByRole('button', { name: '卸下青钢长剑', exact: true }).click()
+    expect((await saved).ok()).toBe(true)
+    await expect(worn).toHaveCount(0)
     await alice.page.reload({ waitUntil: 'domcontentloaded' })
     await expect(alice.game.getByRole('region', { name: '当前侠客' })).toContainText(alice.nickname)
     await enter(alice.game)
     await expect(tab(alice.game, '修行')).toHaveAttribute('aria-selected', 'true')
     await tab(alice.game, '武库').click()
     await stage.getByRole('tab', { name: '装备', exact: true }).click()
-    await expect(stage.getByRole('button', { name: '查看已穿戴的青钢长剑' })).toBeVisible()
+    await expect(stage.getByRole('button', { name: '卸下青钢长剑', exact: true })).toHaveCount(0)
+    await stage.getByRole('button', { name: '青钢长剑', exact: true }).click()
+    await stage.getByRole('button', { name: '装备青钢长剑', exact: true }).click()
+    await expect(worn).toBeVisible()
   } finally {
     await Promise.all(contexts.map((context) => context.close()))
   }

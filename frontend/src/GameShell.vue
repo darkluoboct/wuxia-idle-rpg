@@ -6,6 +6,7 @@ import { IS_MOCK_MODE } from '@/network/apiClient'
 import { TIER_META } from '@/config/uiMeta'
 import LeftCharacterSidebar from '@/components/LeftCharacterSidebar.vue'
 import JianghuQuestScroll from '@/components/JianghuQuestScroll.vue'
+import DailyTasks from '@/components/DailyTasks.vue'
 import RightJianghuSidebar from '@/components/RightJianghuSidebar.vue'
 import './wuxia.css'
 const CharacterSelect = defineAsyncComponent(() => import('@/components/CharacterSelect.vue'))
@@ -63,7 +64,7 @@ const toggleDrawer = (d: 'CHAR' | 'WORLD') => (store.mobileDrawer = store.mobile
 /* ---------- 键盘 ---------- */
 function handleKeydown(e: KeyboardEvent) {
   if (!props.visible || store.onlinePhase !== 'ready' || choosingCharacter.value) return
-  if (IS_MOCK_MODE && (!store.gameMode || store.gachaReveal)) return
+  if ((IS_MOCK_MODE && !store.gameMode) || store.gachaReveal) return
   if (e.key === 'Escape') {
     if (store.confirmDialog) store.resolveConfirm(false)
     else if (store.inspectModal) store.inspectModal = null
@@ -165,6 +166,7 @@ const TOAST_GLYPH = { gold: '喜', danger: '警', info: '讯' } as const
       <aside id="world-rail" class="wuxia-rail world-rail" aria-label="江湖卷" :data-open="store.mobileDrawer === 'WORLD'">
         <div class="rail-frame">
           <JianghuQuestScroll />
+          <DailyTasks />
           <RightJianghuSidebar />
         </div>
       </aside>
@@ -239,7 +241,7 @@ const TOAST_GLYPH = { gold: '喜', danger: '警', info: '讯' } as const
     </Transition>
 
     <!-- ==================== 客栈结缘揭晓动画 ==================== -->
-    <GachaOverlay v-if="IS_MOCK_MODE && store.gachaReveal" />
+    <GachaOverlay v-if="store.gachaReveal" />
 
     <!-- ==================== 开局选择 ==================== -->
     <div

@@ -3,7 +3,7 @@ import type { GaibangBranch, RichSegment } from '@/network/protocol'
 import { ITEMS, MAPS, SECTS, SKILLS, type SectConfig } from '@/config/gameData'
 import { IS_MOCK_MODE } from '@/network/apiClient'
 import { resolveBattleLoadout } from '../../../shared/battleEffects.ts'
-import { GAIBANG_BRANCHES, GAIBANG_DEBATE, gaibangDishFlag, gaibangSilverGain } from '../../../shared/gaibang.ts'
+import { GAIBANG_BRANCHES, GAIBANG_DEBATE, gaibangDishFlag, gaibangDishPrepared, gaibangSilverGain } from '../../../shared/gaibang.ts'
 import { huashanDay } from '../../../shared/huashan.ts'
 import {
   SECT_SALUTE_QI,
@@ -388,7 +388,7 @@ export function useSect({ actions, cultivation, battle, story, world, companions
   const gaibangDishes = computed(() => GAIBANG_FINAL_DISHES.map((dish) => ({
     ...dish,
     mapName: MAPS.find((map) => map.id === dish.mapId)?.name ?? dish.mapId,
-    prepared: (IS_MOCK_MODE && feast.value.cooked.includes(dish.id)) || sectFlags.value.includes(gaibangDishFlag(dish.id)),
+    prepared: gaibangDishPrepared(dish.id, sectFlags.value, feast.value.cooked),
   })))
   const gaibangFinalReady = computed(() => gaibangDishes.value.every((dish) => dish.prepared))
 

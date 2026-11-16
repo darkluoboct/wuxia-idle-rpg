@@ -20,6 +20,7 @@ import { useWorld } from './world'
 import { useSect } from './sect'
 import { useMarket } from './market'
 import { useLocalGame } from './localGame'
+import { useEconomy } from './economy'
 
 export type { MainTab } from './gameUiStore'
 export type { GachaResultView } from './companions'
@@ -44,7 +45,7 @@ export const useGameStore = defineStore('wuxiaGame', () => {
     playPendingDuel: () => world.playPendingDuel(),
   })
 
-  const ftue = useFtue({ selectTab })
+  const ftue = useFtue({ selectTab, actions })
 
   const companions = useCompanions({ actions, battle })
 
@@ -66,9 +67,11 @@ export const useGameStore = defineStore('wuxiaGame', () => {
 
   const sect = useSect({ actions, cultivation, battle, story, world, companions })
 
-  const market = useMarket({ actions, cultivation, ftue })
+  const market = useMarket({ actions, cultivation })
 
-  const local = useLocalGame({ battle, companions, world, ftue })
+  const local = useLocalGame({ battle, companions, world })
+
+  const economy = useEconomy({ actions })
 
   const playerRefs = storeToRefs(playerStore)
   const { onlineState, activeCoCultivation, player, coCultivationInvite } = playerRefs
@@ -269,6 +272,8 @@ export const useGameStore = defineStore('wuxiaGame', () => {
     travelTo: world.travelTo,
     challengeChapter: story.challengeChapter,
     trial: trial.trial,
+    daily: economy.daily,
+    claimDailyIngot: economy.claimDailyIngot,
     ftue: ftue.ftue,
     ftueQuest: ftue.ftueQuest,
     ftueReady: ftue.ftueReady,
