@@ -83,7 +83,7 @@ export function artifactChallengeBlock({ player, learnedSkills, state, isHolder,
   if (isHolder && state === 'HELD') return '打狗棒就在你手里，周日等人来攻擂'
   if (!learnedSkills[DAGOU_STAFF.proofSkillId]) return '通过丐帮终考、学会《天下无狗》才能上君山擂台'
   if (player.betrayedSectIds?.includes(DAGOU_STAFF.sectId)) return '叛出丐帮的人不得再碰打狗棒'
-  if (state === 'HELD' && !isArenaDay(arenaDay(now))) return '君山擂台每周日开擂'
+  if (state === 'HELD' && !isArenaDay(arenaDay(now))) return '今日不开擂，君山擂台每周日开擂'
   if (artifactAttemptsLeft(player, now) <= 0) return `今日 ${DAGOU_STAFF.dailyAttempts} 次上擂已用尽`
 }
 

@@ -17,12 +17,15 @@ const left = (expiresAt: number) => {
 }
 
 /* ---------- 摆摊 ---------- */
+const keyOf = (entry: { kind: string; id: string }) => `${entry.kind}:${entry.id}`
 const wareKey = ref('')
-const ware = computed(() => store.stallWares.find((entry) => `${entry.kind}:${entry.id}` === wareKey.value) ?? store.stallWares[0])
+const ware = computed(() => store.stallWares.find((entry) => keyOf(entry) === wareKey.value) ?? store.stallWares[0])
+// 选中的货卖光或还没选时，下拉框落到第一样货上，免得显示成空白
+watch(ware, (entry) => { wareKey.value = entry ? keyOf(entry) : '' }, { immediate: true })
 const qty = ref(1)
 const unitPrice = ref(0)
 // 换一样货：数量默认全摆出来，单价默认参考价
-watch(() => ware.value && `${ware.value.kind}:${ware.value.id}`, () => {
+watch(wareKey, () => {
   if (!ware.value) return
   qty.value = Math.min(ware.value.stock, STALL.maxQty)
   unitPrice.value = ware.value.refPrice
@@ -75,7 +78,7 @@ onUnmounted(() => clearInterval(timer))
         <div class="grid gap-2 sm:grid-cols-[minmax(0,1fr)_5.5rem_6.5rem_auto]">
           <label class="min-w-0 text-xs text-ink3">货物
             <select v-model="wareKey" class="well border border-line bg-raised p-1.5 text-sm text-ink mt-1 w-full">
-              <option v-for="entry in store.stallWares" :key="`${entry.kind}:${entry.id}`" :value="`${entry.kind}:${entry.id}`">
+              <option v-for="entry in store.stallWares" :key="keyOf(entry)" :value="keyOf(entry)">
                 {{ entry.name }}（有 {{ entry.stock }}）
               </option>
             </select>
