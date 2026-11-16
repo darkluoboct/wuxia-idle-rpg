@@ -112,6 +112,9 @@ export interface PlayerDTO {
   artifactDuel?: { day: number; used: number } // 君山擂台当日已上擂次数
   artifactHonors?: string[]         // 曾执掌过的全服唯一真品
   artifactLoss?: { itemId: string; at: number; cause: 'SEIZE' | 'RECALL' | 'BETRAY'; iron: number; by: string | null } // 最近一次失去真品
+  stallOpen?: number                // 自己在鬼市还没收摊的摊位数
+  stallSystem?: { day: number; bought: string[] } // 当日已买过的鬼市散客摊
+  stallIncome?: { at: number; silver: number; returned: number } // 最近一次收摊结算：入账纹银、退回的货物份数
   auctionTickets?: number[]         // 鬼市红封签：21:00 前领过每日江湖事的场次，落槌后兑付
   auctionDividend?: { day: number; ingot: number } // 最近一次兑付的红封（未中签为 0）
   gacha?: { pulls: number; pity: number }
@@ -676,6 +679,40 @@ export type AuctionResult =
   | { action: 'claim'; day: number; itemId: string; refunded: number }
   | { action: 'dividend'; day: number }
 
+/** 子时鬼市蒙面摊位 */
+export interface StallListingDTO {
+  id: string
+  kind: 'HERB' | 'FRAGMENT'
+  goodsId: string
+  qty: number                // 还剩多少份
+  unitPrice: number
+  seller: string             // 摊主代号；散客摊为「鬼市散客」
+  system: boolean            // 鬼市散客摊：整摊买走，每人每天一次
+  expiresAt: number
+  /** 只在自己的摊位上有：已卖出的份数、还没入账的纹银 */
+  sold?: number
+  proceeds?: number
+}
+
+export interface StallBoardDTO {
+  serverTime: number
+  listings: StallListingDTO[]   // 别人的摊位与散客摊
+  mine: StallListingDTO[]
+  recent: { kind: 'HERB' | 'FRAGMENT'; goodsId: string; qty: number; unitPrice: number; at: number }[]
+}
+
+export type StallAction =
+  | { action: 'list'; kind: 'HERB' | 'FRAGMENT'; goodsId: string; qty: number; unitPrice: number }
+  | { action: 'buy'; listingId: string; qty: number; unitPrice: number }
+  | { action: 'cancel'; listingId: string }
+  | { action: 'collect' } // 只为触发收摊结算，本身不改动任何东西
+
+export type StallResult =
+  | { action: 'list'; listingId: string; kind: 'HERB' | 'FRAGMENT'; goodsId: string; qty: number; unitPrice: number; fee: number }
+  | { action: 'buy'; kind: 'HERB' | 'FRAGMENT'; goodsId: string; qty: number; spent: number }
+  | { action: 'cancel'; kind: 'HERB' | 'FRAGMENT'; goodsId: string; returned: number; silver: number }
+  | { action: 'collect' }
+
 /** WebSocket 实时推送消息联合类型 */
 export type WsServerEvent =
   | { event: 'ROOM_SYNC'; data: { mapId: string; onlineCount: number; players: RoomPlayerDTO[] } }
@@ -690,6 +727,7 @@ export type WsServerEvent =
   | { event: 'SECT_BOUNTY_ISSUED'; data: { traitorName: string; sectName: string; stolenSkill: string; rewardSilver: number } }
   | { event: 'UNIQUE_ARTIFACT_CHANGED'; data: { itemId: string; cause: 'GRANT' | 'SEIZE' | 'RECALL' | 'BETRAY'; newOwner: string | null; previousOwner: string | null } }
   | { event: 'AUCTION_OUTBID'; data: { day: number; itemId: string; refund: number; price: number } }
+  | { event: 'STALL_SOLD'; data: { kind: 'HERB' | 'FRAGMENT'; goodsId: string; qty: number; silver: number } }
 
 /** 客栈结缘：单抽结果（真实环境由服务端产出并记审计日志，客户端只负责展示） */
 export interface GachaDrawDTO {

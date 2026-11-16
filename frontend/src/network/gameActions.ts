@@ -1,5 +1,7 @@
 import type {
-  ArtifactAction, ArtifactResult, AuctionAction,
+  ArtifactAction,
+  ArtifactResult,
+  AuctionAction,
   AuctionResult,
   AwakenResult,
   BattleReportDTO,
@@ -24,6 +26,8 @@ import type {
   SectContestResult,
   SectResult,
   SkillUpgradeResult,
+  StallAction,
+  StallResult,
   StoryAdventureResult,
   StoryChallengeResult,
   StorySnakeChoice,
@@ -88,6 +92,7 @@ interface Actions {
   buy: [{ listingId: string }, { spentSilver: number }]
   auction: [AuctionAction, AuctionResult]
   artifact: [ArtifactAction, ArtifactResult]
+  stall: [StallAction, StallResult]
   sect: [SectAction, SectResult]
   move: [{ mapId: string; action?: 'depart' | 'arrive' }, MapMoveResult]
   huashan: [HuashanAction, HuashanResult]
@@ -144,6 +149,7 @@ const requests: { [K in keyof Actions]: (input: Actions[K][0]) => Request | unde
   buy: (body) => ['POST', '/market/ghost/buy', body],
   auction: (body) => ['POST', '/market/auction', body],
   artifact: (body) => ['POST', '/market/artifacts', body],
+  stall: (body) => ['POST', '/market/stalls', body],
   sect: (body) => ['POST', '/sect', body],
   move: (body) => ['POST', '/map/move', body],
   huashan: (body) => ['POST', '/huashan', body],

@@ -13,12 +13,13 @@ import { DAILY_TASKS, INGOT } from '../../shared/economy.ts'
 import { DISHES, FEAST_TARGET_FLAG } from '../../shared/feast.ts'
 import { FTUE_QUESTS } from '../../shared/ftueQuests.ts'
 import { GACHA_DUP_TOKENS, GACHA_HARD_PITY, GACHA_SINGLE_COST, REUNION_TICKET_COST } from '../../shared/gacha.ts'
+import { STALL, stallGoods } from '../../shared/stalls.ts'
 import { arenaDay, arenaWindow, DAGOU_ELDER, DAGOU_STAFF, isArenaDay, nextArenaDay } from '../../shared/artifacts.ts'
 import { AUCTION_BID_STEP, AUCTION_SOFT_CLOSE_MS, auctionDay, auctionLot, auctionWindow } from '../../shared/ghostAuction.ts'
 import { computeDerivedStats } from '../../shared/battle.ts'
 import { huashanSeason } from '../../shared/huashan.ts'
 import { createStarterCharacter, legacyAcupoints } from '../../shared/player.ts'
-import type { ArtifactBoardDTO, ArtifactResult, AuctionBoardDTO, AuctionResult, AwakenResult, BattleReportDTO, BountyBoardDTO, BountyEntryDTO, FeastResult, FtueClaimResult, GachaResult, GameAction, HuashanBoardDTO, HuashanResult, IdleGain, LibraryResult, LibraryStatusDTO, PlayerSnapshot, RaidId, ReunionResult, SectContestBoardDTO, SectContestResult, SectResult, StoryAdventureResult, StoryChallengeResult, WsServerEvent } from '../../shared/protocol.ts'
+import type { ArtifactBoardDTO, ArtifactResult, AuctionBoardDTO, AuctionResult, AwakenResult, BattleReportDTO, BountyBoardDTO, BountyEntryDTO, FeastResult, FtueClaimResult, GachaResult, GameAction, HuashanBoardDTO, HuashanResult, IdleGain, LibraryResult, LibraryStatusDTO, PlayerSnapshot, RaidId, ReunionResult, SectContestBoardDTO, SectContestResult, SectResult, StallBoardDTO, StallResult, StoryAdventureResult, StoryChallengeResult, WsServerEvent } from '../../shared/protocol.ts'
 import { QUANZHEN_LIBRARY } from '../../shared/quanzhen.ts'
 import { BETRAYAL_BOUNTY, SECT_CHIEF_SALUTE_QI, SECT_SALUTE_QI, sectContestEndsAt, sectContestWeek } from '../../shared/sectProgress.ts'
 import { ONLINE_STORY_CHAPTERS, ONLINE_STORY_PROGRESS_VERSION } from '../../shared/storyData.ts'
@@ -1273,6 +1274,122 @@ describe('联机战斗', { skip: connection ? false : '请设置 GAME_TEST_DATAB
       assert.match((await blocked(strong, null)).message, /叛出丐帮/)
       const { rows: owners } = await db.query('SELECT 1 FROM player_items WHERE item_id = $1', [itemId])
       assert.equal(owners.length, 0)
+    } finally {
+      fixedServerTime = undefined
+    }
+  })
+
+  it('鬼市蒙面摊位：上架代管并收摆摊费，限价限级，分批成交抽成，纹银在摊主下次操作入账，到期撤摊退货，散客摊每日一次', async () => {
+    const path = '/market/stalls'
+    const [seller, buyer] = await Promise.all(['stall_a', 'stall_b'].map(createPlayer))
+    const rookie = await createRookie('stall_c')
+    await profile(seller.id, { alchemy: { herbs: { sanqi: 10, linghu_cao: 2, cheqian_cao: 9 }, pity: {}, residue: 0 }, skillFragments: { luoying_zhang: 3 } })
+    await profile(rookie.id, { alchemy: { herbs: { sanqi: 5 }, pity: {}, residue: 0 } })
+    const reject = async (who: typeof seller, body: Record<string, unknown>) => {
+      const response = await who.post(path, body)
+      assert.equal(response.statusCode, 409, response.body)
+      return response.json<{ code: string; message: string }>()
+    }
+    const board = (who: typeof seller) => who.read<StallBoardDTO>(path)
+    const herbs = async (who: typeof seller) => (await who.read()).player.alchemy?.herbs ?? {}
+    const start = Date.now() + 40 * 86_400_000
+    fixedServerTime = start
+    try {
+      // 限级、限价、限量
+      const sanqi = stallGoods('HERB', 'sanqi')!
+      assert.deepEqual([sanqi.refPrice, sanqi.minPrice, sanqi.maxPrice], [20, 10, 40])
+      assert.match((await reject(rookie, { action: 'list', kind: 'HERB', goodsId: 'sanqi', qty: 1, unitPrice: 20 })).message, /10 级/)
+      for (const offer of [{ qty: 10, unitPrice: 9 }, { qty: 10, unitPrice: 41 }, { qty: 11, unitPrice: 30 }, { qty: 0, unitPrice: 30 }, { qty: 1.5, unitPrice: 30 }]) {
+        assert.equal((await reject(seller, { action: 'list', kind: 'HERB', goodsId: 'sanqi', ...offer })).code, 'STALL_OFFER_REJECTED')
+      }
+      assert.equal((await reject(seller, { action: 'list', kind: 'ITEM', goodsId: 'qinggang_sword', qty: 1, unitPrice: 30 })).code, 'STALL_OFFER_REJECTED')
+
+      // 上架：货物由鬼市代管，摆摊费 2% 当场收取
+      const silver = (await seller.read()).player.silver
+      const listed = await seller.act<StallResult & { action: 'list' }>(path, { action: 'list', kind: 'HERB', goodsId: 'sanqi', qty: 10, unitPrice: 30 })
+      assert.deepEqual([listed.result.fee, listed.snapshot.player.silver, listed.snapshot.player.alchemy?.herbs.sanqi, listed.snapshot.player.stallOpen], [6, silver - 6, undefined, 1])
+      const { listingId } = listed.result
+      const seen = await board(buyer)
+      const stall = seen.listings.find(({ id }) => id === listingId)!
+      assert.deepEqual([seen.listings.filter(({ system }) => system).length, seen.mine.length], [3, 0])
+      assert.deepEqual([stall.qty, stall.unitPrice, stall.system, stall.sold, stall.expiresAt], [10, 30, false, undefined, start + STALL.durationMs])
+      assert.match(stall.seller, /^蒙面摊主·/)
+      const own = await board(seller)
+      assert.deepEqual([own.listings.some(({ id }) => id === listingId), own.mine.map(({ id, sold, proceeds }) => [id, sold, proceeds])], [false, [[listingId, 0, 0]]])
+      assert.equal((await reject(seller, { action: 'buy', listingId, qty: 1, unitPrice: 30 })).code, 'STALL_OWN')
+      assert.equal((await reject(rookie, { action: 'buy', listingId, qty: 1, unitPrice: 30 })).code, 'STALL_LEVEL_REQUIRED')
+      assert.equal((await reject(buyer, { action: 'buy', listingId, qty: 1, unitPrice: 29 })).code, 'STALL_PRICE_CHANGED')
+      assert.equal((await reject(buyer, { action: 'buy', listingId, qty: 11, unitPrice: 30 })).code, 'STALL_SHORT')
+
+      // 分批成交：买家当场拿货；摊主收到提醒，纹银扣一成后在下次操作入账
+      const socket = await seller.connect()
+      const sold = (async () => {
+        for await (const [message] of on(socket, 'message', { signal: AbortSignal.timeout(5_000) })) {
+          const parsed = JSON.parse(message.data) as WsServerEvent
+          if (parsed.event === 'STALL_SOLD') return parsed.data
+        }
+      })()
+      const purse = (await buyer.read()).player.silver
+      const stock = (await herbs(buyer)).sanqi ?? 0
+      const first = await buyer.act<StallResult>(path, { action: 'buy', listingId, qty: 4, unitPrice: 30 })
+      assert.deepEqual(first.result, { action: 'buy', kind: 'HERB', goodsId: 'sanqi', qty: 4, spent: 120 })
+      assert.deepEqual([first.snapshot.player.silver, first.snapshot.player.alchemy?.herbs.sanqi], [purse - 120, stock + 4])
+      assert.deepEqual(await sold, { kind: 'HERB', goodsId: 'sanqi', qty: 4, silver: 108 })
+      socket.close()
+      assert.equal((await seller.read()).player.silver, silver - 6)
+      assert.deepEqual((await board(seller)).mine.map(({ qty, sold: gone, proceeds }) => [qty, gone, proceeds]), [[6, 4, 108]])
+      const collected = await seller.act<StallResult>(path, { action: 'collect' })
+      assert.deepEqual([collected.snapshot.player.silver, collected.snapshot.player.stallIncome, collected.snapshot.player.stallOpen],
+        [silver - 6 + 108, { at: start, silver: 108, returned: 0 }, 1])
+      assert.equal((await seller.act<StallResult>(path, { action: 'collect' })).snapshot.player.silver, silver - 6 + 108)
+      await buyer.act<StallResult>(path, { action: 'buy', listingId, qty: 6, unitPrice: 30 })
+      assert.equal((await reject(buyer, { action: 'buy', listingId, qty: 1, unitPrice: 30 })).code, 'STALL_UNAVAILABLE')
+      fixedServerTime = start + 60_000
+      const emptied = await seller.act<StallResult>(path, { action: 'collect' })
+      assert.deepEqual([emptied.snapshot.player.silver, emptied.snapshot.player.stallIncome, emptied.snapshot.player.stallOpen],
+        [silver - 6 + 108 + 162, { at: start + 60_000, silver: 162, returned: 0 }, 0])
+      assert.deepEqual((await board(seller)).mine, [])
+      const { rows: sales } = await db.query('SELECT qty, unit_price, tax FROM stall_sales WHERE listing_id = $1 ORDER BY id', [listingId])
+      assert.deepEqual(sales, [{ qty: 4, unit_price: 30, tax: 12 }, { qty: 6, unit_price: 30, tax: 18 }])
+      assert.deepEqual((await board(buyer)).recent.slice(0, 2).map(({ goodsId, qty, unitPrice }) => [goodsId, qty, unitPrice]), [['sanqi', 6, 30], ['sanqi', 4, 30]])
+
+      // 残页也能摆；撤摊退货，摆摊费不退
+      const pages = await seller.act<StallResult & { action: 'list' }>(path, { action: 'list', kind: 'FRAGMENT', goodsId: 'luoying_zhang', qty: 3, unitPrice: 400 })
+      assert.deepEqual([pages.result.fee, pages.snapshot.player.skillFragments?.luoying_zhang, pages.snapshot.player.stallOpen], [24, undefined, 1])
+      const cancelled = await seller.act<StallResult>(path, { action: 'cancel', listingId: pages.result.listingId })
+      assert.deepEqual(cancelled.result, { action: 'cancel', kind: 'FRAGMENT', goodsId: 'luoying_zhang', returned: 3, silver: 0 })
+      assert.deepEqual([cancelled.snapshot.player.skillFragments?.luoying_zhang, cancelled.snapshot.player.stallOpen, cancelled.snapshot.player.silver],
+        [3, 0, emptied.snapshot.player.silver - 24])
+      assert.equal((await reject(seller, { action: 'cancel', listingId: pages.result.listingId })).code, 'STALL_UNAVAILABLE')
+
+      // 最多五摊；到期后买不到，摊主下次操作时剩货退回
+      const rare = await seller.act<StallResult & { action: 'list' }>(path, { action: 'list', kind: 'HERB', goodsId: 'linghu_cao', qty: 2, unitPrice: 1500 })
+      for (let index = 0; index < 4; index++) await seller.act(path, { action: 'list', kind: 'HERB', goodsId: 'cheqian_cao', qty: 1, unitPrice: 20 })
+      assert.match((await reject(seller, { action: 'list', kind: 'HERB', goodsId: 'cheqian_cao', qty: 1, unitPrice: 20 })).message, /最多同时摆 5 个/)
+      assert.equal((await seller.read()).player.stallOpen, 5)
+      await buyer.act<StallResult>(path, { action: 'buy', listingId: rare.result.listingId, qty: 1, unitPrice: 1500 })
+      fixedServerTime = start + 60_000 + STALL.durationMs
+      assert.equal((await reject(buyer, { action: 'buy', listingId: rare.result.listingId, qty: 1, unitPrice: 1500 })).code, 'STALL_UNAVAILABLE')
+      assert.equal((await board(buyer)).listings.filter(({ system }) => !system).length, 0)
+      const closed = await seller.act<StallResult>(path, { action: 'collect' })
+      assert.deepEqual([closed.snapshot.player.stallOpen, closed.snapshot.player.stallIncome], [0, { at: fixedServerTime, silver: 1350, returned: 5 }])
+      assert.deepEqual([closed.snapshot.player.alchemy?.herbs.linghu_cao, closed.snapshot.player.alchemy?.herbs.cheqian_cao], [1, 9])
+      const { rows: left } = await db.query('SELECT 1 FROM stall_listings WHERE seller_id = $1', [seller.id])
+      assert.equal(left.length, 0)
+
+      // 鬼市散客摊：按参考价上限整摊买走，每人每天一次，次日换货再开
+      const [system] = (await board(buyer)).listings.filter(({ system: fromMarket }) => fromMarket)
+      assert.deepEqual([system.seller, system.unitPrice], ['鬼市散客', stallGoods('HERB', system.goodsId)!.maxPrice])
+      const had = (await herbs(buyer))[system.goodsId] ?? 0
+      const before = (await buyer.read()).player.silver
+      const bought = await buyer.act<StallResult>(path, { action: 'buy', listingId: system.id, qty: system.qty, unitPrice: system.unitPrice })
+      assert.deepEqual([bought.snapshot.player.silver, bought.snapshot.player.alchemy?.herbs[system.goodsId]], [before - system.qty * system.unitPrice, had + system.qty])
+      assert.match((await reject(buyer, { action: 'buy', listingId: system.id, qty: system.qty, unitPrice: system.unitPrice })).message, /今天已经买过/)
+      assert.equal((await board(buyer)).listings.filter(({ system: fromMarket }) => fromMarket).length, 2)
+      assert.match((await reject(rookie, { action: 'buy', listingId: system.id, qty: system.qty, unitPrice: system.unitPrice })).message, /10 级/)
+      fixedServerTime += 86_400_000
+      assert.equal((await board(buyer)).listings.filter(({ system: fromMarket }) => fromMarket).length, 3)
+      assert.match((await reject(buyer, { action: 'buy', listingId: system.id, qty: system.qty, unitPrice: system.unitPrice })).message, /已经收摊/)
     } finally {
       fixedServerTime = undefined
     }

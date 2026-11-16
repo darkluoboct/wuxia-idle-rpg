@@ -121,8 +121,13 @@ const BRANCHES = '子丑寅卯辰巳午未申酉戌亥'
 /** 六十甲子 */
 export const AUCTION_MASK_COUNT = 60
 
+/** 六十甲子里的第 index 个名字，鬼市里用来给蒙面人起代号 */
+export function jiaziName(index: number) {
+  const n = ((index % AUCTION_MASK_COUNT) + AUCTION_MASK_COUNT) % AUCTION_MASK_COUNT
+  return `${STEMS[n % 10]}${BRANCHES[n % 12]}`
+}
+
 /** 出价人代号：服务端按每场的随机盐把角色映射到六十甲子之一，前端只见代号 */
 export function bidderMask(index: number) {
-  const n = ((index % AUCTION_MASK_COUNT) + AUCTION_MASK_COUNT) % AUCTION_MASK_COUNT
-  return `蒙面客·${STEMS[n % 10]}${BRANCHES[n % 12]}`
+  return `蒙面客·${jiaziName(index)}`
 }

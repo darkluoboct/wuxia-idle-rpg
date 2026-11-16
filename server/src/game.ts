@@ -26,11 +26,12 @@ import { claimDailyIngot, claimMilestoneIngots, huashanIngot, INGOT, markDailyTa
 import { awakenCompanion, blankCompanionState, pullGacha, REUNION_TICKET_COST } from '../../shared/gacha.ts'
 import { cookFeastDish, feastActive, gatherFeastIngredient } from '../../shared/feast.ts'
 import { ARENA_SCENE, artifactChallengeBlock, artifactState, DAGOU_STAFF, defendedArenas, honorArtifactHolder, simulateElderDuel, spendArtifactAttempt, surrenderArtifact } from '../../shared/artifacts.ts'
+import { buySystemStall, checkStallOffer, moveStallGoods, STALL, stallDay, stallInventory, stallMask, stallTax, SYSTEM_STALL_SELLER, systemStalls, systemStallsBought, type StallGoodsKind } from '../../shared/stalls.ts'
 import { AUCTION_MASK_COUNT, auctionDay, auctionDividend, auctionLot, auctionWindow, bidderMask, nextAuctionBid, ownsAuctionLot, settleAuctionTickets, softCloseAt, type AuctionTicketLot } from '../../shared/ghostAuction.ts'
 import { claimFtueQuest, emptyFtue, recordFtueForage, recordFtueRefine } from '../../shared/ftueQuests.ts'
 import { gainReunionClues, newReunion, reunionCluesToday, reunionEncounter, reunionWaitTime, REUNION_INQUIRE_COST, REUNION_QUESTS, REUNION_WAIT_HOURS, type ClueSource, type ReunionQuestConfig } from '../../shared/reunion.ts'
 import type {
-  ArtifactBoardDTO, ArtifactResult, AuctionBoardDTO, AuctionLotDTO, AuctionResult, AwakenResult, BattleReportDTO, BountyBoardDTO, BountyEntryDTO, ChapterOneStatueDTO, CoCultivationDTO, CoCultivationInviteDTO, CompanionState, CompanionWear, CultivationResult, DuelInviteDTO, FeastResult, ForgeInput, ForgeResult, FtueClaimResult, GachaResult, GameAction, HuashanBoardDTO, HuashanEntryDTO, HuashanResult, IdleGain, InnGiftResult, LibraryResult, LibraryStatusDTO, LoadoutPresetDTO, MapMoveResult, PersonalEquipSlot, PlayerDTO, PlayerSnapshot,
+  ArtifactBoardDTO, ArtifactResult, AuctionBoardDTO, AuctionLotDTO, AuctionResult, AwakenResult, BattleReportDTO, BountyBoardDTO, BountyEntryDTO, ChapterOneStatueDTO, CoCultivationDTO, CoCultivationInviteDTO, CompanionState, CompanionWear, CultivationResult, DuelInviteDTO, FeastResult, ForgeInput, ForgeResult, FtueClaimResult, GachaResult, GameAction, HuashanBoardDTO, HuashanEntryDTO, HuashanResult, IdleGain, InnGiftResult, LibraryResult, LibraryStatusDTO, LoadoutPresetDTO, MapMoveResult, PersonalEquipSlot, PlayerDTO, PlayerSnapshot, StallBoardDTO, StallListingDTO, StallResult,
   MirrorRankEntryDTO, ReunionResult, RichSegment, SectChiefDTO, SectContestBoardDTO, SectContestResult, SectResult, SkillSlotType, SkillUpgradeResult, StoryAdventureResult, StoryChallengeResult, StorySnakeChoiceResult, TrialChallengeResult, TrialDropDTO, TrialPatrolStatusDTO, TrialReplayResult,
   WsServerEvent,
 } from '../../shared/protocol.ts'
@@ -77,6 +78,8 @@ type Character = Omit<PlayerSnapshot, 'serverTime' | 'derivedStats' | 'idlePrevi
   ingotLog?: { delta: number; reason: string; ref?: string }[]
   /** 本次操作提交后要向全服在线侠客推送的消息 */
   broadcasts?: WsServerEvent[]
+  /** 本次操作提交后要单独告知某位侠客的消息 */
+  whispers?: { playerId: string; event: WsServerEvent }[]
 }
 
 /** 元宝变动先记在角色上，随存档一起写流水 */
@@ -597,6 +600,53 @@ async function touchArtifact(client: PoolClient, character: Character, now: numb
   else if (idle > 600_000) await client.query('UPDATE unique_artifacts SET seen_at = $2 WHERE item_id = $1', [row.item_id, now])
 }
 
+interface StallRow {
+  id: string
+  seller_id: string
+  kind: StallGoodsKind
+  goods_id: string
+  qty: number
+  unit_price: number
+  sold: number
+  proceeds: number
+  created_at: string
+  expires_at: string
+}
+
+/** 收一个摊：卖得的纹银入账；卖完、到期或撤摊的把剩货退回并删掉数据行。返回这个摊位是否已收掉 */
+async function closeStall(client: PoolClient, character: Character, row: StallRow, now: number, cancel = false) {
+  const { player } = character
+  player.silver += row.proceeds
+  const closed = cancel || row.qty === 0 || now >= Number(row.expires_at)
+  if (closed) {
+    if (row.qty) moveStallGoods(stallInventory(player), row.kind, row.goods_id, row.qty)
+    await client.query('DELETE FROM stall_listings WHERE id = $1', [row.id])
+  } else if (row.proceeds) {
+    await client.query('UPDATE stall_listings SET proceeds = 0 WHERE id = $1', [row.id])
+  }
+  return closed
+}
+
+/** 有摊位在外的侠客，每次操作前先结一次账 */
+async function settleStalls(client: PoolClient, character: Character, now: number) {
+  const { player } = character
+  if (!player.stallOpen) return
+  const { rows } = await client.query<StallRow>('SELECT * FROM stall_listings WHERE seller_id = $1 ORDER BY created_at, id FOR UPDATE', [player.id])
+  let open = 0
+  let silver = 0
+  let returned = 0
+  for (const row of rows) {
+    silver += row.proceeds
+    if (await closeStall(client, character, row, now)) returned += row.qty
+    else open++
+  }
+  if (silver || returned) player.stallIncome = { at: now, silver, returned }
+  if (silver || returned || open !== player.stallOpen) {
+    player.stallOpen = open
+    character.dirty = true
+  }
+}
+
 interface AuctionRow {
   day: number
   item_id: string
@@ -675,6 +725,7 @@ async function writeAction<T>(request: FastifyRequest, apply: ApplyAction<T>): P
   response: GameAction<T>
   updates: PlayerSnapshot[]
   broadcasts?: WsServerEvent[]
+  whispers?: NonNullable<Character['whispers']>
   replayed?: true
 }> {
   const { accountId } = await requireSession(request)
@@ -709,6 +760,7 @@ async function writeAction<T>(request: FastifyRequest, apply: ApplyAction<T>): P
         }
 
         await touchArtifact(client, character, now)
+        await settleStalls(client, character, now)
         const patrolChanged = await settlePatrol(character, now, client)
         const { result, changed: applied, related = [] } = await apply(character, now, client, async (ids) => {
           if (ids.includes(row.id)) throw new GameError(400, 'INVALID_PARTNER', '请选择另一位侠客')
@@ -734,7 +786,11 @@ async function writeAction<T>(request: FastifyRequest, apply: ApplyAction<T>): P
         const latest = snapshot(character, now)
         const updates = changed ? [latest] : []
         for (const other of related) updates.push(snapshot(other, now))
-        return { response: { snapshot: latest, result }, updates, broadcasts: [character, ...related].flatMap((entry) => entry.broadcasts ?? []) }
+        const involved = [character, ...related]
+        return {
+          response: { snapshot: latest, result }, updates,
+          broadcasts: involved.flatMap((entry) => entry.broadcasts ?? []), whispers: involved.flatMap((entry) => entry.whispers ?? []),
+        }
       })
     } catch (error) {
       if (!(error instanceof RelatedLocksNeeded)) throw error
@@ -926,9 +982,10 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
   })
 
   async function respond<T>(request: FastifyRequest, apply: ApplyAction<T>) {
-    const { response, updates, broadcasts = [] } = await writeAction(request, apply)
+    const { response, updates, broadcasts = [], whispers = [] } = await writeAction(request, apply)
     for (const updated of updates) rooms.publish(updated)
     for (const event of broadcasts) rooms.announce(event)
+    for (const { playerId, event } of whispers) rooms.sendToPlayer(playerId, event)
     return response
   }
 
@@ -1986,6 +2043,101 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
     if (outbid) rooms.sendToPlayer(outbid.playerId, outbid.event)
     return response
   })
+
+  // ==================== 子时鬼市蒙面摊位 ====================
+  const stallView = (row: StallRow, mine: boolean): StallListingDTO => ({
+    id: row.id, kind: row.kind, goodsId: row.goods_id, qty: row.qty, unitPrice: row.unit_price, system: false, expiresAt: Number(row.expires_at),
+    seller: stallMask(createHash('sha256').update(row.id).digest().readUInt32BE(0)),
+    ...(mine ? { sold: row.sold, proceeds: row.proceeds } : {}),
+  })
+
+  app.get('/api/v1/market/stalls', async (request): Promise<StallBoardDTO> => {
+    const { accountId } = await requireSession(request)
+    return transaction(async (client) => {
+      const { rows: [viewer] } = await client.query<{ id: string; stallSystem: PlayerDTO['stallSystem'] | null }>(
+        `SELECT id, profile -> 'stallSystem' AS "stallSystem" FROM players WHERE account_id = $1`, [accountId])
+      if (!viewer) throw new GameError(404, 'PLAYER_NOT_CREATED', '先创建你的角色')
+      const now = await serverTime(client)
+      // ponytail: 内测一次取 200 摊、按货物和单价排好；摊位多起来后改成按货物分页。
+      const { rows: open } = await client.query<StallRow>(`SELECT * FROM stall_listings
+        WHERE qty > 0 AND expires_at > $1 AND seller_id <> $2 ORDER BY kind DESC, goods_id, unit_price, created_at LIMIT 200`, [now, viewer.id])
+      const { rows: mine } = await client.query<StallRow>('SELECT * FROM stall_listings WHERE seller_id = $1 ORDER BY created_at, id', [viewer.id])
+      const { rows: recent } = await client.query<{ kind: StallGoodsKind; goods_id: string; qty: number; unit_price: number; created_at: string }>(
+        'SELECT kind, goods_id, qty, unit_price, created_at FROM stall_sales ORDER BY id DESC LIMIT 8')
+      const day = stallDay(now)
+      const bought = systemStallsBought({ stallSystem: viewer.stallSystem ?? undefined }, now)
+      return {
+        serverTime: now,
+        listings: [
+          ...systemStalls(day).filter(({ id }) => !bought.includes(id)).map(({ id, goods, qty, unitPrice }): StallListingDTO => ({
+            id, kind: goods.kind, goodsId: goods.id, qty, unitPrice, seller: SYSTEM_STALL_SELLER, system: true, expiresAt: auctionWindow(day + 1).opensAt,
+          })),
+          ...open.map((row) => stallView(row, false)),
+        ],
+        mine: mine.map((row) => stallView(row, true)),
+        recent: recent.map((sale) => ({ kind: sale.kind, goodsId: sale.goods_id, qty: sale.qty, unitPrice: sale.unit_price, at: Number(sale.created_at) })),
+      }
+    }, true)
+  })
+
+  app.post('/api/v1/market/stalls', (request) => respond<StallResult>(request, async (character, now, client) => {
+    const body = objectBody(request.body)
+    const { action, listingId, qty, unitPrice } = body
+    const { player } = character
+    const inventory = stallInventory(player)
+    // 收摊结算由 writeAction 在每次操作前完成，这里无事可做
+    if (action === 'collect') return { result: { action }, changed: false }
+
+    if (action === 'list') {
+      const { rows: [{ count }] } = await client.query<{ count: number }>('SELECT count(*)::int AS count FROM stall_listings WHERE seller_id = $1', [player.id])
+      const offer = checkStallOffer({ level: player.level, silver: player.silver, openCount: count, inventory }, body)
+      if ('error' in offer) throw new GameError(409, 'STALL_OFFER_REJECTED', offer.error)
+      const { goods } = offer
+      const id = randomUUID()
+      moveStallGoods(inventory, goods.kind, goods.id, -offer.qty)
+      player.silver -= offer.fee
+      player.stallOpen = count + 1
+      await client.query(`INSERT INTO stall_listings (id, seller_id, kind, goods_id, qty, unit_price, created_at, expires_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`, [id, player.id, goods.kind, goods.id, offer.qty, offer.unitPrice, now, now + STALL.durationMs])
+      return { result: { action, listingId: id, kind: goods.kind, goodsId: goods.id, qty: offer.qty, unitPrice: offer.unitPrice, fee: offer.fee }, changed: true }
+    }
+
+    if (typeof listingId !== 'string') throw new GameError(400, 'INVALID_STALL_ACTION', '请选择一个摊位')
+    if (action === 'buy' && listingId.startsWith('sys:')) {
+      const bought = buySystemStall(player, inventory, listingId, now)
+      if ('error' in bought) throw new GameError(409, 'STALL_UNAVAILABLE', bought.error)
+      return { result: { action, kind: bought.goods.kind, goodsId: bought.goods.id, qty: bought.qty, spent: bought.spent }, changed: true }
+    }
+    if (!UUID.test(listingId)) throw new GameError(400, 'INVALID_STALL_ACTION', '请选择一个摊位')
+    const { rows: [row] } = await client.query<StallRow>('SELECT * FROM stall_listings WHERE id = $1 FOR UPDATE', [listingId])
+
+    if (action === 'cancel') {
+      if (row?.seller_id !== player.id) throw new GameError(409, 'STALL_UNAVAILABLE', '这个摊位已经收掉了')
+      await closeStall(client, character, row, now, true)
+      player.stallOpen = Math.max(0, (player.stallOpen ?? 1) - 1)
+      return { result: { action, kind: row.kind, goodsId: row.goods_id, returned: row.qty, silver: row.proceeds }, changed: true }
+    }
+
+    if (action !== 'buy') throw new GameError(400, 'INVALID_STALL_ACTION', '请选择摆摊、采买或撤摊')
+    if (typeof qty !== 'number' || !Number.isInteger(qty) || qty < 1 || typeof unitPrice !== 'number') {
+      throw new GameError(400, 'INVALID_STALL_ACTION', '请选择要买的数量')
+    }
+    if (player.level < STALL.minLevel) throw new GameError(409, 'STALL_LEVEL_REQUIRED', `等级达到 ${STALL.minLevel} 级才能在鬼市采买`)
+    if (!row || now >= Number(row.expires_at) || row.qty === 0) throw new GameError(409, 'STALL_UNAVAILABLE', '这个摊位已经收摊，请刷新')
+    if (row.seller_id === player.id) throw new GameError(409, 'STALL_OWN', '不能买自己摊上的东西，要收回请撤摊')
+    if (row.unit_price !== unitPrice) throw new GameError(409, 'STALL_PRICE_CHANGED', '摊位已经变了，请刷新后再买')
+    if (row.qty < qty) throw new GameError(409, 'STALL_SHORT', `这个摊位只剩 ${row.qty} 份`)
+    const spent = qty * row.unit_price
+    if (player.silver < spent) throw new GameError(409, 'SILVER_INSUFFICIENT', '纹银不足')
+    const tax = stallTax(spent)
+    player.silver -= spent
+    moveStallGoods(inventory, row.kind, row.goods_id, qty)
+    await client.query('UPDATE stall_listings SET qty = qty - $2, sold = sold + $2, proceeds = proceeds + $3 WHERE id = $1', [row.id, qty, spent - tax])
+    await client.query(`INSERT INTO stall_sales (listing_id, seller_id, buyer_id, kind, goods_id, qty, unit_price, tax, created_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`, [row.id, row.seller_id, player.id, row.kind, row.goods_id, qty, row.unit_price, tax, now])
+    ;(character.whispers ??= []).push({ playerId: row.seller_id, event: { event: 'STALL_SOLD', data: { kind: row.kind, goodsId: row.goods_id, qty, silver: spent - tax } } })
+    return { result: { action, kind: row.kind, goodsId: row.goods_id, qty, spent }, changed: true }
+  }))
 
   app.post('/api/v1/alchemy/forage', (request) => respond(request, async (character, now) => {
     const { player } = character

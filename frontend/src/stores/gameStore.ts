@@ -20,6 +20,7 @@ import { useWorld } from './world'
 import { useSect } from './sect'
 import { useMarket } from './market'
 import { useArtifacts } from './artifacts'
+import { useStalls } from './stalls'
 import { useLocalGame } from './localGame'
 import { useEconomy } from './economy'
 
@@ -72,7 +73,9 @@ export const useGameStore = defineStore('wuxiaGame', () => {
 
   const market = useMarket({ actions, cultivation })
 
-  const local = useLocalGame({ battle, companions, world, market, artifacts })
+  const stalls = useStalls({ actions })
+
+  const local = useLocalGame({ battle, companions, world, market, artifacts, stalls })
 
   const economy = useEconomy({ actions })
 
@@ -99,6 +102,7 @@ export const useGameStore = defineStore('wuxiaGame', () => {
     event: (event) => {
       if (event.event === 'AUCTION_OUTBID') market.onAuctionOutbid(event.data)
       else if (event.event === 'UNIQUE_ARTIFACT_CHANGED') artifacts.onArtifactChanged(event.data)
+      else if (event.event === 'STALL_SOLD') stalls.onStallSold(event.data)
       else world.handleRoomEvent(event)
     },
     disconnected: world.clearRoom,
@@ -342,6 +346,12 @@ export const useGameStore = defineStore('wuxiaGame', () => {
     refreshAuction: market.refreshAuction,
     bidAuction: market.bidAuction,
     claimAuction: market.claimAuction,
+    stallBoard: stalls.stallBoard,
+    stallWares: stalls.stallWares,
+    refreshStalls: stalls.refreshStalls,
+    listStall: stalls.listStall,
+    buyStall: stalls.buyStall,
+    cancelStall: stalls.cancelStall,
     artifactBoard: artifacts.artifactBoard,
     artifactBlock: artifacts.artifactBlock,
     artifactAttempts: artifacts.artifactAttempts,

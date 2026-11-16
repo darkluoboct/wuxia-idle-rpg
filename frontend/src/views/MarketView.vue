@@ -47,6 +47,7 @@ import type { StanceType } from '@/network/protocol'
 import InkFigure from '@/components/InkFigure.vue'
 import HuashanLadder from '@/components/HuashanLadder.vue'
 import GhostAuction from '@/components/GhostAuction.vue'
+import GhostStalls from '@/components/GhostStalls.vue'
 import EquipmentForge from '@/components/EquipmentForge.vue'
 import ArtifactBoard from '@/components/ArtifactBoard.vue'
 
@@ -448,8 +449,10 @@ const FLAME_META = {
                 @click="store.buyMarketListing(item.id)">买下</button>
             </div>
           </article>
-          <p v-if="!store.ghostListings.length" class="col-span-full py-10 text-center text-sm text-ink3">鬼市的货已经卖完了。</p>
+          <p v-if="!store.ghostListings.length" class="col-span-full py-4 text-center text-sm text-ink3">鬼市旧物摊的货已经卖完了。</p>
         </div>
+
+        <GhostStalls />
       </div>
 
       <HuashanLadder v-else-if="sub === 'HUASHAN' && !IS_MOCK_MODE" />

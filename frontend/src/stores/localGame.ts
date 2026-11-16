@@ -17,6 +17,7 @@ import type { useWorld } from './world'
 import { DAGOU_STAFF } from '../../../shared/artifacts.ts'
 import type { useMarket } from './market'
 import type { useArtifacts } from './artifacts'
+import type { useStalls } from './stalls'
 import { legacyFtue } from './ftue'
 import { SHICHEN_LABELS } from './gameUiStore'
 
@@ -26,12 +27,13 @@ type LegacySave = {
   feast?: { ingredients: string[]; cooked: string[] }
 }
 
-export function useLocalGame({ battle, companions, world, market, artifacts }: {
+export function useLocalGame({ battle, companions, world, market, artifacts, stalls }: {
   battle: Pick<ReturnType<typeof useBattlePlayback>, 'closeBattleStage'>
   companions: Pick<ReturnType<typeof useCompanions>, 'gachaReveal' | 'gachaHistory' | 'reunion' | 'blankReunion'>
   world: Pick<ReturnType<typeof useWorld>, 'nearbyPlayers'>
   market: Pick<ReturnType<typeof useMarket>, 'localAuctions'>
   artifacts: Pick<ReturnType<typeof useArtifacts>, 'localArtifact' | 'onLocalReturn' | 'resetLocalArtifact'>
+  stalls: Pick<ReturnType<typeof useStalls>, 'localStalls' | 'stallBoard'>
 }) {
   const playerStore = usePlayerStore()
   const {
@@ -68,6 +70,7 @@ export function useLocalGame({ battle, companions, world, market, artifacts }: {
   const { nearbyPlayers } = world
   const { localAuctions } = market
   const { localArtifact, onLocalReturn, resetLocalArtifact } = artifacts
+  const { localStalls, stallBoard } = stalls
 
   // 角色列表保留本次会话中各角色的进度，浏览器存档继续保存最近游玩的角色。
   type LocalCharacter = { player: PlayerDTO; progress?: SaveData }
@@ -150,6 +153,7 @@ export function useLocalGame({ battle, companions, world, market, artifacts }: {
       reunion: reunion.value,
       ghostAuctions: localAuctions.value,
       artifact: localArtifact.value,
+      stalls: localStalls.value,
       mapArrivedAt: mapArrivedAt.value,
       logs: logs.value.slice(0, 30),
     }
@@ -229,6 +233,8 @@ export function useLocalGame({ battle, companions, world, market, artifacts }: {
     gachaHistory.value = data.gachaHistory ?? legacy.gacha?.history ?? []
     reunion.value = Object.fromEntries(Object.entries(saved.reunion).map(([id, r]) => [id, { ...blankReunion(), ...r }]))
     localAuctions.value = data.ghostAuctions ?? {}
+    localStalls.value = data.stalls ?? []
+    stallBoard.value = null
     resetLocalArtifact()
     if (data.artifact) localArtifact.value = data.artifact
     // 旧档没有记得棒时间：从读档这一刻算起
@@ -339,6 +345,8 @@ export function useLocalGame({ battle, companions, world, market, artifacts }: {
       gachaHistory.value = []
       reunion.value = {}
       localAuctions.value = {}
+      localStalls.value = []
+      stallBoard.value = null
       resetLocalArtifact()
       mapArrivedAt.value = Date.now()
       gachaReveal.value = null
