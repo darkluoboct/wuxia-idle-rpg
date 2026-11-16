@@ -2,7 +2,8 @@
 import { computed, onMounted, onUnmounted } from 'vue'
 import { useGameStore } from '@/stores/gameStore'
 import { TIER_META } from '@/config/uiMeta'
-import { AUCTION_BID_STEP, auctionLotInfo, ownsAuctionLot } from '../../../shared/ghostAuction.ts'
+import type { AuctionLotDTO } from '@/network/protocol'
+import { AUCTION_BID_STEP, AUCTION_DIVIDEND, auctionLotInfo, earnsAuctionTicket, ownsAuctionLot } from '../../../shared/ghostAuction.ts'
 
 const store = useGameStore()
 const time = new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit' })
@@ -19,6 +20,19 @@ const countdown = computed(() => {
   const minutes = Math.max(0, Math.ceil((lot.value.closesAt - store.worldTime) / 60_000))
   return minutes >= 60 ? `${Math.floor(minutes / 60)} 小时 ${minutes % 60} 分` : `${minutes} 分`
 })
+/** 红封签：21:00 前领过每日江湖事才有 */
+const ticket = computed(() => {
+  if (!lot.value || closed.value) return ''
+  if (store.player.auctionTickets?.includes(lot.value.day)) return '你已持今晚的红封签'
+  return earnsAuctionTicket(lot.value.day, store.worldTime) ? '21:00 前领完每日江湖事，可得今晚的红封签' : '今晚的红封签已截止'
+})
+const MINE = { PAID: '你已领到', PENDING: '你的一份即将到账', MISSED: '这一回没抽中你', NONE: '你没有持签' } as const
+function dividendText({ dividend }: AuctionLotDTO) {
+  if (!dividend) return ''
+  if (!dividend.eligible) return '红封：无人持签，全数回收'
+  const drawn = dividend.winners < dividend.eligible ? `，抽中 ${dividend.winners} 人` : ''
+  return `红封：${dividend.eligible} 人持签${drawn}，每人 ${dividend.share} 元宝 · ${MINE[dividend.mine]}`
+}
 const bidLabel = computed(() => {
   if (!lot.value) return '出价'
   if (closed.value) return '已落槌'
@@ -47,7 +61,7 @@ onUnmounted(() => clearInterval(timer))
           <span class="seal h-8 w-8 text-lg">拍</span>
           <h4 class="font-brush text-xl leading-none">子时压轴暗拍</h4>
         </div>
-        <p class="hint mt-1.5">子时开拍，次日 21:00 落槌，每口加 {{ AUCTION_BID_STEP }} 元宝。领先时元宝先冻结，被人压过原数退还；落槌前 5 分钟有人出价顺延 5 分钟。</p>
+        <p class="hint mt-1.5">子时开拍，次日 21:00 落槌，每口加 {{ AUCTION_BID_STEP }} 元宝。领先时元宝先冻结，被人压过原数退还；落槌前 5 分钟有人出价顺延 5 分钟。成交价的 {{ AUCTION_DIVIDEND.percent }}% 作红封，分给当日 21:00 前领过每日江湖事的侠客，每人至多 {{ AUCTION_DIVIDEND.maxShare }} 元宝。</p>
       </div>
       <span class="chip shrink-0" :class="closed ? '' : 'chip-gold'">{{ closed ? `已于 ${time.format(lot.closesAt)} 落槌` : `距落槌 ${countdown}` }}</span>
     </div>
@@ -73,6 +87,8 @@ onUnmounted(() => clearInterval(timer))
       >{{ bidLabel }}</button>
     </div>
 
+    <p v-if="ticket || lot.dividend" class="text-xs" :class="lot.dividend?.mine === 'PAID' || store.player.auctionTickets?.includes(lot.day) ? 'text-gold' : 'text-ink3'">{{ lot.dividend ? dividendText(lot) : ticket }}</p>
+
     <ol v-if="store.auctionBoard?.history.length" class="space-y-0.5 text-xs" aria-label="出价记录">
       <li v-for="entry in store.auctionBoard.history" :key="entry.at + entry.masked" class="flex justify-between gap-2" :class="entry.self ? 'text-gold' : 'text-ink3'">
         <span>{{ entry.self ? '你' : entry.masked }}</span>
@@ -87,6 +103,7 @@ onUnmounted(() => clearInterval(timer))
 
     <p v-if="previous" class="text-xs text-ink3">
       上一场{{ previous.name }}：{{ previous.bids ? `${previous.price} 元宝成交（${previous.leading ? '你' : previous.leaderMasked}）` : '流拍' }}
+      <template v-if="previous.dividend"><br>{{ dividendText(previous) }}</template>
     </p>
   </article>
 </template>

@@ -12,6 +12,7 @@ import {
   type IngotMilestone,
   type MilestoneState,
 } from '../../../shared/economy.ts'
+import { earnsAuctionTicket } from '../../../shared/ghostAuction.ts'
 import { usePlayerStore } from './playerStore'
 import { useGameUiStore } from './gameUiStore'
 
@@ -62,13 +63,16 @@ export function useEconomy({ actions }: { actions: GameActions }) {
       tasks: DAILY_TASKS.map((task) => ({ ...task, done: state.done.includes(task.id) })),
       claimed: state.claimed,
       reward: INGOT.daily,
+      // 鬼市红封签：21:00 前领赏才有
+      ticket: player.value.auctionTickets?.includes(state.day) ? 'HELD' as const
+        : !state.claimed && earnsAuctionTicket(state.day, worldTime.value) ? 'OPEN' as const : 'NONE' as const,
     }
   })
 
   function claimDailyIngot() {
     if (daily.value.claimed || daily.value.tasks.some(({ done }) => !done)) return
-    return actions.run('dailyClaim', undefined, ({ ingot }) => {
-      appendLog('JIANGHU', [{ type: 'tag', text: '每日江湖事', tone: 'gold' }, { type: 'text', text: ` 今日诸事办妥，领得 ${ingot} 元宝。` }])
+    return actions.run('dailyClaim', undefined, ({ ingot, ticket }) => {
+      appendLog('JIANGHU', [{ type: 'tag', text: '每日江湖事', tone: 'gold' }, { type: 'text', text: ` 今日诸事办妥，领得 ${ingot} 元宝${ticket ? '，另得今晚鬼市暗拍的红封签一枚' : ''}。` }])
       showToast(`每日江湖事：元宝 +${ingot}`, 'gold')
     }, () => {
       const result = claimDailyLocally(player.value, Date.now())

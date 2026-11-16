@@ -1,4 +1,4 @@
-import { computed, ref, shallowRef } from 'vue'
+import { computed, ref, shallowRef, watch } from 'vue'
 import type { AuctionAction, AuctionBoardDTO, AuctionLotDTO, AuctionResult, GhostAppraisalResult, GhostMarketListingDTO } from '@/network/protocol'
 import { MEDICINES, HERBS, PILL_RECIPES, GHOST_MARKET_LISTINGS, ITEMS, MAPS, marketListingPrice, SKILLS } from '@/config/gameData'
 import { apiClient, IS_MOCK_MODE } from '@/network/apiClient'
@@ -15,7 +15,7 @@ import { useGameUiStore } from './gameUiStore'
 import type { GameActions } from '@/network/gameActions'
 import type { useCultivation } from './cultivation'
 import { recordFtueForage, recordFtueRefine } from '../../../shared/ftueQuests.ts'
-import { auctionDay, auctionLot, auctionLotInfo, auctionWindow, nextAuctionBid, ownsAuctionLot, softCloseAt } from '../../../shared/ghostAuction.ts'
+import { auctionDay, auctionDividend, auctionLot, auctionLotInfo, auctionWindow, nextAuctionBid, ownsAuctionLot, settleAuctionTickets, softCloseAt } from '../../../shared/ghostAuction.ts'
 
 export function useMarket({ actions, cultivation }: {
   actions: GameActions
@@ -28,6 +28,7 @@ export function useMarket({ actions, cultivation }: {
     learnedSkills,
     currentLoadout,
     martialStats,
+    worldTime,
     herbInventory,
     alchemyPity,
     pillInventory,
@@ -237,19 +238,56 @@ export function useMarket({ actions, cultivation }: {
   }
 
   // ==================== 子时鬼市压轴暗拍：全服竞拍，服务端结算；本地试玩只有你一位出价人 ====================
-  type LocalLot = { price: number; bids: number; closesAt: number; at: number; claimed: boolean }
+  type LocalLot = { price: number; bids: number; closesAt: number; at: number; claimed: boolean; dividend?: number }
   const localAuctions = ref<Record<string, LocalLot>>({})
   const auctionBoard = shallowRef<AuctionBoardDTO | null>(null)
 
-  function localLotView(day: number): AuctionLotDTO {
+  function localLotView(day: number, now = Date.now()): AuctionLotDTO {
     const config = auctionLot(day)
     const window = auctionWindow(day)
-    const lot = localAuctions.value[day] ?? { price: config.startPrice, bids: 0 }
-    return {
+    const saved = localAuctions.value[day]
+    const lot = saved ?? { price: config.startPrice, bids: 0 }
+    const view: AuctionLotDTO = {
       day, itemId: config.itemId, seller: config.seller, startPrice: config.startPrice, price: lot.price, nextBid: nextAuctionBid(lot),
-      bids: lot.bids, opensAt: window.opensAt, closesAt: localAuctions.value[day]?.closesAt ?? window.closesAt,
+      bids: lot.bids, opensAt: window.opensAt, closesAt: saved?.closesAt ?? window.closesAt,
       leaderMasked: lot.bids ? '你' : null, leading: lot.bids > 0,
     }
+    if (saved?.bids && now >= saved.closesAt) {
+      // 本地只有你一位侠客：持签就独得一份
+      const pending = !!player.value.auctionTickets?.includes(day)
+      const paid = saved.dividend !== undefined
+      view.dividend = { ...auctionDividend(saved.price, pending || paid ? 1 : 0), eligible: pending || paid ? 1 : 0, mine: paid ? 'PAID' : pending ? 'PENDING' : 'NONE' }
+    }
+    return view
+  }
+
+  function announceDividend({ day, ingot }: { day: number; ingot: number }) {
+    const { name } = auctionLotInfo(auctionLot(day).itemId)
+    if (!ingot) {
+      appendLog('JIANGHU', [{ type: 'tag', text: '鬼市红封', tone: 'purple' }, { type: 'text', text: ` ${name}落槌，持签的侠客太多，这一回没抽中你。` }])
+      return
+    }
+    appendLog('JIANGHU', [{ type: 'tag', text: '鬼市红封', tone: 'gold' }, { type: 'text', text: ` ${name}落槌，鬼市按例分红，你得 ${ingot} 元宝。` }])
+    showToast(`鬼市红封：元宝 +${ingot}`, 'gold')
+  }
+
+  /** 本地试玩：落槌后兑付红封签 */
+  function settleLocalDividends(now: number) {
+    for (const paid of settleAuctionTickets(player.value, now, (day) => {
+      const lot = localAuctions.value[day]
+      return lot && { price: lot.price, bids: lot.bids, closesAt: lot.closesAt, eligible: 1, rank: 0 }
+    })) {
+      localAuctions.value[paid.day].dividend = paid.ingot
+      announceDividend(paid)
+    }
+  }
+  if (IS_MOCK_MODE) {
+    watch(() => [worldTime.value, player.value.auctionTickets?.length] as const, ([now]) => settleLocalDividends(Math.max(now, Date.now())))
+  } else {
+    // 服务端在落槌后的下一次操作里兑付；对比前后存档写进江湖纪事
+    watch(() => [player.value.id, player.value.auctionDividend] as const, ([id, dividend], [previousId, previous]) => {
+      if (id === previousId && dividend && dividend.day !== previous?.day) announceDividend(dividend)
+    })
   }
 
   function localAuctionBoard(now: number): AuctionBoardDTO {
@@ -257,16 +295,18 @@ export function useMarket({ actions, cultivation }: {
     const current = localAuctions.value[day]
     return {
       serverTime: now,
-      lot: localLotView(day),
+      lot: localLotView(day, now),
       history: current ? [{ masked: '你', amount: current.price, at: current.at, self: true }] : [],
-      previous: localLotView(day - 1),
+      previous: localLotView(day - 1, now),
       wins: Object.entries(localAuctions.value).flatMap(([won, lot]) => lot.bids && !lot.claimed && lot.closesAt <= now
         ? [{ day: Number(won), itemId: auctionLot(Number(won)).itemId, price: lot.price }] : []),
     }
   }
 
+  const dividendAsked = new Set<number>()
   async function refreshAuction() {
     if (IS_MOCK_MODE) {
+      settleLocalDividends(Date.now())
       auctionBoard.value = localAuctionBoard(Date.now())
       return
     }
@@ -274,10 +314,18 @@ export function useMarket({ actions, cultivation }: {
       auctionBoard.value = await apiClient.request<AuctionBoardDTO>('GET', '/market/auction')
     } catch {
       // 暗拍榜读不到时保留上一次的结果，下次进鬼市再取
+      return
+    }
+    // 红封待入账：进鬼市看榜时顺手兑付，不必等下一次别的操作；每场只催一次
+    const due = [auctionBoard.value.lot, auctionBoard.value.previous].find((lot) => lot?.dividend?.mine === 'PENDING' && !dividendAsked.has(lot.day))
+    if (due) {
+      dividendAsked.add(due.day)
+      await runAuction({ action: 'dividend', day: due.day }, () => undefined)
     }
   }
 
   function announceAuction(result: AuctionResult) {
+    if (result.action === 'dividend') return
     const name = auctionLotInfo(result.action === 'bid' ? auctionLot(result.day).itemId : result.itemId).name
     if (result.action === 'bid') {
       appendLog('JIANGHU', [{ type: 'tag', text: '鬼市暗拍', tone: 'purple' }, { type: 'text', text: ` 你蒙面举牌，为${name}出价 ${result.price} 元宝，暂时领先。元宝已先冻结。` }])

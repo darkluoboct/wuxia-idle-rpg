@@ -1,4 +1,4 @@
-import type { TierColor } from './protocol.ts'
+import type { PlayerDTO, TierColor } from './protocol.ts'
 import { ITEMS, SKILLS } from './gameData.ts'
 import { innVisitDay } from './player.ts'
 
@@ -59,6 +59,61 @@ export function nextAuctionBid(lot: { price: number; bids: number }) {
 
 export function softCloseAt(closesAt: number, now: number) {
   return closesAt - now < AUCTION_SOFT_CLOSE_MS ? now + AUCTION_SOFT_CLOSE_MS : closesAt
+}
+
+/**
+ * 落槌红封（09 册 §六）：成交价三成分给当日 21:00 前领过每日江湖事的侠客，其余七成回收。
+ * 人头平分，每人至多 30 元宝；人多到每份不足 10 元宝时改为抽签，中签者每人至少 10。
+ */
+export const AUCTION_DIVIDEND = { percent: 30, minShare: 10, maxShare: 30 } as const
+
+export function auctionDividend(price: number, eligible: number) {
+  const pool = Math.floor(price * AUCTION_DIVIDEND.percent / 100)
+  const winners = Math.min(eligible, Math.floor(pool / AUCTION_DIVIDEND.minShare))
+  return { pool, winners, share: winners ? Math.min(AUCTION_DIVIDEND.maxShare, Math.floor(pool / winners)) : 0 }
+}
+
+/** 领每日江湖事时是否还赶得上当晚的红封：以 21:00 为准，不随顺延变化，落槌后人数即定 */
+export function earnsAuctionTicket(day: number, now: number) {
+  return now < auctionWindow(day).closesAt
+}
+
+export interface AuctionTicketLot {
+  price: number
+  bids: number
+  closesAt: number
+  /** 当日持签人数 */
+  eligible: number
+  /** 自己在抽签次序里的名次，从 0 起 */
+  rank: number
+}
+
+/**
+ * 兑付到期的红封签：流拍的作废，仍在顺延的留到落槌后。返回本次兑付的场次与到手元宝（未中签为 0）。
+ * 元宝直接记到 player 上，调用方负责写流水。
+ */
+export function settleAuctionTickets(
+  player: Pick<PlayerDTO, 'auctionTickets' | 'auctionDividend' | 'goldIngot'>, now: number,
+  lotOf: (day: number) => AuctionTicketLot | undefined,
+) {
+  const settled: { day: number; ingot: number }[] = []
+  const keep: number[] = []
+  for (const day of player.auctionTickets ?? []) {
+    const due = now >= auctionWindow(day).closesAt
+    const lot = due ? lotOf(day) : undefined
+    if (!due || (lot && now < lot.closesAt)) {
+      keep.push(day)
+      continue
+    }
+    if (!lot?.bids) continue
+    const { winners, share } = auctionDividend(lot.price, lot.eligible)
+    const ingot = lot.rank < winners ? share : 0
+    player.goldIngot += ingot
+    player.auctionDividend = { day, ingot }
+    settled.push({ day, ingot })
+  }
+  if (keep.length !== (player.auctionTickets?.length ?? 0)) player.auctionTickets = keep
+  return settled
 }
 
 const STEMS = '甲乙丙丁戊己庚辛壬癸'

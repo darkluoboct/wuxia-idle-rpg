@@ -83,7 +83,7 @@ interface Actions {
   awaken: [{ companionId: string }, AwakenResult]
   feast: [{ dishId: string }, FeastResult]
   ftueClaim: [undefined, FtueClaimResult]
-  dailyClaim: [undefined, { ingot: number }]
+  dailyClaim: [undefined, { ingot: number; ticket: boolean }]
   appraise: [{ masked: boolean }, GhostAppraisalResult]
   buy: [{ listingId: string }, { spentSilver: number }]
   auction: [AuctionAction, AuctionResult]

@@ -1067,4 +1067,78 @@ describe('联机战斗', { skip: connection ? false : '请设置 GAME_TEST_DATAB
       fixedServerTime = undefined
     }
   })
+
+  it('暗拍红封：21:00 前领过每日江湖事的侠客分成交价三成，人多抽签，流拍作废，顺延到落槌后才兑付', async () => {
+    const path = '/market/auction'
+    const names = ['hb_a', 'hb_b', 'hb_c', 'hb_d', 'hb_e', 'hb_f', 'hb_late']
+    const players = await Promise.all(names.map(createRookie))
+    const holders = players.slice(0, 6)
+    const late = players[6]
+    await Promise.all(players.map(({ id }) => profile(id, { goldIngot: 1_000 })))
+    const finishDaily = (day: number, who = players) => Promise.all(who.map(({ id }) =>
+      profile(id, { daily: { day, done: DAILY_TASKS.map(({ id: task }) => task), claimed: false } })))
+    // 起拍 180 的一场：红封池 54 元宝，每份至少 10，六人持签只能中五人
+    let day = auctionDay(Date.now()) + 6
+    while (auctionLot(day).startPrice !== 180) day++
+    const { opensAt, closesAt } = auctionWindow(day)
+    try {
+      fixedServerTime = opensAt + 3_600_000
+      await finishDaily(day)
+      for (const holder of holders) {
+        const claim = await holder.act<{ ingot: number; ticket: boolean }>('/daily/claim')
+        assert.deepEqual([claim.result.ticket, claim.snapshot.player.auctionTickets], [true, [day]])
+      }
+      await holders[0].act<AuctionResult>(path, { action: 'bid', day, expectedPrice: 180 })
+      assert.equal((await holders[1].read<AuctionBoardDTO>(path)).lot.dividend, undefined)
+
+      fixedServerTime = closesAt
+      const tardy = await late.act<{ ingot: number; ticket: boolean }>('/daily/claim')
+      assert.deepEqual([tardy.result.ticket, tardy.snapshot.player.auctionTickets ?? []], [false, []])
+      const pending = await Promise.all(holders.map(async (holder) => (await holder.read<AuctionBoardDTO>(path)).lot.dividend))
+      assert.deepEqual(pending.map((dividend) => [dividend?.eligible, dividend?.winners, dividend?.share]), holders.map(() => [6, 5, 10]))
+      assert.deepEqual(pending.map((dividend) => dividend?.mine).sort(), ['MISSED', 'PENDING', 'PENDING', 'PENDING', 'PENDING', 'PENDING'])
+      assert.equal((await late.read<AuctionBoardDTO>(path)).lot.dividend?.mine, 'NONE')
+
+      for (const [index, holder] of holders.entries()) {
+        const before = (await holder.read()).player.goldIngot
+        const settled = await holder.act<AuctionResult>(path, { action: 'dividend', day })
+        const won = pending[index]?.mine === 'PENDING'
+        assert.equal(settled.snapshot.player.goldIngot, before + (won ? 10 : 0))
+        assert.deepEqual(settled.snapshot.player.auctionTickets, [])
+        assert.deepEqual(settled.snapshot.player.auctionDividend, { day, ingot: won ? 10 : 0 })
+        assert.equal((await holder.read<AuctionBoardDTO>(path)).lot.dividend?.mine, won ? 'PAID' : 'MISSED')
+        // 再催一次也不会重复入账
+        assert.equal((await holder.act<AuctionResult>(path, { action: 'dividend', day })).snapshot.player.goldIngot, before + (won ? 10 : 0))
+        assert.equal((await ledger(holder.id)).filter(({ reason, ref }) => reason === 'auction-dividend' && ref === `auction-dividend:${day}`).length, won ? 1 : 0)
+      }
+
+      // 次日无人出价：流拍，红封签作废
+      const [solo] = holders
+      fixedServerTime = auctionWindow(day + 1).opensAt + 3_600_000
+      await finishDaily(day + 1, [solo])
+      assert.deepEqual((await solo.act('/daily/claim')).snapshot.player.auctionTickets, [day + 1])
+      fixedServerTime = auctionWindow(day + 1).closesAt
+      const passed = await solo.act<AuctionResult>(path, { action: 'dividend', day: day + 1 })
+      assert.deepEqual([passed.snapshot.player.auctionTickets, passed.snapshot.player.auctionDividend], [[], { day, ingot: pending[0]?.mine === 'PENDING' ? 10 : 0 }])
+
+      // 第三日：落槌前一分钟有人出价，顺延期间不兑付；落槌后独得一份，封顶 30
+      const third = day + 2
+      const closing = auctionWindow(third).closesAt
+      fixedServerTime = closing - 60_000
+      await finishDaily(third, [solo])
+      await solo.act('/daily/claim')
+      const { startPrice } = auctionLot(third)
+      await solo.act<AuctionResult>(path, { action: 'bid', day: third, expectedPrice: startPrice })
+      fixedServerTime = closing + 60_000
+      const waiting = await solo.act<AuctionResult>(path, { action: 'dividend', day: third })
+      assert.deepEqual(waiting.snapshot.player.auctionTickets, [third])
+      fixedServerTime = closing - 60_000 + AUCTION_SOFT_CLOSE_MS
+      const paid = await solo.act<AuctionResult>(path, { action: 'dividend', day: third })
+      assert.equal(paid.snapshot.player.goldIngot, waiting.snapshot.player.goldIngot + 30)
+      assert.deepEqual(paid.snapshot.player.auctionDividend, { day: third, ingot: 30 })
+      assert.deepEqual((await solo.read<AuctionBoardDTO>(path)).lot.dividend, { eligible: 1, winners: 1, share: 30, mine: 'PAID' })
+    } finally {
+      fixedServerTime = undefined
+    }
+  })
 })

@@ -109,6 +109,8 @@ export interface PlayerDTO {
   ingotClaims?: string[]            // 已领的一次性元宝里程碑
   daily?: { day: number; done: string[]; claimed: boolean }
   patrolIngot?: { day: number; got: number }
+  auctionTickets?: number[]         // 鬼市红封签：21:00 前领过每日江湖事的场次，落槌后兑付
+  auctionDividend?: { day: number; ingot: number } // 最近一次兑付的红封（未中签为 0）
   gacha?: { pulls: number; pity: number }
   feast?: { ingredients: string[]; cooked: string[]; lastCookDay: number }
 }
@@ -632,6 +634,8 @@ export interface AuctionLotDTO {
   closesAt: number
   leaderMasked: string | null
   leading: boolean         // 当前领先的是不是自己
+  /** 落槌且有人出价后公示红封：持签人数、中签人数、每份元宝，以及自己的情况 */
+  dividend?: { eligible: number; winners: number; share: number; mine: 'PAID' | 'PENDING' | 'MISSED' | 'NONE' }
 }
 
 export interface AuctionBoardDTO {
@@ -642,11 +646,15 @@ export interface AuctionBoardDTO {
   wins: { day: number; itemId: string; price: number }[] // 已落槌、待领取的拍品
 }
 
-export type AuctionAction = { action: 'bid'; day: number; expectedPrice: number } | { action: 'claim'; day: number }
+export type AuctionAction =
+  | { action: 'bid'; day: number; expectedPrice: number }
+  | { action: 'claim'; day: number }
+  | { action: 'dividend'; day: number } // 只为触发红封兑付，本身不改动任何东西
 
 export type AuctionResult =
   | { action: 'bid'; day: number; price: number; closesAt: number }
   | { action: 'claim'; day: number; itemId: string; refunded: number }
+  | { action: 'dividend'; day: number }
 
 /** WebSocket 实时推送消息联合类型 */
 export type WsServerEvent =

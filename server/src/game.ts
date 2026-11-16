@@ -25,7 +25,7 @@ import { QUANZHEN_LIBRARY } from '../../shared/quanzhen.ts'
 import { claimDailyIngot, claimMilestoneIngots, huashanIngot, INGOT, markDailyTask, patrolCacheIngot, resolvedAdventures, type DailyTaskId } from '../../shared/economy.ts'
 import { awakenCompanion, blankCompanionState, pullGacha, REUNION_TICKET_COST } from '../../shared/gacha.ts'
 import { cookFeastDish, feastActive, gatherFeastIngredient } from '../../shared/feast.ts'
-import { AUCTION_MASK_COUNT, auctionDay, auctionLot, auctionWindow, bidderMask, nextAuctionBid, ownsAuctionLot, softCloseAt } from '../../shared/ghostAuction.ts'
+import { AUCTION_MASK_COUNT, auctionDay, auctionDividend, auctionLot, auctionWindow, bidderMask, nextAuctionBid, ownsAuctionLot, settleAuctionTickets, softCloseAt, type AuctionTicketLot } from '../../shared/ghostAuction.ts'
 import { claimFtueQuest, emptyFtue, recordFtueForage, recordFtueRefine } from '../../shared/ftueQuests.ts'
 import { gainReunionClues, newReunion, reunionCluesToday, reunionEncounter, reunionWaitTime, REUNION_INQUIRE_COST, REUNION_QUESTS, REUNION_WAIT_HOURS, type ClueSource, type ReunionQuestConfig } from '../../shared/reunion.ts'
 import type {
@@ -548,6 +548,47 @@ class RelatedLocksNeeded extends Error {
   }
 }
 
+interface AuctionRow {
+  day: number
+  item_id: string
+  start_price: number
+  price: number
+  leader_id: string | null
+  bids: number
+  closes_at: string
+  mask_salt: string
+  claimed: boolean
+}
+
+/** 一场暗拍的红封签：持签人数、这位侠客是否持签、在抽签次序（按本场随机盐打乱）里的名次 */
+async function auctionTicketsOf(client: PoolClient, row: Pick<AuctionRow, 'day' | 'mask_salt'>, playerId: string) {
+  const { rows: [tickets] } = await client.query<{ eligible: number; holds: boolean; rank: number }>(`
+    SELECT count(*)::int AS eligible, COALESCE(bool_or(player_id = $3::uuid), false) AS holds,
+      (count(*) FILTER (WHERE md5($4 || player_id::text) < md5($4 || $3)))::int AS rank
+    FROM ingot_ledger WHERE reason = 'daily' AND ref = $1 AND created_at < $2`,
+  [`daily:${row.day}`, auctionWindow(row.day).closesAt, playerId, row.mask_salt])
+  return tickets
+}
+
+/** 落槌后兑付红封签：流拍作废，未中签也销签 */
+async function settleAuctionDividends(client: PoolClient, character: Character, now: number) {
+  const { player } = character
+  const due = (player.auctionTickets ?? []).filter((day) => now >= auctionWindow(day).closesAt)
+  if (!due.length) return
+  const { rows } = await client.query<AuctionRow>('SELECT * FROM ghost_auctions WHERE day = ANY($1::integer[])', [due])
+  const lots = new Map<number, AuctionTicketLot>()
+  for (const row of rows) {
+    const closesAt = Number(row.closes_at)
+    const tickets = now >= closesAt ? await auctionTicketsOf(client, row, player.id) : { eligible: 0, rank: 0 }
+    lots.set(row.day, { price: row.price, bids: row.bids, closesAt, ...tickets })
+  }
+  const before = player.auctionTickets!.length
+  for (const { day, ingot } of settleAuctionTickets(player, now, (day) => lots.get(day))) {
+    logIngot(character, ingot, 'auction-dividend', `auction-dividend:${day}`)
+  }
+  if (player.auctionTickets!.length !== before) character.dirty = true
+}
+
 async function flushIngots(client: PoolClient, character: Character, now: number) {
   const entries = character.ingotLog ?? []
   character.ingotLog = undefined
@@ -634,6 +675,7 @@ async function writeAction<T>(request: FastifyRequest, apply: ApplyAction<T>): P
           player: character.player, rewardedChapters: character.rewardedChapters,
           adventureIds: resolvedAdventures(character.player), companionAffinity: character.companionAffinity,
         })) logIngot(character, amount, 'milestone', key)
+        await settleAuctionDividends(client, character, now)
         const changed = patrolChanged || applied || !!character.dirty || !!character.loadoutsDirty
         if (changed) await saveCharacter(client, character, now)
         for (const other of related) await saveCharacter(client, other, now)
@@ -1647,7 +1689,7 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
     return { result, changed: true }
   }))
 
-  app.post('/api/v1/daily/claim', (request) => respond<{ ingot: number }>(request, async (character, now) => {
+  app.post('/api/v1/daily/claim', (request) => respond<{ ingot: number; ticket: boolean }>(request, async (character, now) => {
     const result = claimDailyIngot(character.player, now)
     if ('error' in result) throw new GameError(409, 'DAILY_NOT_READY', result.error)
     logIngot(character, result.ingot, 'daily', `daily:${character.player.daily!.day}`)
@@ -1677,18 +1719,6 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
     return { result: { spentSilver }, changed: true }
   }))
 
-  interface AuctionRow {
-    day: number
-    item_id: string
-    start_price: number
-    price: number
-    leader_id: string | null
-    bids: number
-    closes_at: string
-    mask_salt: string
-    claimed: boolean
-  }
-
   const maskOf = (salt: string, playerId: string) =>
     bidderMask(createHash('sha256').update(`${salt}:${playerId}`).digest().readUInt32BE(0) % AUCTION_MASK_COUNT)
 
@@ -1704,6 +1734,15 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
     }
   }
 
+  /** 已落槌且有人出价的场次公示红封 */
+  async function withDividend(client: PoolClient, lot: AuctionLotDTO, row: AuctionRow | undefined, viewerId: string, now: number): Promise<AuctionLotDTO> {
+    if (!row?.bids || now < lot.closesAt) return lot
+    const { eligible, holds, rank } = await auctionTicketsOf(client, row, viewerId)
+    const { winners, share } = auctionDividend(row.price, eligible)
+    const { rowCount: paid } = await client.query('SELECT 1 FROM ingot_ledger WHERE player_id = $1 AND ref = $2', [viewerId, `auction-dividend:${row.day}`])
+    return { ...lot, dividend: { eligible, winners, share, mine: !holds ? 'NONE' : paid ? 'PAID' : rank < winners ? 'PENDING' : 'MISSED' } }
+  }
+
   app.get('/api/v1/market/auction', async (request): Promise<AuctionBoardDTO> => {
     const { accountId } = await requireSession(request)
     return transaction(async (client) => {
@@ -1717,13 +1756,14 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
         'SELECT player_id, amount, created_at FROM ghost_auction_bids WHERE day = $1 ORDER BY bid_no DESC LIMIT 8', [day])
       const { rows: wins } = await client.query<{ day: number; item_id: string; price: number }>(
         'SELECT day, item_id, price FROM ghost_auctions WHERE leader_id = $1 AND NOT claimed AND closes_at <= $2 ORDER BY day', [viewer.id, now])
+      const previous = rows.find((entry) => entry.day === day - 1)
       return {
         serverTime: now,
-        lot: auctionLotView(day, row, viewer.id),
+        lot: await withDividend(client, auctionLotView(day, row, viewer.id), row, viewer.id, now),
         history: bids.map(({ player_id, amount, created_at }) => ({
           masked: maskOf(row!.mask_salt, player_id), amount, at: Number(created_at), self: player_id === viewer.id,
         })),
-        previous: auctionLotView(day - 1, rows.find((entry) => entry.day === day - 1), viewer.id),
+        previous: await withDividend(client, auctionLotView(day - 1, previous, viewer.id), previous, viewer.id, now),
         wins: wins.map(({ day: won, item_id, price }) => ({ day: won, itemId: item_id, price })),
       }
     }, true)
@@ -1736,6 +1776,8 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
       const { action, day, expectedPrice } = objectBody(request.body)
       if (typeof day !== 'number' || !Number.isInteger(day)) throw new GameError(400, 'INVALID_AUCTION', '请选择一场暗拍')
       const { player, learnedSkills, ownedItemIds } = character
+      // 红封由 writeAction 在每次操作后兑付，这里无事可做
+      if (action === 'dividend') return { result: { action, day }, changed: false }
 
       if (action === 'claim') {
         const { rows: [won] } = await client.query<AuctionRow>(
