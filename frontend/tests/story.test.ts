@@ -134,8 +134,9 @@ describe('丐帮污净抉择与君山大会', () => {
     expect(hero.player).toMatchObject({ sectRank: 4, gaibangBranch: 'JINGYI', qiExp, silver, sectContribution })
   })
 
-  it('百味终考认可旧菜品并在实地备办余项，洪七公协战后一次发放五阶传承', () => {
+  it('百味终考认可旧菜品并在实地备办余项，洪七公协战后一次发放五阶传承；打狗棒久未露面收回、胜过长老可再执', () => {
     const rng = vi.spyOn(Math, 'random').mockReturnValue(0.99)
+    let clock: ReturnType<typeof vi.spyOn> | undefined
     const hero = threeBags()
     try {
       hero.answerGaibangDebate(0)
@@ -196,21 +197,66 @@ describe('丐帮污净抉择与君山大会', () => {
       expect(hero.player).toMatchObject({ sectRank: 5, qiExp: qiExp + 18000, silver: beforeFight + 1800, sectContribution: sectContribution + 200 })
       expect(hero.learnedSkills).toMatchObject({ xianglong_18: 1, tianxia_wugou: 1 })
       expect(hero.ownedItemIds.filter((id) => id === 'dagou_stick_true')).toHaveLength(1)
-      expect(hero.uniqueArtifacts.find((artifact) => artifact.itemId === 'dagou_stick_true')).toMatchObject({ holderNickname: hero.player.nickname, holderSect: '丐帮' })
-      expect(hero.marqueeBulletin).toContain(`【真·绿玉打狗棒】现由【${hero.player.nickname}】执掌`)
+      void hero.refreshArtifacts()
+      expect(hero.artifactBoard?.artifacts[0]).toMatchObject({ state: 'HELD', holderId: hero.player.id, holderNickname: hero.player.nickname, holderSect: '丐帮', defendStreak: 0 })
+      expect(hero.player.artifactHonors).toEqual(['dagou_stick_true'])
+      expect(hero.marqueeBulletin).toContain(`【${hero.player.nickname}】通过丐帮终考，洪七公亲手传下【真·绿玉打狗棒】`)
       expect(hero.storyFlags.filter((flag) => flag === GAIBANG_FINAL_EXAM.completionFlag)).toHaveLength(1)
       expect(hero.currentLoadout).toEqual(preset)
       hero.closeBattleStage()
       hero.challengeSectPromotion()
       expect(hero.activeBattle).toBeNull()
-      hero.moveMap('damo_caravan')
-      expect(hero.nearbyPlayers.find((nearby) => nearby.id === 'rp_8')).toMatchObject({ holdingUniqueArtifact: undefined })
       hero.saveNow()
       resumed.continueGame()
-      expect(resumed.uniqueArtifacts.find((artifact) => artifact.itemId === 'dagou_stick_true')?.holderNickname).toBe(resumed.player.nickname)
+      void resumed.refreshArtifacts()
+      expect(resumed.artifactBoard?.artifacts[0]).toMatchObject({ state: 'HELD', holderNickname: resumed.player.nickname })
+      expect(resumed.artifactBlock).toContain('就在你手里')
+
+      // 测试时钟停在周五。73 小时没回来：打狗棒已由长老收回；其间守过一个周日，补 15 块玄铁
+      resumed.updateLoadout({ weaponId: 'dagou_stick_true' })
+      const ironBefore = resumed.player.equipmentForge?.iron ?? 0
+      resumed.saveNow()
+      const saved = Date.now()
+      expect(new Date(saved).getUTCDay()).toBe(5)
+      clock = vi.spyOn(Date, 'now').mockReturnValue(saved + 73 * 3_600_000)
+      const back = newStore()
+      back.continueGame()
+      expect(back.ownedItemIds).not.toContain('dagou_stick_true')
+      expect(back.currentLoadout.weaponId).toBeNull()
+      expect(back.player.artifactLoss).toMatchObject({ cause: 'RECALL', iron: 15, by: null })
+      expect(back.player.equipmentForge?.iron).toBe(ironBefore + 15)
+      void back.refreshArtifacts()
+      expect(back.artifactBoard?.artifacts[0]).toMatchObject({ state: 'VACANT', holderId: null })
+      expect(back.marqueeBulletin).toContain('已由丐帮传功长老收回代守')
+
+      // 无主时任何一天都能上擂：胜过代守的长老即可重新执棒，每天三次
+      expect(back.artifactBlock).toBeUndefined()
+      boost(back)
+      void back.challengeArtifact()
+      expect(back.activeBattle).toMatchObject({ mode: 'SECT_TRIAL', sceneTitle: '君山擂台 · 打狗棒之争', winner: 'ALLY' })
+      expect(back.activeBattle?.units.find((unit) => unit.slot === 'ENEMY_MAIN')?.name).toBe('传功长老')
+      expect(back.ownedItemIds).not.toContain('dagou_stick_true')
+      back.skipBattleToEnd()
+      back.skipBattleToEnd()
+      expect(back.ownedItemIds).toContain('dagou_stick_true')
+      expect(back.artifactAttempts).toBe(2)
+      back.closeBattleStage()
+      void back.refreshArtifacts()
+      expect(back.artifactBoard?.artifacts[0]).toMatchObject({ state: 'HELD', holderId: back.player.id, duels: [{ defender: null, won: true, self: true }] })
+      expect(back.marqueeBulletin).toContain('胜过代守的传功长老')
+
+      // 叛出丐帮：当场收回，此后不得再上擂
+      back.leaveSect('BETRAY')
+      expect(back.ownedItemIds).not.toContain('dagou_stick_true')
+      expect(back.player.artifactLoss).toMatchObject({ cause: 'BETRAY', iron: 0 })
+      void back.refreshArtifacts()
+      expect(back.artifactBoard?.artifacts[0].state).toBe('VACANT')
+      expect(back.artifactBlock).toContain('叛出丐帮')
+      back.closeBattleStage()
     } finally {
       hero.closeBattleStage()
       rng.mockRestore()
+      clock?.mockRestore()
     }
   })
 

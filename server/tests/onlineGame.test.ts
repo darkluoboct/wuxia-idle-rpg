@@ -7,16 +7,18 @@ import cookie from '@fastify/cookie'
 import websocket from '@fastify/websocket'
 import Fastify from 'fastify'
 import pg from 'pg'
-import { COMPANIONS, COOP_RAIDS, INN_GIFT_COST, SKILLS } from '../../shared/gameData.ts'
+import { COMPANIONS, COOP_RAIDS, INN_GIFT_COST, ITEMS, SKILLS } from '../../shared/gameData.ts'
+import { GAIBANG_FINAL_DISHES, gaibangDishFlag } from '../../shared/gaibang.ts'
 import { DAILY_TASKS, INGOT } from '../../shared/economy.ts'
 import { DISHES, FEAST_TARGET_FLAG } from '../../shared/feast.ts'
 import { FTUE_QUESTS } from '../../shared/ftueQuests.ts'
 import { GACHA_DUP_TOKENS, GACHA_HARD_PITY, GACHA_SINGLE_COST, REUNION_TICKET_COST } from '../../shared/gacha.ts'
+import { arenaDay, arenaWindow, DAGOU_ELDER, DAGOU_STAFF, isArenaDay, nextArenaDay } from '../../shared/artifacts.ts'
 import { AUCTION_BID_STEP, AUCTION_SOFT_CLOSE_MS, auctionDay, auctionLot, auctionWindow } from '../../shared/ghostAuction.ts'
 import { computeDerivedStats } from '../../shared/battle.ts'
 import { huashanSeason } from '../../shared/huashan.ts'
 import { createStarterCharacter, legacyAcupoints } from '../../shared/player.ts'
-import type { AuctionBoardDTO, AuctionResult, AwakenResult, BattleReportDTO, BountyBoardDTO, BountyEntryDTO, FeastResult, FtueClaimResult, GachaResult, GameAction, HuashanBoardDTO, HuashanResult, IdleGain, LibraryResult, LibraryStatusDTO, PlayerSnapshot, RaidId, ReunionResult, SectContestBoardDTO, SectContestResult, SectResult, StoryAdventureResult, StoryChallengeResult, WsServerEvent } from '../../shared/protocol.ts'
+import type { ArtifactBoardDTO, ArtifactResult, AuctionBoardDTO, AuctionResult, AwakenResult, BattleReportDTO, BountyBoardDTO, BountyEntryDTO, FeastResult, FtueClaimResult, GachaResult, GameAction, HuashanBoardDTO, HuashanResult, IdleGain, LibraryResult, LibraryStatusDTO, PlayerSnapshot, RaidId, ReunionResult, SectContestBoardDTO, SectContestResult, SectResult, StoryAdventureResult, StoryChallengeResult, WsServerEvent } from '../../shared/protocol.ts'
 import { QUANZHEN_LIBRARY } from '../../shared/quanzhen.ts'
 import { BETRAYAL_BOUNTY, SECT_CHIEF_SALUTE_QI, SECT_SALUTE_QI, sectContestEndsAt, sectContestWeek } from '../../shared/sectProgress.ts'
 import { ONLINE_STORY_CHAPTERS, ONLINE_STORY_PROGRESS_VERSION } from '../../shared/storyData.ts'
@@ -1137,6 +1139,140 @@ describe('联机战斗', { skip: connection ? false : '请设置 GAME_TEST_DATAB
       assert.equal(paid.snapshot.player.goldIngot, waiting.snapshot.player.goldIngot + 30)
       assert.deepEqual(paid.snapshot.player.auctionDividend, { day: third, ingot: 30 })
       assert.deepEqual((await solo.read<AuctionBoardDTO>(path)).lot.dividend, { eligible: 1, winners: 1, share: 30, mine: 'PAID' })
+    } finally {
+      fixedServerTime = undefined
+    }
+  })
+
+  it('兵器谱：打狗棒首位终考者得之，周日君山攻擂胜者执棒，久未露面或叛帮即收回由长老代守', async () => {
+    const path = '/market/artifacts'
+    const itemId = DAGOU_STAFF.itemId
+    const [first, strong, weak] = await Promise.all(['staff_a', 'staff_b', 'staff_c'].map(createPlayer))
+    const HOUR = 3_600_000
+    const board = async (who = weak) => (await who.read<ArtifactBoardDTO>(path)).artifacts[0]
+    const challenge = (who: typeof first, holderId: string | null) => who.post(path, { action: 'challenge', itemId, holderId })
+    const fight = async (who: typeof first, holderId: string | null) => {
+      const response = await challenge(who, holderId)
+      assert.equal(response.statusCode, 200, response.body)
+      return response.json<GameAction<ArtifactResult>>()
+    }
+    const blocked = async (who: typeof first, holderId: string | null) => {
+      const response = await challenge(who, holderId)
+      assert.equal(response.statusCode, 409, response.body)
+      return response.json<{ code: string; message: string }>()
+    }
+    // 任何一次操作都算执棒者露面
+    const showUp = (who: typeof first) => who.act('/market/auction', { action: 'dividend', day: 1 })
+    const finalExam = async (who: typeof first) => {
+      await profile(who.id, { currentSectId: 'gaibang', sectRank: 4, gaibangBranch: 'WUYI', sectProgressFlags: GAIBANG_FINAL_DISHES.map(({ id }) => gaibangDishFlag(id)) })
+      const passed = await who.act<{ action: 'trial'; report: BattleReportDTO }>('/sect', { action: 'trial', sectId: 'gaibang', expectedRank: 4 })
+      assert.equal(passed.result.report.winner, 'ALLY')
+      return passed
+    }
+    await db.query('DELETE FROM unique_artifacts')
+    await db.query('DELETE FROM artifact_duels')
+    await db.query('DELETE FROM player_items WHERE item_id = $1', [itemId])
+    const sunday = nextArenaDay(arenaDay(Date.now()) + 8)
+    const { opensAt } = arenaWindow(sunday)
+    try {
+      // 周六：尚无人得棒，谁也不能上擂；首位通过终考的侠客自得衣钵，第二位只得绝学
+      fixedServerTime = opensAt - 2 * HOUR
+      assert.deepEqual([(await board()).state, (await board()).holderId], ['UNCLAIMED', null])
+      assert.match((await blocked(strong, null)).message, /第一人自得衣钵/)
+      const heir = await finalExam(first)
+      assert.ok(heir.snapshot.ownedItemIds.includes(itemId))
+      assert.ok(heir.result.report.rewards?.items?.some(({ id }) => id === itemId))
+      assert.deepEqual(heir.snapshot.player.artifactHonors, [itemId])
+      const second = await finalExam(strong)
+      assert.ok(second.snapshot.learnedSkills[DAGOU_STAFF.proofSkillId])
+      assert.ok(!second.snapshot.ownedItemIds.includes(itemId))
+      assert.deepEqual(await board(), {
+        artifactCode: 'TRUE_DAGOU', itemId, name: ITEMS[itemId].name, state: 'HELD', holderId: first.id, holderNickname: heir.snapshot.player.nickname,
+        holderSect: '丐帮', heldSince: opensAt - 2 * HOUR, defendStreak: 0, recallAt: opensAt - 2 * HOUR + DAGOU_STAFF.idleRecallMs, duels: [],
+      })
+      await db.query('INSERT INTO player_skills VALUES ($1, $2, 1)', [weak.id, DAGOU_STAFF.proofSkillId])
+      assert.match((await blocked(strong, first.id)).message, /每周日开擂/)
+      assert.match((await blocked(first, first.id)).message, /就在你手里/)
+
+      // 周日开擂：打不过的三次用尽；打得过的当场执棒，旧主配装里的棒被摘下
+      fixedServerTime = opensAt + HOUR
+      await showUp(first)
+      await strength(first.id, 28, 26, 32, 3, 36)
+      const armed = await first.read()
+      await first.act('/loadout/1', { preset: { ...armed.loadouts[0], weaponId: itemId }, expectedRevision: armed.revision }, undefined, 'PUT')
+      await strength(weak.id, 5, 5, 10, 1, 5)
+      await strength(strong.id, 80, 80, 45, 4, 80)
+      assert.equal((await blocked(strong, null)).code, 'ARTIFACT_CHANGED')
+      for (const left of [2, 1, 0]) {
+        const lost = await fight(weak, first.id)
+        assert.deepEqual([lost.result.won, lost.result.attemptsLeft, lost.result.report.winner], [false, left, 'ENEMY'])
+      }
+      assert.match((await blocked(weak, first.id)).message, /已用尽/)
+      const socket = await weak.connect()
+      const news = (async () => {
+        for await (const [message] of on(socket, 'message', { signal: AbortSignal.timeout(5_000) })) {
+          const parsed = JSON.parse(message.data) as WsServerEvent
+          if (parsed.event === 'UNIQUE_ARTIFACT_CHANGED') return parsed.data
+        }
+      })()
+      const seized = await fight(strong, first.id)
+      assert.deepEqual([seized.result.won, seized.result.attemptsLeft], [true, 2])
+      assert.ok(seized.snapshot.ownedItemIds.includes(itemId))
+      assert.deepEqual(await news, { itemId, cause: 'SEIZE', newOwner: second.snapshot.player.nickname, previousOwner: heir.snapshot.player.nickname })
+      socket.close()
+      const ousted = await first.read()
+      assert.ok(!ousted.ownedItemIds.includes(itemId))
+      assert.ok(ousted.loadouts.every(({ weaponId }) => weaponId !== itemId))
+      assert.deepEqual(ousted.player.artifactLoss, { itemId, at: opensAt + HOUR, cause: 'SEIZE', iron: 0, by: second.snapshot.player.nickname })
+      assert.equal((await fight(first, strong.id)).result.won, false)
+      const afterSeize = await board()
+      assert.deepEqual([afterSeize.holderId, afterSeize.defendStreak, afterSeize.duels.length, afterSeize.duels[0].defender], [strong.id, 0, 5, second.snapshot.player.nickname])
+      assert.deepEqual(afterSeize.duels.map(({ won, self }) => [won, self]), [[false, false], [true, false], [false, true], [false, true], [false, true]])
+
+      // 新擂主隔两天露一次面，守过下一个周日记一届
+      for (const days of [2, 4, 6, 8]) {
+        fixedServerTime = opensAt + days * 24 * HOUR + HOUR
+        await showUp(strong)
+      }
+      assert.deepEqual([(await board()).state, (await board()).defendStreak], ['HELD', 1])
+
+      // 80 小时不露面：兵器谱上已是长老代守；本人回来时棒已收回，守过一届补 15 块玄铁
+      const returned = opensAt + 8 * 24 * HOUR + 81 * HOUR
+      fixedServerTime = returned
+      assert.deepEqual([(await board()).state, (await board()).holderId, (await board()).holderNickname], ['VACANT', strong.id, null])
+      const iron = (await strong.read()).player.equipmentForge?.iron ?? 0
+      const recalled = await showUp(strong)
+      assert.ok(!recalled.snapshot.ownedItemIds.includes(itemId))
+      assert.deepEqual(recalled.snapshot.player.artifactLoss, { itemId, at: returned, cause: 'RECALL', iron: DAGOU_STAFF.ironPerDefense, by: null })
+      // 同一次操作里还结算了这 80 小时的巡历，玄铁只会更多
+      assert.ok((recalled.snapshot.player.equipmentForge?.iron ?? 0) >= iron + DAGOU_STAFF.ironPerDefense)
+      assert.deepEqual([(await board()).state, (await board()).holderId], ['VACANT', null])
+
+      // 无主时任何一天都能上擂，对手是代守的传功长老
+      assert.equal(isArenaDay(arenaDay(returned)), false)
+      const beaten = await fight(weak, null)
+      assert.deepEqual([beaten.result.won, beaten.result.report.units.some(({ name }) => name === DAGOU_ELDER.name)], [false, true])
+      await strength(first.id, 80, 80, 45, 4, 80)
+      const regained = await fight(first, null)
+      assert.equal(regained.result.won, true)
+      assert.deepEqual([(await board()).holderId, (await board()).duels[0].defender], [first.id, null])
+
+      // 执棒者久未露面时别人来攻擂：先收回，再与长老过招
+      fixedServerTime = returned + 80 * HOUR
+      const taken = await fight(strong, first.id)
+      assert.equal(taken.result.won, true)
+      assert.equal((await first.read()).player.artifactLoss?.cause, 'RECALL')
+      assert.ok(!(await first.read()).ownedItemIds.includes(itemId))
+      assert.equal((await board()).holderId, strong.id)
+
+      // 叛出丐帮：打狗棒当场收回，不补偿，此后不得再上擂
+      const traitor = await strong.act('/sect', { action: 'betray', sectId: 'gaibang' })
+      assert.ok(!traitor.snapshot.ownedItemIds.includes(itemId))
+      assert.deepEqual([traitor.snapshot.player.artifactLoss?.cause, traitor.snapshot.player.artifactLoss?.iron], ['BETRAY', 0])
+      assert.deepEqual([(await board()).state, (await board()).holderId], ['VACANT', null])
+      assert.match((await blocked(strong, null)).message, /叛出丐帮/)
+      const { rows: owners } = await db.query('SELECT 1 FROM player_items WHERE item_id = $1', [itemId])
+      assert.equal(owners.length, 0)
     } finally {
       fixedServerTime = undefined
     }

@@ -9,10 +9,9 @@ import type {
   RaidLobbyDTO,
   RoomPlayerDTO,
   SectContestAction,
-  UniqueArtifactStatusDTO,
   WsServerEvent,
 } from '@/network/protocol'
-import { generateRoomPlayers, INITIAL_UNIQUE_ARTIFACTS, mockDuelOpponent } from '@/network/mockEngine'
+import { generateRoomPlayers, mockDuelOpponent } from '@/network/mockEngine'
 import { COOP_RAID_RELICS, COOP_RAIDS, ITEMS, MAPS, SHAOSHI_RAID } from '@/config/gameData'
 import { apiClient, ApiError, IS_MOCK_MODE } from '@/network/apiClient'
 import { simulatePlayerDuel, simulateShaoshiRaid } from '../../../shared/battle.ts'
@@ -87,28 +86,12 @@ export function useWorld({ battle, actions, selectTab, cultivation, companions }
   const nearbyPlayers = ref<RoomPlayerDTO[]>(IS_MOCK_MODE ? generateRoomPlayers('jiaxing_suburb') : [])
   const roomMapId = ref<string | null>(null)
   const roomCount = ref(0)
-  const ownsDagouStaff = computed(() => IS_MOCK_MODE && ownedItemIds.value.includes('dagou_stick_true'))
-  const uniqueArtifacts = computed<UniqueArtifactStatusDTO[]>(() => INITIAL_UNIQUE_ARTIFACTS.map((artifact) =>
-    ownsDagouStaff.value && artifact.itemId === 'dagou_stick_true'
-      ? { ...artifact, holderNickname: player.value.nickname, holderSect: currentSect.value?.name ?? '逍遥散人', defendStreak: 0, nextContestLabel: '丐帮衣钵传承' }
-      : artifact))
-  const visibleNearbyPlayers = computed(() => ownsDagouStaff.value
-    ? nearbyPlayers.value.map((nearby) => nearby.holdingUniqueArtifact === ITEMS.dagou_stick_true.name
-      ? { ...nearby, holdingUniqueArtifact: undefined } : nearby)
-    : nearbyPlayers.value)
-
   const worldMessages = ref<
     { id: string; channel: 'WORLD' | 'SECT' | 'RUMOR'; sender: string; sect: string; content: string; time: string }[]
   >(IS_MOCK_MODE ? [
-    { id: 'm1', channel: 'RUMOR', sender: '江湖百晓生', sect: '天机', content: '传闻【真·绿玉打狗棒】现落入白驼山【西域毒皇·欧阳烈】之手，丐帮群豪正欲夺回！', time: '辰时' },
     { id: 'm2', channel: 'WORLD', sender: '重阳首座·清风道长', sect: '全真教', content: '松鹤楼结义秘境【少林金刚伏魔圈】2缺1高爆发少侠，来个会降龙掌的兄弟！', time: '辰时' },
     { id: 'm3', channel: 'WORLD', sender: '桃花小师妹', sect: '桃花岛', content: '哪位散人大哥鬼市淘到了《九阴残页》？诚心高价收！', time: '巳时' },
   ] : [])
-  const visibleWorldMessages = computed(() => ownsDagouStaff.value
-    ? worldMessages.value.map((message) => message.id === 'm1'
-      ? { ...message, content: `【真·绿玉打狗棒】现由【${player.value.nickname}】执掌。` } : message)
-    : worldMessages.value)
-
   function handleRoomEvent(event: WsServerEvent) {
     if (event.event === 'ROOM_SYNC') {
       if (roomMapId.value !== event.data.mapId) worldMessages.value = []
@@ -498,14 +481,7 @@ export function useWorld({ battle, actions, selectTab, cultivation, companions }
     if (player.value.bountyUntil) {
       items.push(`【海捕文书】「${player.value.nickname}」叛出师门，江湖侠客可追捕领赏。`)
     }
-    for (const art of uniqueArtifacts.value) {
-      if (art.holderNickname) {
-        items.push(`【兵器谱孤品】「${art.name}」在${art.holderSect}的${art.holderNickname}手中，已守住 ${art.defendStreak} 届。`)
-      } else {
-        items.push(`【秘境风声】「${art.name}」还没有主人，${art.nextContestLabel}。`)
-      }
-    }
-    const latestRumor = visibleWorldMessages.value.find((m) => m.channel === 'RUMOR')
+    const latestRumor = worldMessages.value.find((m) => m.channel === 'RUMOR')
     if (latestRumor) {
       items.push(`【百晓生传书】${latestRumor.content}`)
     }
@@ -547,9 +523,6 @@ export function useWorld({ battle, actions, selectTab, cultivation, companions }
     selectedRaidId,
     selectedRaidClears,
     roomCount,
-    visibleNearbyPlayers,
-    uniqueArtifacts,
-    visibleWorldMessages,
     marqueeBulletin,
     moveMap,
     travelTo,

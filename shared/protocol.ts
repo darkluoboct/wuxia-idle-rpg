@@ -109,6 +109,9 @@ export interface PlayerDTO {
   ingotClaims?: string[]            // 已领的一次性元宝里程碑
   daily?: { day: number; done: string[]; claimed: boolean }
   patrolIngot?: { day: number; got: number }
+  artifactDuel?: { day: number; used: number } // 君山擂台当日已上擂次数
+  artifactHonors?: string[]         // 曾执掌过的全服唯一真品
+  artifactLoss?: { itemId: string; at: number; cause: 'SEIZE' | 'RECALL' | 'BETRAY'; iron: number; by: string | null } // 最近一次失去真品
   auctionTickets?: number[]         // 鬼市红封签：21:00 前领过每日江湖事的场次，落槌后兑付
   auctionDividend?: { day: number; ingot: number } // 最近一次兑付的红封（未中签为 0）
   gacha?: { pulls: number; pity: number }
@@ -588,11 +591,28 @@ export interface UniqueArtifactStatusDTO {
   artifactCode: string
   itemId: string
   name: string
-  holderNickname: string | null // null 表示在王盘山/剑冢待争夺
-  holderSect: string
+  /** UNCLAIMED 从未有人得到；VACANT 无主或执棒者久未露面，由传功长老代守 */
+  state: 'UNCLAIMED' | 'HELD' | 'VACANT'
+  holderId: string | null
+  holderNickname: string | null
+  holderSect: string | null
+  heldSince: number | null
   defendStreak: number
-  nextContestLabel: string
+  /** 执棒者再不露面就收回的时刻 */
+  recallAt: number | null
+  duels: { at: number; challenger: string; defender: string | null; won: boolean; self: boolean }[]
 }
+
+export interface ArtifactBoardDTO {
+  serverTime: number
+  artifacts: UniqueArtifactStatusDTO[]
+  /** 神兵名录：第一卷神品装备的全服持有人数 */
+  registry: { itemId: string; holders: number }[]
+}
+
+export type ArtifactAction = { action: 'challenge'; itemId: string; holderId: string | null }
+
+export type ArtifactResult = { action: 'challenge'; report: BattleReportDTO; won: boolean; attemptsLeft: number }
 
 export interface GhostAppraisalResult {
   spentSilver: number
@@ -668,7 +688,7 @@ export type WsServerEvent =
   | { event: 'CHAT_REJECTED'; data: { code: string; message: string } }
   | { event: 'WORLD_CHAT'; data: { id: string; channel: 'WORLD' | 'SECT' | 'RUMOR'; sender: string; sect: string; content: string; time: string } }
   | { event: 'SECT_BOUNTY_ISSUED'; data: { traitorName: string; sectName: string; stolenSkill: string; rewardSilver: number } }
-  | { event: 'UNIQUE_ARTIFACT_CHANGED'; data: { artifactName: string; newOwner: string } }
+  | { event: 'UNIQUE_ARTIFACT_CHANGED'; data: { itemId: string; cause: 'GRANT' | 'SEIZE' | 'RECALL' | 'BETRAY'; newOwner: string | null; previousOwner: string | null } }
   | { event: 'AUCTION_OUTBID'; data: { day: number; itemId: string; refund: number; price: number } }
 
 /** 客栈结缘：单抽结果（真实环境由服务端产出并记审计日志，客户端只负责展示） */

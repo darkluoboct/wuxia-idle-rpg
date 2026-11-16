@@ -201,6 +201,10 @@ export function registerRooms(app: FastifyInstance) {
     sendToPlayer: (playerId: string, event: WsServerEvent) => {
       for (const connection of online.get(playerId)?.connections ?? []) send(connection, event)
     },
+    /** 向全服在线侠客推送 */
+    announce: (event: WsServerEvent) => {
+      for (const member of online.values()) for (const connection of member.connections) send(connection, event)
+    },
     onPresenceChange: (listener: NonNullable<typeof onPresence>) => { onPresence = listener },
     onJoin: (listener: NonNullable<typeof onJoin>) => { onJoin = listener },
   }

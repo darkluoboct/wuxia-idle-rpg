@@ -43,11 +43,12 @@ import {
   REUNION_QUESTS,
   REUNION_WAIT_HOURS,
 } from '@/config/questData'
-import type { StanceType, UniqueArtifactStatusDTO } from '@/network/protocol'
+import type { StanceType } from '@/network/protocol'
 import InkFigure from '@/components/InkFigure.vue'
 import HuashanLadder from '@/components/HuashanLadder.vue'
 import GhostAuction from '@/components/GhostAuction.vue'
 import EquipmentForge from '@/components/EquipmentForge.vue'
+import ArtifactBoard from '@/components/ArtifactBoard.vue'
 
 const store = useGameStore()
 const sub = computed({
@@ -56,23 +57,6 @@ const sub = computed({
 })
 const ghostMasked = ref(store.player.wearingMask)
 watch(() => store.player.wearingMask, (masked) => { ghostMasked.value = masked })
-const staff = ref<UniqueArtifactStatusDTO>()
-const staffError = ref(false)
-const artifacts = computed(() => IS_MOCK_MODE ? store.uniqueArtifacts : staff.value ? [staff.value] : [])
-watch(sub, async (tab, _old, onCleanup) => {
-  if (IS_MOCK_MODE || tab !== 'ARTIFACTS') return
-  staff.value = undefined
-  staffError.value = false
-  let current = true
-  onCleanup(() => { current = false })
-  try {
-    const result = await apiClient.request<{ staff: UniqueArtifactStatusDTO }>('GET', '/sect/dagou-staff')
-    if (current) staff.value = result.staff
-  } catch {
-    if (current) staffError.value = true
-  }
-}, { immediate: true })
-
 function enterGhostMarket() {
   sub.value = 'GHOST'
   store.toggleTheme(true) // 子时鬼市：自动切入玄墨夜色
@@ -758,29 +742,7 @@ const FLAME_META = {
       </div>
 
       <!-- ============ 兵器谱 ============ -->
-      <div v-else class="view-scroll -mr-1 space-y-3 pr-1">
-        <p v-if="IS_MOCK_MODE" class="hint">兵器谱记着每件真品的主人和下次争夺时间。每件真品只有一件。</p>
-        <p v-else-if="!staff" class="hint">{{ staffError ? '暂时无法读取兵器谱。' : '正在读取兵器谱。' }}</p>
-        <div class="grid gap-3 sm:grid-cols-2">
-          <article v-for="art in artifacts" :key="art.artifactCode" class="well t-red glow-border space-y-2 p-3.5">
-            <div class="flex items-start justify-between gap-2">
-              <h4 class="font-brush tier-text text-2xl leading-tight">「{{ art.name }}」</h4>
-              <span class="chip tier-chip shrink-0">全服唯一</span>
-            </div>
-            <div class="flex items-center gap-2 text-sm">
-              <span class="seal h-7 w-7 text-base" :class="art.holderNickname ? '' : '!bg-transparent !text-ink3 !shadow-none !outline-ink3'">{{ art.holderNickname ? '执' : '空' }}</span>
-              <div class="min-w-0">
-                <div class="truncate font-bold" :class="art.holderNickname ? '' : 'text-ink3'">{{ art.holderNickname ?? '还没有主人' }}</div>
-                <div class="truncate text-xs text-ink3">{{ art.holderSect }}</div>
-              </div>
-            </div>
-            <div class="flex items-center justify-between border-t border-line pt-2 text-xs text-ink3">
-              <span v-if="IS_MOCK_MODE">已守住 <b class="text-ink2">{{ art.defendStreak }}</b> 届</span>
-              <span class="text-right">{{ art.nextContestLabel }}</span>
-            </div>
-          </article>
-        </div>
-      </div>
+      <ArtifactBoard v-else />
     </section>
 
     <!-- 概率公示 -->

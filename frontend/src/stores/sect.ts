@@ -4,6 +4,7 @@ import { ITEMS, MAPS, SECTS, SKILLS, type SectConfig } from '@/config/gameData'
 import { IS_MOCK_MODE } from '@/network/apiClient'
 import { resolveBattleLoadout } from '../../../shared/battleEffects.ts'
 import { GAIBANG_BRANCHES, GAIBANG_DEBATE, gaibangDishFlag, gaibangDishPrepared, gaibangSilverGain } from '../../../shared/gaibang.ts'
+import { DAGOU_STAFF } from '../../../shared/artifacts.ts'
 import { huashanDay } from '../../../shared/huashan.ts'
 import {
   SECT_SALUTE_QI,
@@ -25,14 +26,16 @@ import type { useBattlePlayback } from './battlePlayback'
 import type { useStory } from './story'
 import type { useWorld } from './world'
 import type { useCompanions } from './companions'
+import type { useArtifacts } from './artifacts'
 
-export function useSect({ actions, cultivation, battle, story, world, companions }: {
+export function useSect({ actions, cultivation, battle, story, world, companions, artifacts }: {
   actions: GameActions
   cultivation: Pick<ReturnType<typeof useCultivation>, 'settleMockIdle' | 'changeMockKarma'>
   battle: Pick<ReturnType<typeof useBattlePlayback>, 'isBattlePlaying' | 'startBattlePlayback' | 'startLocalBattle' | 'activeBattle'>
   story: Pick<ReturnType<typeof useStory>, 'applyReward'>
   world: Pick<ReturnType<typeof useWorld>, 'worldMessages'>
   companions: Pick<ReturnType<typeof useCompanions>, 'feast'>
+  artifacts: Pick<ReturnType<typeof useArtifacts>, 'holdLocally' | 'loseLocally'>
 }) {
   const playerStore = usePlayerStore()
   const {
@@ -215,9 +218,11 @@ export function useSect({ actions, cultivation, battle, story, world, companions
       if (sk && !had) grants.push({ type: 'text', text: '，获传绝学' }, { type: 'skill', id: skillId, name: `《${sk.name}》`, tier: sk.tier })
     }
     const itemId = sect.signatureItems?.[newRank]
-    if (itemId && ITEMS[itemId] && !ownedItemIds.value.includes(itemId)) {
+    // 全服唯一真品只在头一回通过终考时传下；曾经执掌、后来失去的要到君山擂台去争
+    if (itemId && ITEMS[itemId] && !ownedItemIds.value.includes(itemId) && !player.value.artifactHonors?.includes(itemId)) {
       const item = ITEMS[itemId]
-      gainItem(itemId)
+      if (item.isTrueUnique) artifacts.holdLocally('GRANT')
+      else gainItem(itemId)
       grants.push({ type: 'text', text: '，赐下' }, { type: 'item', id: itemId, name: `【${item.name}】`, tier: item.tier, isTrueUnique: item.isTrueUnique })
     }
     claimSectEquipment()
@@ -364,6 +369,7 @@ export function useSect({ actions, cultivation, battle, story, world, companions
       delete player.value.gaibangBranch
       player.value.bountyUntil = Date.now() + 1000 * 3600 * 48
       const lostKarma = Math.abs(changeMockKarma(-120))
+      if (oldSect.id === DAGOU_STAFF.sectId) artifacts.loseLocally('BETRAY', Date.now())
 
       worldMessages.value.unshift({
         id: `bounty_${Date.now()}`,

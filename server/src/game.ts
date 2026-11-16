@@ -25,13 +25,14 @@ import { QUANZHEN_LIBRARY } from '../../shared/quanzhen.ts'
 import { claimDailyIngot, claimMilestoneIngots, huashanIngot, INGOT, markDailyTask, patrolCacheIngot, resolvedAdventures, type DailyTaskId } from '../../shared/economy.ts'
 import { awakenCompanion, blankCompanionState, pullGacha, REUNION_TICKET_COST } from '../../shared/gacha.ts'
 import { cookFeastDish, feastActive, gatherFeastIngredient } from '../../shared/feast.ts'
+import { ARENA_SCENE, artifactChallengeBlock, artifactState, DAGOU_STAFF, defendedArenas, honorArtifactHolder, simulateElderDuel, spendArtifactAttempt, surrenderArtifact } from '../../shared/artifacts.ts'
 import { AUCTION_MASK_COUNT, auctionDay, auctionDividend, auctionLot, auctionWindow, bidderMask, nextAuctionBid, ownsAuctionLot, settleAuctionTickets, softCloseAt, type AuctionTicketLot } from '../../shared/ghostAuction.ts'
 import { claimFtueQuest, emptyFtue, recordFtueForage, recordFtueRefine } from '../../shared/ftueQuests.ts'
 import { gainReunionClues, newReunion, reunionCluesToday, reunionEncounter, reunionWaitTime, REUNION_INQUIRE_COST, REUNION_QUESTS, REUNION_WAIT_HOURS, type ClueSource, type ReunionQuestConfig } from '../../shared/reunion.ts'
 import type {
-  AuctionBoardDTO, AuctionLotDTO, AuctionResult, AwakenResult, BattleReportDTO, BountyBoardDTO, BountyEntryDTO, ChapterOneStatueDTO, CoCultivationDTO, CoCultivationInviteDTO, CompanionState, CompanionWear, CultivationResult, DuelInviteDTO, FeastResult, ForgeInput, ForgeResult, FtueClaimResult, GachaResult, GameAction, HuashanBoardDTO, HuashanEntryDTO, HuashanResult, IdleGain, InnGiftResult, LibraryResult, LibraryStatusDTO, LoadoutPresetDTO, MapMoveResult, PersonalEquipSlot, PlayerDTO, PlayerSnapshot,
+  ArtifactBoardDTO, ArtifactResult, AuctionBoardDTO, AuctionLotDTO, AuctionResult, AwakenResult, BattleReportDTO, BountyBoardDTO, BountyEntryDTO, ChapterOneStatueDTO, CoCultivationDTO, CoCultivationInviteDTO, CompanionState, CompanionWear, CultivationResult, DuelInviteDTO, FeastResult, ForgeInput, ForgeResult, FtueClaimResult, GachaResult, GameAction, HuashanBoardDTO, HuashanEntryDTO, HuashanResult, IdleGain, InnGiftResult, LibraryResult, LibraryStatusDTO, LoadoutPresetDTO, MapMoveResult, PersonalEquipSlot, PlayerDTO, PlayerSnapshot,
   MirrorRankEntryDTO, ReunionResult, RichSegment, SectChiefDTO, SectContestBoardDTO, SectContestResult, SectResult, SkillSlotType, SkillUpgradeResult, StoryAdventureResult, StoryChallengeResult, StorySnakeChoiceResult, TrialChallengeResult, TrialDropDTO, TrialPatrolStatusDTO, TrialReplayResult,
-  UniqueArtifactStatusDTO, WsServerEvent,
+  WsServerEvent,
 } from '../../shared/protocol.ts'
 import { requireSession } from './auth.ts'
 import { serverTime, transaction } from './db.ts'
@@ -74,6 +75,8 @@ type Character = Omit<PlayerSnapshot, 'serverTime' | 'derivedStats' | 'idlePrevi
   dirty?: boolean
   loadoutsDirty?: boolean
   ingotLog?: { delta: number; reason: string; ref?: string }[]
+  /** 本次操作提交后要向全服在线侠客推送的消息 */
+  broadcasts?: WsServerEvent[]
 }
 
 /** 元宝变动先记在角色上，随存档一起写流水 */
@@ -548,6 +551,52 @@ class RelatedLocksNeeded extends Error {
   }
 }
 
+interface ArtifactRow {
+  item_id: string
+  holder_id: string | null
+  held_since: string
+  seen_at: string
+}
+
+type ArtifactLossCause = NonNullable<PlayerDTO['artifactLoss']>['cause']
+
+/** 把真品从执棒者手里拿走：摘下配装、按守擂届数补偿玄铁、留一条失棒记录，并向全服传告 */
+async function takeArtifact(client: PoolClient, holder: Character, row: ArtifactRow, now: number, cause: ArtifactLossCause, by: Character | null) {
+  await client.query('DELETE FROM player_items WHERE player_id = $1 AND item_id = $2', [holder.player.id, row.item_id])
+  holder.ownedItemIds = holder.ownedItemIds.filter((id) => id !== row.item_id)
+  const iron = surrenderArtifact(holder.player, holder.loadouts, Number(row.held_since), now, cause !== 'BETRAY')
+  holder.player.artifactLoss = { itemId: row.item_id, at: now, cause, iron, by: by?.player.nickname ?? null }
+  holder.loadoutsDirty = true
+  holder.dirty = true
+  await client.query('UPDATE unique_artifacts SET holder_id = $2, held_since = $3, seen_at = $3 WHERE item_id = $1', [row.item_id, by?.player.id ?? null, now])
+  ;(holder.broadcasts ??= []).push({ event: 'UNIQUE_ARTIFACT_CHANGED', data: {
+    itemId: row.item_id, cause, newOwner: by?.player.nickname ?? null, previousOwner: holder.player.nickname,
+  } })
+}
+
+/** 真品到手：进背包、空着的兵器栏自动装上、记「曾执」印记 */
+async function receiveArtifact(client: PoolClient, character: Character, itemId: string) {
+  await client.query('INSERT INTO player_items (player_id, item_id) VALUES ($1, $2)', [character.player.id, itemId])
+  character.ownedItemIds.push(itemId)
+  gainedItem(character, itemId)
+  honorArtifactHolder(character.player)
+  character.dirty = true
+}
+
+/**
+ * 执棒者每次操作都算露面；久未露面再回来，打狗棒已由长老收回。
+ * ponytail: 露面时间十分钟内只记一次，执棒者只有一位，不会成为热点。
+ */
+async function touchArtifact(client: PoolClient, character: Character, now: number) {
+  if (!character.ownedItemIds.includes(DAGOU_STAFF.itemId)) return
+  const { rows: [row] } = await client.query<ArtifactRow>(
+    'SELECT * FROM unique_artifacts WHERE item_id = $1 AND holder_id = $2 FOR UPDATE', [DAGOU_STAFF.itemId, character.player.id])
+  if (!row) return
+  const idle = now - Number(row.seen_at)
+  if (idle >= DAGOU_STAFF.idleRecallMs) await takeArtifact(client, character, row, now, 'RECALL', null)
+  else if (idle > 600_000) await client.query('UPDATE unique_artifacts SET seen_at = $2 WHERE item_id = $1', [row.item_id, now])
+}
+
 interface AuctionRow {
   day: number
   item_id: string
@@ -625,6 +674,7 @@ async function saveCharacter(client: PoolClient, character: Character, now: numb
 async function writeAction<T>(request: FastifyRequest, apply: ApplyAction<T>): Promise<{
   response: GameAction<T>
   updates: PlayerSnapshot[]
+  broadcasts?: WsServerEvent[]
   replayed?: true
 }> {
   const { accountId } = await requireSession(request)
@@ -658,6 +708,7 @@ async function writeAction<T>(request: FastifyRequest, apply: ApplyAction<T>): P
           return { response: { snapshot: snapshot(character, now), result: receipt.result }, updates: [], replayed: true as const }
         }
 
+        await touchArtifact(client, character, now)
         const patrolChanged = await settlePatrol(character, now, client)
         const { result, changed: applied, related = [] } = await apply(character, now, client, async (ids) => {
           if (ids.includes(row.id)) throw new GameError(400, 'INVALID_PARTNER', '请选择另一位侠客')
@@ -683,7 +734,7 @@ async function writeAction<T>(request: FastifyRequest, apply: ApplyAction<T>): P
         const latest = snapshot(character, now)
         const updates = changed ? [latest] : []
         for (const other of related) updates.push(snapshot(other, now))
-        return { response: { snapshot: latest, result }, updates }
+        return { response: { snapshot: latest, result }, updates, broadcasts: [character, ...related].flatMap((entry) => entry.broadcasts ?? []) }
       })
     } catch (error) {
       if (!(error instanceof RelatedLocksNeeded)) throw error
@@ -875,8 +926,9 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
   })
 
   async function respond<T>(request: FastifyRequest, apply: ApplyAction<T>) {
-    const { response, updates } = await writeAction(request, apply)
+    const { response, updates, broadcasts = [] } = await writeAction(request, apply)
     for (const updated of updates) rooms.publish(updated)
+    for (const event of broadcasts) rooms.announce(event)
     return response
   }
 
@@ -1388,7 +1440,7 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
     report.events.push({ round: report.events.at(-1)?.round ?? 1, type: 'EFFECT', actorSlot: 'ALLY_MAIN', segments })
   }
 
-  async function grantSectPromotion(client: PoolClient, character: Character, sect: (typeof SECTS)[number], rank: number) {
+  async function grantSectPromotion(client: PoolClient, character: Character, sect: (typeof SECTS)[number], rank: number, now: number) {
     const items: NonNullable<NonNullable<BattleReportDTO['rewards']>['items']> = []
     for (const id of sect.signatureSkills[rank - 1] ?? []) {
       const grant = await grantSkill(client, character, id)
@@ -1396,25 +1448,117 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
     }
     const itemIds = sectEquipmentRewardIds(sect.id, rank)
     const signature = sect.signatureItems?.[rank]
-    if (signature) itemIds.push(signature)
+    if (signature && !ITEMS[signature].isTrueUnique) itemIds.push(signature)
     const added = await grantItems(client, character, itemIds)
+    if (signature && ITEMS[signature].isTrueUnique) {
+      // 全服唯一真品只传给第一位通过终考的侠客；此后要到君山擂台去争
+      const { rowCount } = await client.query(`INSERT INTO unique_artifacts (item_id, holder_id, held_since, seen_at)
+        VALUES ($1, $2, $3, $3) ON CONFLICT (item_id) DO NOTHING`, [signature, character.player.id, now])
+      if (rowCount) {
+        await receiveArtifact(client, character, signature)
+        added.push(signature)
+        ;(character.broadcasts ??= []).push({ event: 'UNIQUE_ARTIFACT_CHANGED', data: {
+          itemId: signature, cause: 'GRANT', newOwner: character.player.nickname, previousOwner: null,
+        } })
+      }
+    }
     for (const id of added) items.push({ id, name: ITEMS[id].name, tier: ITEMS[id].tier })
     character.player.sectRank = rank
     return items
   }
 
-  app.get('/api/v1/sect/dagou-staff', async (request): Promise<{ staff: UniqueArtifactStatusDTO }> => {
-    await requireSession(request)
+  /** 神兵名录：第一卷的神品装备 */
+  const REGISTRY_ITEM_IDS = Object.values(ITEMS).filter((item) => item.tier === 'red' && !item.isTrueUnique).map(({ id }) => id)
+
+  app.get('/api/v1/market/artifacts', async (request): Promise<ArtifactBoardDTO> => {
+    const { accountId } = await requireSession(request)
     return transaction(async (client) => {
-      const item = ITEMS.dagou_stick_true
-      const { rows: [holder] } = await client.query<{ nickname: string; sectId: string | null }>(`
-        SELECT players.nickname, players.profile ->> 'currentSectId' AS "sectId"
-        FROM player_items JOIN players ON players.id = player_items.player_id WHERE item_id = $1`, [item.id])
-      return { staff: { artifactCode: 'TRUE_DAGOU', itemId: item.id, name: item.name,
-        holderNickname: holder?.nickname ?? null, holderSect: holder ? SECTS.find(({ id }) => id === holder.sectId)?.name ?? '逍遥散人' : '丐帮',
-        defendStreak: 0, nextContestLabel: '丐帮衣钵传承' } }
+      const { rows: [viewer] } = await client.query<{ id: string }>('SELECT id FROM players WHERE account_id = $1', [accountId])
+      if (!viewer) throw new GameError(404, 'PLAYER_NOT_CREATED', '先创建你的角色')
+      const now = await serverTime(client)
+      const item = ITEMS[DAGOU_STAFF.itemId]
+      const { rows: [row] } = await client.query<ArtifactRow & { nickname: string | null; sect_id: string | null }>(`
+        SELECT a.*, p.nickname, p.profile ->> 'currentSectId' AS sect_id
+        FROM unique_artifacts a LEFT JOIN players p ON p.id = a.holder_id WHERE a.item_id = $1`, [item.id])
+      const { rows: duels } = await client.query<{ created_at: string; challenger_id: string; challenger: string; defender: string | null; vs_elder: boolean; won: boolean }>(`
+        SELECT d.created_at, d.challenger_id, c.nickname AS challenger, f.nickname AS defender, d.vs_elder, d.won
+        FROM artifact_duels d JOIN players c ON c.id = d.challenger_id LEFT JOIN players f ON f.id = d.defender_id
+        WHERE d.item_id = $1 ORDER BY d.id DESC LIMIT 6`, [item.id])
+      const { rows: holders } = await client.query<{ item_id: string; holders: number }>(
+        'SELECT item_id, count(*)::int AS holders FROM player_items WHERE item_id = ANY($1::text[]) GROUP BY item_id', [REGISTRY_ITEM_IDS])
+      const state = artifactState(row && { holderId: row.holder_id, seenAt: Number(row.seen_at) }, now)
+      const held = state === 'HELD'
+      return {
+        serverTime: now,
+        artifacts: [{
+          artifactCode: DAGOU_STAFF.code, itemId: item.id, name: item.name, state,
+          // 久未露面的执棒者仍报出编号：上擂时据此核对打狗棒没有再易主
+          holderId: row?.holder_id ?? null,
+          holderNickname: held ? row.nickname : null,
+          holderSect: held ? SECTS.find(({ id }) => id === row.sect_id)?.name ?? '逍遥散人' : null,
+          heldSince: held ? Number(row.held_since) : null,
+          defendStreak: held ? defendedArenas(Number(row.held_since), now) : 0,
+          recallAt: held ? Number(row.seen_at) + DAGOU_STAFF.idleRecallMs : null,
+          duels: duels.map((duel) => ({
+            at: Number(duel.created_at), challenger: duel.challenger, defender: duel.vs_elder ? null : duel.defender ?? '已归隐的侠客',
+            won: duel.won, self: duel.challenger_id === viewer.id,
+          })),
+        }],
+        registry: REGISTRY_ITEM_IDS.map((itemId) => ({ itemId, holders: holders.find((entry) => entry.item_id === itemId)?.holders ?? 0 })),
+      }
     }, true)
   })
+
+  app.post('/api/v1/market/artifacts', (request) => respond<ArtifactResult>(request, async (character, now, client, readRelated) => {
+    const { action, itemId, holderId } = objectBody(request.body)
+    if (action !== 'challenge' || itemId !== DAGOU_STAFF.itemId || (holderId !== null && (typeof holderId !== 'string' || !UUID.test(holderId)))) {
+      throw new GameError(400, 'INVALID_ARTIFACT_ACTION', '请选择要争夺的真品')
+    }
+    const { player } = character
+    // 先认出执棒者并一起加锁，再锁住真品核对没有易主
+    const { rows: [seen] } = await client.query<ArtifactRow>('SELECT * FROM unique_artifacts WHERE item_id = $1', [itemId])
+    const [holder] = seen?.holder_id && seen.holder_id !== player.id ? await readRelated([seen.holder_id]) : []
+    const { rows: [row] } = await client.query<ArtifactRow>('SELECT * FROM unique_artifacts WHERE item_id = $1 FOR UPDATE', [itemId])
+    if ((row?.holder_id ?? null) !== (seen?.holder_id ?? null) || (row?.holder_id ?? null) !== (holderId?.toLowerCase() ?? null)) {
+      throw new GameError(409, 'ARTIFACT_CHANGED', '打狗棒刚刚易主，请刷新兵器谱')
+    }
+    const state = artifactState(row && { holderId: row.holder_id, seenAt: Number(row.seen_at) }, now)
+    const blocked = artifactChallengeBlock({ player, learnedSkills: character.learnedSkills, state, isHolder: row?.holder_id === player.id, now })
+    if (blocked) throw new GameError(409, 'ARTIFACT_CHALLENGE_BLOCKED', blocked)
+
+    const related: Character[] = []
+    // 执棒者久未露面：先由长老收回，再与长老过招
+    if (state === 'VACANT' && holder) {
+      await takeArtifact(client, holder, row, now, 'RECALL', null)
+      related.push(holder)
+    }
+    const defender = state === 'HELD' ? holder : undefined
+    const report = defender
+      ? simulatePlayerDuel({
+        battleId: randomUUID(), sceneTitle: ARENA_SCENE, mode: 'PVP_HUASHAN', lineup: [duelFighter(character), duelFighter(defender)],
+        environment: battleEnvironmentAt('sect_contest', new Date(now)),
+      })
+      : simulateElderDuel({
+        player, loadout: activeLoadout(character), learnedSkills: character.learnedSkills, bonus: collectionBonus(character),
+        ownedItemIds: character.ownedItemIds, companionOf: (id) => equippedCompanion(character, id),
+      }, now)
+    report.battleId = randomUUID()
+    const won = report.winner === 'ALLY'
+    const attemptsLeft = spendArtifactAttempt(player, now)
+    await client.query('INSERT INTO artifact_duels (item_id, challenger_id, defender_id, vs_elder, won, created_at) VALUES ($1, $2, $3, $4, $5, $6)',
+      [itemId, player.id, defender?.player.id ?? null, !defender, won, now])
+    if (won) {
+      if (defender) {
+        await takeArtifact(client, defender, row, now, 'SEIZE', character)
+        related.push(defender)
+      } else {
+        await client.query('UPDATE unique_artifacts SET holder_id = $2, held_since = $3, seen_at = $3 WHERE item_id = $1', [itemId, player.id, now])
+        ;(character.broadcasts ??= []).push({ event: 'UNIQUE_ARTIFACT_CHANGED', data: { itemId, cause: 'SEIZE', newOwner: player.nickname, previousOwner: null } })
+      }
+      await receiveArtifact(client, character, itemId)
+    }
+    return { result: { action, report, won, attemptsLeft }, changed: true, related }
+  }))
 
   app.post('/api/v1/sect', (request) => respond<SectResult>(request, async (character, now, client, readRelated) => {
     const { action, sectId, expectedRank, branch, answer, dishId } = objectBody(request.body)
@@ -1438,7 +1582,7 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
       player.sectRank = 1
       delete player.gaibangBranch
       player.sectContribution = 100 + (sect.introFlag && flags.includes(sect.introFlag) ? sect.introBonus ?? 0 : 0)
-      const items = await grantSectPromotion(client, character, sect, 1)
+      const items = await grantSectPromotion(client, character, sect, 1, now)
       return { result: { action, name: sect.name, items: items.filter(({ id }) => !!ITEMS[id]).map(({ id }) => id) }, changed: true }
     }
     const sect = SECTS.find((entry) => entry.id === player.currentSectId)
@@ -1509,7 +1653,7 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
           player.qiExp += rewards.qiExp
           player.silver += rewards.silver
           player.sectContribution += rewards.sectContrib
-          const items = await grantSectPromotion(client, character, sect, newRank)
+          const items = await grantSectPromotion(client, character, sect, newRank, now)
           player.gaibangBranch = 'JINGYI'
           return { result: { action, correct: true, rewards: { ...rewards, items } }, changed: true }
         }
@@ -1530,7 +1674,7 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
       const usedMedicine = spendBattleMedicines(player, report)
       if (report.winner !== 'ALLY') return { result: { action, report }, changed: gainedLoot || usedMedicine }
       settle(character, now)
-      const items = newRank > rank || finale ? await grantSectPromotion(client, character, sect, newRank) : []
+      const items = newRank > rank || finale ? await grantSectPromotion(client, character, sect, newRank, now) : []
       if (exam?.completionFlag && !flags.includes(exam.completionFlag)) player.sectProgressFlags = [...flags, exam.completionFlag]
       if (choosing) player.gaibangBranch = 'WUYI'
       const rewards = report.rewards ?? { qiExp: 0, silver: 0 }
@@ -1566,6 +1710,12 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
     }
     const betrayed = player.betrayedSectIds ??= []
     betrayed.push(sect.id)
+    if (sect.id === DAGOU_STAFF.sectId && character.ownedItemIds.includes(DAGOU_STAFF.itemId)) {
+      // 叛出丐帮：打狗棒当场收回，不作补偿
+      const { rows: [staff] } = await client.query<ArtifactRow>(
+        'SELECT * FROM unique_artifacts WHERE item_id = $1 AND holder_id = $2 FOR UPDATE', [DAGOU_STAFF.itemId, player.id])
+      if (staff) await takeArtifact(client, character, staff, now, 'BETRAY', null)
+    }
     const karmaDelta = changeKarma(character, -120, now)
     player.bountyUntil = now + BETRAYAL_BOUNTY.hours * 3_600_000
     return { result: { action, name: sect.name, karmaDelta }, changed: true }

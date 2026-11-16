@@ -1,4 +1,4 @@
-import type { LoadoutPresetDTO, RoomPlayerDTO, StanceType, UniqueArtifactStatusDTO } from './protocol'
+import type { LoadoutPresetDTO, RoomPlayerDTO, StanceType } from './protocol'
 import type { GameActions } from './gameActions'
 import { REALMS, SECTS } from '@/config/gameData'
 import { computeDerivedStats } from '../../../shared/battle.ts'
@@ -40,7 +40,7 @@ function roomPlayers(mapId: string): Omit<RoomPlayerDTO, 'combatPower'>[] {
   if (mapId === 'damo_caravan') {
     return [
       { id: 'rp_7', nickname: '威远总镖头', sectName: '丐帮', realmName: '融会贯通', level: 38, stance: 'FIERCE', isBetrayerBounty: false, isEscortingDart: true },
-      { id: 'rp_8', nickname: '西域毒皇·欧阳烈', sectName: '西域白驼山庄', realmName: '一代宗师', level: 63, stance: 'FIERCE', isBetrayerBounty: false, isEscortingDart: false, holdingUniqueArtifact: '真·绿玉打狗棒' },
+      { id: 'rp_8', nickname: '西域毒皇·欧阳烈', sectName: '西域白驼山庄', realmName: '一代宗师', level: 63, stance: 'FIERCE', isBetrayerBounty: false, isEscortingDart: false },
       { id: 'rp_9', nickname: '塞外孤狼', sectName: '逍遥散人', realmName: '略有小成', level: 29, stance: 'AGILE', isBetrayerBounty: false, isEscortingDart: true },
     ]
   }
@@ -64,7 +64,7 @@ function roomPlayers(mapId: string): Omit<RoomPlayerDTO, 'combatPower'>[] {
   }
   return [
     { id: 'rp_10', nickname: '湘西赶尸人', sectName: '西域白驼山庄', realmName: '炉火纯青', level: 47, stance: 'AGILE', isBetrayerBounty: false, isEscortingDart: false },
-    { id: 'rp_11', nickname: '陆乘云', sectName: '东海桃花岛', realmName: '一代宗师', level: 65, stance: 'AGILE', isBetrayerBounty: false, isEscortingDart: true, holdingUniqueArtifact: '真·桃花岛软猬甲' },
+    { id: 'rp_11', nickname: '陆乘云', sectName: '东海桃花岛', realmName: '一代宗师', level: 65, stance: 'AGILE', isBetrayerBounty: false, isEscortingDart: true },
   ]
 }
 
@@ -102,10 +102,3 @@ export function mockDuelOpponent(entry: Pick<RoomPlayerDTO, 'id' | 'nickname' | 
   return { player, loadout, learnedSkills }
 }
 
-/** 初始全服唯一真品神兵公示表 */
-export const INITIAL_UNIQUE_ARTIFACTS: UniqueArtifactStatusDTO[] = [
-  { artifactCode: 'TRUE_TULONG', itemId: 'xuantie_heavysword', name: '真·屠龙宝刀', holderNickname: '萧峰传人·乔北冥', holderSect: '丐帮', defendStreak: 3, nextContestLabel: '周日20:00 王盘山扬刀大会' },
-  { artifactCode: 'TRUE_DAGOU', itemId: 'dagou_stick_true', name: '真·绿玉打狗棒', holderNickname: '西域毒皇·欧阳烈', holderSect: '西域白驼山庄', defendStreak: 1, nextContestLabel: '离线>72h自动回收 / 君山擂台' },
-  { artifactCode: 'TRUE_RUANWEI', itemId: 'ruanwei_armor', name: '真·桃花岛软猬甲', holderNickname: '陆乘云', holderSect: '东海桃花岛', defendStreak: 5, nextContestLabel: '周六试剑亭守擂' },
-  { artifactCode: 'TRUE_YITIAN', itemId: 'biyu_xiao', name: '真·倚天剑', holderNickname: null, holderSect: '万安寺秘境待择主', defendStreak: 0, nextContestLabel: '全服首通3.0倚天篇择主' },
-]

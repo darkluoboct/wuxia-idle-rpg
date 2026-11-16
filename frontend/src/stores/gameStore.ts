@@ -19,6 +19,7 @@ import { useLoadout } from './loadout'
 import { useWorld } from './world'
 import { useSect } from './sect'
 import { useMarket } from './market'
+import { useArtifacts } from './artifacts'
 import { useLocalGame } from './localGame'
 import { useEconomy } from './economy'
 
@@ -65,11 +66,13 @@ export const useGameStore = defineStore('wuxiaGame', () => {
 
   const world = useWorld({ battle, actions, selectTab, cultivation, companions })
 
-  const sect = useSect({ actions, cultivation, battle, story, world, companions })
+  const artifacts = useArtifacts({ actions, battle, world })
+
+  const sect = useSect({ actions, cultivation, battle, story, world, companions, artifacts })
 
   const market = useMarket({ actions, cultivation })
 
-  const local = useLocalGame({ battle, companions, world, market })
+  const local = useLocalGame({ battle, companions, world, market, artifacts })
 
   const economy = useEconomy({ actions })
 
@@ -93,7 +96,11 @@ export const useGameStore = defineStore('wuxiaGame', () => {
       if (previous && pair && pair.id !== previousPair?.id) showToast(`已与「${pair.partner.nickname}」开始共修`, 'gold')
       else if (previousPair && !pair) showToast('共修已结束', 'info')
     },
-    event: (event) => (event.event === 'AUCTION_OUTBID' ? market.onAuctionOutbid(event.data) : world.handleRoomEvent(event)),
+    event: (event) => {
+      if (event.event === 'AUCTION_OUTBID') market.onAuctionOutbid(event.data)
+      else if (event.event === 'UNIQUE_ARTIFACT_CHANGED') artifacts.onArtifactChanged(event.data)
+      else world.handleRoomEvent(event)
+    },
     disconnected: world.clearRoom,
     reset: () => {
       world.resetWorld()
@@ -232,11 +239,10 @@ export const useGameStore = defineStore('wuxiaGame', () => {
     deleteLocalCharacter: local.deleteLocalCharacter,
     logout: onlineStore.logout,
     retryOnlineAction: onlineStore.retry,
-    nearbyPlayers: world.visibleNearbyPlayers,
-    uniqueArtifacts: world.uniqueArtifacts,
+    nearbyPlayers: world.nearbyPlayers,
     ghostListings: market.ghostListings,
     ghostListingPrice: market.ghostListingPrice,
-    worldMessages: world.visibleWorldMessages,
+    worldMessages: world.worldMessages,
     marqueeBulletin: world.marqueeBulletin,
     logs: uiRefs.logs,
     pendingAdventure: story.pendingAdventure,
@@ -336,6 +342,11 @@ export const useGameStore = defineStore('wuxiaGame', () => {
     refreshAuction: market.refreshAuction,
     bidAuction: market.bidAuction,
     claimAuction: market.claimAuction,
+    artifactBoard: artifacts.artifactBoard,
+    artifactBlock: artifacts.artifactBlock,
+    artifactAttempts: artifacts.artifactAttempts,
+    refreshArtifacts: artifacts.refreshArtifacts,
+    challengeArtifact: artifacts.challengeArtifact,
     sendChatMessage: world.sendChatMessage,
   }
 })
