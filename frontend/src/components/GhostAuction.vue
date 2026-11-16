@@ -102,7 +102,7 @@ onUnmounted(() => clearInterval(timer))
     </div>
 
     <p v-if="previous" class="text-xs text-ink3">
-      上一场{{ previous.name }}：{{ previous.bids ? `${previous.price} 元宝成交（${previous.leading ? '你' : previous.leaderMasked}）` : '流拍' }}
+      上一场{{ previous.name }}：{{ previous.bids ? `${previous.price} 元宝成交（${previous.leading ? '你' : previous.leaderMasked ?? '已归隐的侠客'}）` : '流拍' }}
       <template v-if="previous.dividend"><br>{{ dividendText(previous) }}</template>
     </p>
   </article>
