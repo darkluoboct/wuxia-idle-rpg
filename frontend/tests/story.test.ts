@@ -13,6 +13,7 @@ import { createStarterCharacter } from '../../shared/player.ts'
 import { sectExamBlockReason, sectPromotion, simulateSectTrial } from '../../shared/sectProgress.ts'
 import { TRIAL_PATROL_HOURS } from '../../shared/trialStages.ts'
 import { boost, newStore, playNode, resolvePending, type Store } from './helpers'
+import { openToOrigin } from '../../shared/origins.ts'
 
 describe('丐帮污净抉择与君山大会', () => {
   function threeBags() {
@@ -1143,7 +1144,8 @@ describe('演武模式：射雕篇全流程', () => {
       if (!store.pendingAdventure) break
       resolvePending(store)
     }
-    expect(ADVENTURES.filter((a) => !store.resolvedAdventureIds.includes(a.id)).map((a) => a.id)).toEqual([])
+    // 演武角色没有家世，各家的家事不算在内
+    expect(ADVENTURES.filter((a) => openToOrigin(a, store.player) && !store.resolvedAdventureIds.includes(a.id)).map((a) => a.id)).toEqual([])
     store.triggerRandomAdventure()
     expect(store.pendingAdventure).toBeNull()
   })

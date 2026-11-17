@@ -1,6 +1,7 @@
 import type { simulateServerBattle } from './battle.ts'
 import { CHEN_XUANFENG_STORY, HUANG_YAOSHI_COMBAT, IRON_PALM_WOUND, LIANG_ZIWENG_COMBAT, OUYANG_FENG_FRENZY, OUYANG_FENG_ISLAND_COMBAT, PENG_LIANHU_TEMPLE_COMBAT, QIU_QIANREN_COMBAT, QIU_QIANZHANG_COMBAT, SHA_TONGTIAN_COMBAT, SHEN_QINGGANG_COMBAT, TANCHUDUAN_COMBAT, WANYAN_KANG_COMBAT, WU_QINGLIE_COMBAT, ZHAO_MANOR_GUARD, type BattleEnemyGuard, type EnemyCombatConfig } from './combatMeta.ts'
-import type { BattleReportDTO, CombatUnitDTO, StanceType } from './protocol.ts'
+import type { BattleReportDTO, CombatUnitDTO, OriginId, StanceType } from './protocol.ts'
+import { FAMILY_ADVENTURES } from './familyAdventures.ts'
 import { canChooseStorySnake, STORY_SNAKE_ADVENTURE, storyEncounter } from './storySnake.ts'
 
 /**
@@ -34,6 +35,7 @@ export interface Reward {
   skillBoost?: Record<string, number> // 参悟重数 +N（未习得则从 N 重起）
   items?: string[]
   affinity?: Record<string, number>   // 伙伴好感 +N，同时视为已结识
+  tokens?: Record<string, number>     // 伙伴信物 +N（家事给家人的家传信物）
   flags?: string[]                    // 剧情标记，供门派门槛等引用
 }
 
@@ -55,7 +57,7 @@ export interface AdventureChoice {
   reward: Reward | ((ctx: AdventureCtx) => Reward)
 }
 
-export type AdventureBattle = Pick<Parameters<typeof simulateServerBattle>[0], 'enemyMain' | 'enemyGuards' | 'escortAllies' | 'surviveRounds'>
+export type AdventureBattle = Pick<Parameters<typeof simulateServerBattle>[0], 'enemyMain' | 'enemyGuards' | 'escortAllies' | 'surviveRounds' | 'environment'>
 
 export interface AdventureConfig {
   id: string
@@ -64,6 +66,8 @@ export interface AdventureConfig {
   description: string
   /** 该主线节点首通之后才会出现；0 表示随时 */
   afterNodeId: number
+  /** 家事：只有这一家出身的侠客看得到（shared/familyAdventures.ts） */
+  origin?: OriginId
   choices: [AdventureChoice, AdventureChoice]
 }
 
@@ -609,6 +613,7 @@ export const ADVENTURES: AdventureConfig[] = [
       },
     ],
   },
+  ...FAMILY_ADVENTURES,
 ]
 
 export const adventureById = (id: string) => ADVENTURES.find((a) => a.id === id)

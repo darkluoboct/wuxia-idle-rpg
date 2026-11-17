@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { useGameStore } from '@/stores/gameStore'
 import { apiClient, IS_MOCK_MODE } from '@/network/apiClient'
 import { pillDoubleRate, pillSuccessRate } from '../../../shared/alchemy.ts'
-import { companionOpenTo, originPerk } from '../../../shared/origins.ts'
+import { openToOrigin, originPerk } from '../../../shared/origins.ts'
 import { innVisitDay, recipeForPlayer, SNAKE_FEEDING_RECIPE } from '../../../shared/player.ts'
 import { computeDerivedStats, mockDuelOpponent } from '@/network/mockEngine'
 import {
@@ -108,8 +108,9 @@ function willTrigger(id: string) {
   const st = store.companionAffinity[id]
   return !!st && !st.taught && st.affinity < 600 && st.affinity + store.innGiftGain(id, true) >= 600
 }
+const tokenName = (c: { route: string }) => c.route === 'FAMILY' ? '家传信物' : '信物'
 /** 别家的家人伙伴不在客栈里出现 */
-const innCompanions = computed(() => Object.values(COMPANIONS).filter((c) => companionOpenTo(c, store.player)))
+const innCompanions = computed(() => Object.values(COMPANIONS).filter((c) => openToOrigin(c, store.player)))
 
 /* 五绝（东邪 / 西毒 / 南帝 / 北丐 / 中神通），数据与策划案 01、08 册一致 */
 const fiveGreats: { title: string; nickname: string; sect: string; stance: StanceType; poem: string }[] = [
@@ -391,14 +392,14 @@ const FLAME_META = {
                 </button>
               </div>
 
-              <!-- 觉醒进阶：好感 600 + 伙伴信物 -->
+              <!-- 觉醒进阶：好感 600 + 伙伴信物（家人用家事所得的家传信物） -->
               <button
                 v-if="c.awakened && store.companionAffinity[c.id]?.form === 'base'"
                 class="btn btn-sm w-full flex-col !gap-0" :class="canAwaken(c.id) ? 'btn-seal anim-pulse-glow' : ''"
-                :disabled="!canAwaken(c.id)" :title="`觉醒为「${c.awakened.title}」：好感 ≥600，消耗信物 ${c.awakenTokens ?? 30}`" @click="store.awakenCompanion(c.id)"
+                :disabled="!canAwaken(c.id)" :title="`觉醒为「${c.awakened.title}」：好感 ≥600，消耗${tokenName(c)} ${c.awakenTokens ?? 30}${c.route === 'FAMILY' ? '（家事所得）' : ''}`" @click="store.awakenCompanion(c.id)"
               >
                 <span>觉醒 · {{ c.awakened.title }}</span>
-                <span class="text-[0.7rem] opacity-80">信物 {{ store.companionAffinity[c.id]?.tokens ?? 0 }} / {{ c.awakenTokens ?? 30 }} · 需好感 600</span>
+                <span class="text-[0.7rem] opacity-80">{{ tokenName(c) }} {{ store.companionAffinity[c.id]?.tokens ?? 0 }} / {{ c.awakenTokens ?? 30 }} · 需好感 600</span>
               </button>
             </div>
           </article>

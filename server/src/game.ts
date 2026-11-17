@@ -30,7 +30,7 @@ import { buySystemStall, checkStallOffer, moveStallGoods, STALL, stallDay, stall
 import { AUCTION_MASK_COUNT, auctionDay, auctionDividend, auctionLot, auctionWindow, bidderMask, nextAuctionBid, ownsAuctionLot, settleAuctionTickets, softCloseAt, type AuctionTicketLot } from '../../shared/ghostAuction.ts'
 import { claimFtueQuest, emptyFtue, recordFtueForage, recordFtueRefine } from '../../shared/ftueQuests.ts'
 import { FEATURE_BY_ID, featureLockedText, featureUnlocked, markFeatureSeen, type FeatureId } from '../../shared/features.ts'
-import { isOriginId, originPerk } from '../../shared/origins.ts'
+import { isOriginId, openToOrigin, originPerk } from '../../shared/origins.ts'
 import { gainReunionClues, newReunion, reunionCluesToday, reunionEncounter, reunionWaitTime, REUNION_INQUIRE_COST, REUNION_QUESTS, REUNION_WAIT_HOURS, type ClueSource, type ReunionQuestConfig } from '../../shared/reunion.ts'
 import type {
   ArtifactBoardDTO, ArtifactResult, AuctionBoardDTO, AuctionLotDTO, AuctionResult, AwakenResult, BattleReportDTO, BountyBoardDTO, BountyEntryDTO, ChapterOneStatueDTO, CoCultivationDTO, CoCultivationInviteDTO, CompanionState, CompanionWear, CultivationResult, DuelInviteDTO, FeastResult, ForgeInput, ForgeResult, FtueClaimResult, GachaResult, GameAction, HuashanBoardDTO, HuashanEntryDTO, HuashanResult, IdleGain, InnGiftResult, LibraryResult, LibraryStatusDTO, LoadoutPresetDTO, MapMoveResult, PersonalEquipSlot, PlayerDTO, PlayerSnapshot, StallBoardDTO, StallListingDTO, StallResult,
@@ -1492,6 +1492,16 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
         ON CONFLICT (player_id, companion_id) DO UPDATE SET state = EXCLUDED.state`, [player.id, id, state])
     }
 
+    for (const [id, amount] of Object.entries(reward.tokens ?? {})) {
+      const companion = COMPANIONS[id]
+      if (!companion) continue
+      const state = character.companionAffinity[id] ??= blankCompanionState(id)
+      state.tokens = (state.tokens ?? 0) + amount
+      addDelta(`${companion.name}的${companion.route === 'FAMILY' ? '家传' : '伙伴'}信物`, amount)
+      await client.query(`INSERT INTO player_companions VALUES ($1, $2, $3)
+        ON CONFLICT (player_id, companion_id) DO UPDATE SET state = EXCLUDED.state`, [player.id, id, state])
+    }
+
     const narration: RichSegment[] = [{ type: 'tag', text: reward.tag, tone: reward.tone }, { type: 'text', text: ` ${reward.text}` }]
     if (deltas.length) narration.push({ type: 'text', text: `（${deltas.join('，')}）` })
     return { rewards: { qiExp, silver, items, companions }, narration }
@@ -1502,7 +1512,7 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
     const report = simulateServerBattle({
       ...duelFighter(character), ...battle, sceneTitle, mode: 'SOLO_STORY', tryRetreat: retreat,
       ownedItemIds: character.ownedItemIds,
-      environment: battleEnvironmentAt(mapId, new Date(now)),
+      environment: { ...battleEnvironmentAt(mapId, new Date(now)), ...battle.environment },
     })
     report.battleId = randomUUID()
     const gainedLoot = creditBattleEffectLoot(character.player, report)
@@ -2721,10 +2731,10 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
 
   app.post<{ Params: { adventureId: string } }>('/api/v1/story/adventures/:adventureId', (request) => respond<StoryAdventureResult>(request, async (character, now, client) => {
     const adventure = adventureById(request.params.adventureId)
-    if (!adventure?.afterNodeId || adventure.id === STORY_SNAKE_ADVENTURE.id) {
+    const { player, rewardedChapters, ownedItemIds } = character
+    if (!adventure?.afterNodeId || adventure.id === STORY_SNAKE_ADVENTURE.id || !openToOrigin(adventure, player)) {
       throw new GameError(404, 'STORY_ADVENTURE_NOT_FOUND', '江湖图上没有这段奇遇')
     }
-    const { player, rewardedChapters, ownedItemIds } = character
     if (!rewardedChapters.includes(adventure.afterNodeId)) {
       throw new GameError(409, 'STORY_ADVENTURE_LOCKED', '先打过相关的主线关卡')
     }

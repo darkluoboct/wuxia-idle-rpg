@@ -3161,7 +3161,7 @@ export const COMPANIONS: Record<string, CompanionConfig> = {
     baseHp: 4300,
     baseAtk: 440,
   },
-  // ───── 开局家世的家人伙伴（docs/17 §七）：蓝品起步，家事集齐信物后觉醒 ─────
+  // ───── 开局家世的家人伙伴（docs/17 §七）：蓝品起步，家事集齐 30 枚家传信物、好感 600 后觉醒为紫品 ─────
   leizheng: {
     id: 'leizheng',
     alignment: 'RIGHTEOUS',
@@ -3181,6 +3181,17 @@ export const COMPANIONS: Record<string, CompanionConfig> = {
     battleAttack: { skillId: 'beiwei_qiang', stance: 'FIERCE', target: 'FRONT', powerRatio: 0.45 },
     baseHp: 3000,
     baseAtk: 330,
+    awakenTokens: 30,
+    awakened: {
+      tier: 'purple',
+      title: '背嵬破阵·雷铮',
+      assistSkillName: '背嵬破阵',
+      assistDesc: '每回合以背嵬枪法追击敌方前排，命中尚未出手的目标使其跳过本回合行动；对骑兵伤害提高 30%，敌人蓄力时命中可将其打断。',
+      battleAttack: { skillId: 'beiwei_qiang', stance: 'FIERCE', target: 'FRONT', everyRound: true, hitStatus: { status: 'KNOCKBACK', rounds: 1 } },
+      battleSupport: [{ kind: 'TARGET_TRAIT_DAMAGE', traits: ['MOUNTED'], percent: 30 }],
+      baseHp: 4800,
+      baseAtk: 470,
+    },
   },
   ruanqinggao: {
     id: 'ruanqinggao',
@@ -3202,6 +3213,16 @@ export const COMPANIONS: Record<string, CompanionConfig> = {
     battleAttack: { skillId: 'fenshui_ci', stance: 'AGILE', target: 'REAR', powerRatio: 0.45 },
     baseHp: 2700,
     baseAtk: 340,
+    awakenTokens: 30,
+    awakened: {
+      tier: 'purple',
+      title: '南湖踏浪·阮青篙',
+      assistSkillName: '踏浪分水',
+      assistDesc: '每回合突袭敌方后排，对气血低于 30% 的目标伤害提高 50%；水战时伤害提高 30%。',
+      battleAttack: { skillId: 'fenshui_ci', stance: 'AGILE', target: 'REAR', everyRound: true, finisher: { belowHpPercent: 30, damagePercent: 50 } },
+      baseHp: 4400,
+      baseAtk: 490,
+    },
   },
   shenqingdai: {
     id: 'shenqingdai',
@@ -3226,6 +3247,20 @@ export const COMPANIONS: Record<string, CompanionConfig> = {
     ],
     baseHp: 2600,
     baseAtk: 280,
+    awakenTokens: 30,
+    awakened: {
+      tier: 'purple',
+      title: '杏林圣手·沈青黛',
+      assistSkillName: '杏林回春',
+      assistDesc: '回合末为主角回复 4% 最大气血；每战替主角解开一次封穴。每回合以银针点穴，命中使目标下回合命中降低 15 个百分点。',
+      battleAttack: { skillId: 'huichun_zhen', stance: 'TAICHI', target: 'FRONT', everyRound: true },
+      battleSupport: [
+        { kind: 'HEAL', trigger: 'ROUND_END', target: 'LEADER', unit: 'MAX_HP_PERCENT', amount: 4 },
+        { kind: 'FIRST_LEADER_CLEANSE', status: 'SEAL' },
+      ],
+      baseHp: 4300,
+      baseAtk: 420,
+    },
   },
   songyanzi: {
     id: 'songyanzi',
@@ -3247,6 +3282,18 @@ export const COMPANIONS: Record<string, CompanionConfig> = {
       status: { status: 'ATTACK_DOWN', percent: 10, rounds: 1, nextRound: true } }],
     baseHp: 3200,
     baseAtk: 290,
+    awakenTokens: 30,
+    awakened: {
+      tier: 'purple',
+      title: '云水真人·松岩子',
+      assistSkillName: '坐忘云水',
+      assistDesc: '替主角分摊 30% 盾后单体伤害，以烟雨剑法反击攻击者，并使其下回合攻击降低 10%。',
+      battleSupport: [{ kind: 'LEADER_COVER', trigger: 'HIT', percent: 30,
+        counter: { skillId: 'yanyu_jian', stance: 'TAICHI', target: 'ATTACKER' },
+        status: { status: 'ATTACK_DOWN', percent: 10, rounds: 1, nextRound: true } }],
+      baseHp: 5000,
+      baseAtk: 440,
+    },
   },
 }
 

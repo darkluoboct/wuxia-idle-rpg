@@ -5,6 +5,7 @@ import { Lock } from 'lucide-vue-next'
 import { useGameStore } from '@/stores/gameStore'
 import { IS_MOCK_MODE } from '@/network/apiClient'
 import { ADVENTURES, EXPANSION_VOLUMES_PREVIEW, getChapterDrops, getMapHerbs, HIDDEN_WEAPONS, MAPS, ONLINE_MAPS, ONLINE_STORY_CHAPTERS, STORY_ARCS, STORY_CHAPTERS, type AdventureConfig } from '@/config/gameData'
+import { openToOrigin } from '../../../shared/origins.ts'
 import { hasTrialPart, patrolEncounterRate, TRIAL_PATROL_HOURS, TRIAL_REPLAY_HOURS, TRIAL_STAGES, TRIAL_VARIANTS, trialFirstClearKarma, trialItemOf, trialPartId, trialSetOf } from '../../../shared/trialStages.ts'
 import { QUSAN_CACHE_KEY, QUSAN_CACHE_STAGE, qusanCacheBlockReason } from '../../../shared/skillMastery.ts'
 import { karmaAfterEvent } from '../../../shared/player.ts'
@@ -84,7 +85,8 @@ const progressLabel = computed(() => sub.value === 'TRIAL'
 
 const CN_NUM = ['一', '二', '三', '四', '五']
 const arcCleared = (nodes: typeof chapters) => nodes.filter((n) => stateOf(n.id) === 'CLEARED').length
-const sideQuests = (nodeId: number) => ADVENTURES.filter((a) => a.afterNodeId === nodeId)
+/** 别家的家事不列出来 */
+const sideQuests = (nodeId: number) => ADVENTURES.filter((a) => a.afterNodeId === nodeId && openToOrigin(a, store.player))
 const onlineSideQuests = (nodeId: number) => sideQuests(nodeId).filter((a) => a.id !== STORY_SNAKE_ADVENTURE.id)
 const firstClearRewards = Object.fromEntries(chapters.map((ch) => {
   const reward = storyFirstClearReward(ch)

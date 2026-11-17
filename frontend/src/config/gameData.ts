@@ -29,6 +29,7 @@ export function validateGameData(): string[] {
     Object.keys(r.skillBoost ?? {}).forEach((id) => chk(!!SKILLS[id], `${where}: 未知武学(skillBoost) ${id}`))
     r.items?.forEach((id) => chk(!!ITEMS[id], `${where}: 未知装备 ${id}`))
     Object.keys(r.affinity ?? {}).forEach((id) => chk(!!COMPANIONS[id], `${where}: 未知伙伴 ${id}`))
+    Object.keys(r.tokens ?? {}).forEach((id) => chk(!!COMPANIONS[id], `${where}: 未知伙伴信物 ${id}`))
   }
 
   for (const n of STORY_CHAPTERS) {
@@ -63,7 +64,12 @@ export function validateGameData(): string[] {
         const rounds = battle.surviveRounds
         if (rounds !== undefined) chk(Number.isInteger(rounds) && rounds > 0, `${w}: 守战回合数须为正整数`)
       }
-      for (const ctx of ctxs) checkReward(typeof c.reward === 'function' ? c.reward(ctx) : c.reward, `${w} 选项${c.key}`)
+      for (const ctx of ctxs) {
+        const reward = typeof c.reward === 'function' ? c.reward(ctx) : c.reward
+        checkReward(reward, `${w} 选项${c.key}`)
+        // 家事只给本家家人好感与信物
+        if (a.origin) chk([...Object.keys(reward.affinity ?? {}), ...Object.keys(reward.tokens ?? {})].every((id) => COMPANIONS[id]?.origin === a.origin), `${w} 选项${c.key}: 家事只给本家家人`)
+      }
     }
   }
 

@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { COMPANIONS, PILL_RECIPES } from '@/config/gameData'
+import { ADVENTURES, COMPANIONS, PILL_RECIPES } from '@/config/gameData'
 import type { OriginId } from '@/network/protocol'
 import { gatherHerbs, pillSuccessRate } from '../../shared/alchemy.ts'
 import { AWAKENABLE_IDS } from '../../shared/gacha.ts'
-import { companionOpenTo, ORIGIN_IDS, ORIGINS, originPerk } from '../../shared/origins.ts'
+import { openToOrigin, ORIGIN_IDS, ORIGINS, originPerk } from '../../shared/origins.ts'
 import { createNewGameCharacter, cultivationRate, enemySilverReward, trialFirstClearSilver } from '../../shared/player.ts'
 import { TRIAL_STAGES } from '../../shared/trialStages.ts'
-import { newStore, playNode } from './helpers'
+import { boost, newStore, playNode, resolvePending } from './helpers'
 
 const start = (origin?: OriginId) => createNewGameCharacter({ id: 'o', nickname: '新人', avatarId: 'hero_sword' }, 0, origin)
 
@@ -17,10 +17,10 @@ describe('开局家世 · 建角', () => {
     expect(kin.every(({ tier, route }) => tier === 'blue' && route === 'FAMILY')).toBe(true)
     expect(new Set(kin.map(({ battleAttack, battleSupport }) => `${battleAttack?.stance}${battleAttack?.target}${battleSupport?.[0]?.kind}`)).size).toBe(4)
     expect(AWAKENABLE_IDS.some((id) => COMPANIONS[id].route === 'FAMILY')).toBe(false)
-    expect(companionOpenTo(COMPANIONS.leizheng, { origin: 'jiangmen' })).toBe(true)
-    expect(companionOpenTo(COMPANIONS.leizheng, { origin: 'yujia' })).toBe(false)
-    expect(companionOpenTo(COMPANIONS.leizheng, {})).toBe(false)
-    expect(companionOpenTo(COMPANIONS.guojing, {})).toBe(true)
+    expect(openToOrigin(COMPANIONS.leizheng, { origin: 'jiangmen' })).toBe(true)
+    expect(openToOrigin(COMPANIONS.leizheng, { origin: 'yujia' })).toBe(false)
+    expect(openToOrigin(COMPANIONS.leizheng, {})).toBe(false)
+    expect(openToOrigin(COMPANIONS.guojing, {})).toBe(true)
   })
 
   it('选了家世：六维按家世微调，家人已入队并站在所有出战方案里', () => {
@@ -98,5 +98,51 @@ describe('开局家世 · 本地试玩', () => {
     expect(s.companionAffinity.ruanqinggao).toMatchObject({ recruited: true, met: true })
     expect(s.companionAffinity.leizheng).toMatchObject({ recruited: false, met: false })
     expect(s.currentLoadout.leftCompanionId).toBe('ruanqinggao')
+  })
+})
+
+describe('开局家世 · 家事与觉醒', () => {
+  it('每家三段家事在主线 1-3、2-1、2-3 之后，两个选项都给本家家人 10 枚家传信物，三段正好够觉醒', () => {
+    for (const id of ORIGIN_IDS) {
+      const kin = COMPANIONS[ORIGINS[id].companionId]
+      const affairs = ADVENTURES.filter((a) => a.origin === id)
+      expect(affairs.map(({ afterNodeId }) => afterNodeId)).toEqual([3, 4, 6])
+      for (const choice of affairs.flatMap(({ choices }) => choices)) {
+        const reward = typeof choice.reward === 'function' ? undefined : choice.reward
+        expect(reward?.tokens).toEqual({ [kin.id]: 10 })
+        expect(Object.keys(reward?.affinity ?? {})).toEqual([kin.id])
+      }
+      expect(affairs.length * 10).toBe(kin.awakenTokens)
+      expect(kin.awakened?.tier).toBe('purple')
+    }
+  })
+
+  it('打过 1-3 只排进本家的家事；领了信物，好感与信物攒够后家人觉醒为紫品', () => {
+    const s = newStore('NEW', { origin: 'jiangmen' })
+    boost(s)
+    const queued: string[] = []
+    for (const node of [1, 2, 3]) {
+      expect(playNode(s, node)).toBe('ALLY')
+      queued.push(s.pendingAdventure?.templateId ?? '', ...s.adventureQueue)
+    }
+    expect(queued).toContain('family_jiangmen_1')
+    expect(queued.some((id) => /^family_(yujia|xinglin|xuanmen)/.test(id))).toBe(false)
+
+    resolvePending(s, (id) => id === 'family_jiangmen_1' ? 'B' : undefined)
+    expect(s.resolvedAdventureIds).toContain('family_jiangmen_1')
+    expect(s.companionAffinity.leizheng).toMatchObject({ affinity: 140, tokens: 10 })
+
+    // 别家看不到这段家事，也选不了
+    const other = newStore('NEW', { origin: 'yujia' })
+    boost(other)
+    for (const node of [1, 2, 3]) playNode(other, node)
+    other.resolveAdventureChoice('B', 'family_jiangmen_1')
+    expect(other.resolvedAdventureIds).not.toContain('family_jiangmen_1')
+    expect(other.companionAffinity.leizheng.tokens).toBe(0)
+
+    Object.assign(s.companionAffinity.leizheng, { affinity: 600, tokens: 30 })
+    s.awakenCompanion('leizheng')
+    expect(s.companionAffinity.leizheng).toMatchObject({ form: 'awakened', tokens: 0 })
+    expect(s.companionOf('leizheng')?.tier).toBe('purple')
   })
 })

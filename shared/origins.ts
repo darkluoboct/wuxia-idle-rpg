@@ -93,9 +93,9 @@ export function originPerk(player: Pick<PlayerDTO, 'origin'>, kind: OriginPerkKi
   return perk?.kind === kind ? perk.amount : 0
 }
 
-/** 家世伙伴只有这一家的侠客结识得到 */
-export const companionOpenTo = (companion: { origin?: OriginId }, player: Pick<PlayerDTO, 'origin'>) =>
-  !companion.origin || companion.origin === player.origin
+/** 家人伙伴与家事只对这一家出身的侠客开放；不带家世的条目人人可见 */
+export const openToOrigin = (entry: { origin?: OriginId }, player: Pick<PlayerDTO, 'origin'>) =>
+  !entry.origin || entry.origin === player.origin
 
 export function originStatsText(origin: OriginConfig) {
   const LABEL: Record<keyof SixStats, string> = { str: '臂力', con: '根骨', agi: '身法', intStat: '悟性', luck: '福缘', karma: '侠义' }

@@ -18,6 +18,8 @@ import {
 import { IS_MOCK_MODE } from '@/network/apiClient'
 import { gaibangSilverGain } from '../../../shared/gaibang.ts'
 import { addAdventureObjective, adventureEncounter } from '../../../shared/storyData.ts'
+import { battleEnvironmentAt } from '../../../shared/combatMeta.ts'
+import { openToOrigin } from '../../../shared/origins.ts'
 import { STORY_SNAKE_ADVENTURE, storyEncounter } from '../../../shared/storySnake.ts'
 import { usePlayerStore } from './playerStore'
 import { storeToRefs } from 'pinia'
@@ -154,6 +156,13 @@ export function useStory({ cultivation, battle, actions }: {
       delta.push(`${c.name}好感 ${signed(n)}`)
       if (st.recruited && !wasRecruited) links.push({ type: 'text', text: ' ' }, { type: 'actor', name: c.name, isAlly: true }, { type: 'text', text: '已加入你的江湖行列' })
     }
+    for (const [id, n] of Object.entries(r.tokens ?? {})) {
+      const c = COMPANIONS[id]
+      const st = companionAffinity.value[id]
+      if (!c || !st) continue
+      st.tokens = (st.tokens ?? 0) + n
+      delta.push(`${c.name}的${c.route === 'FAMILY' ? '家传' : '伙伴'}信物 +${n}`)
+    }
     for (const f of r.flags ?? []) {
       if (!storyFlags.value.includes(f)) storyFlags.value.push(f)
     }
@@ -179,7 +188,7 @@ export function useStory({ cultivation, battle, actions }: {
 
   function queueAdventuresAfter(nodeId: number) {
     for (const a of ADVENTURES) {
-      if (a.afterNodeId !== nodeId) continue
+      if (a.afterNodeId !== nodeId || !openToOrigin(a, player.value)) continue
       if (resolvedAdventureIds.value.includes(a.id) || adventureQueue.value.includes(a.id) || pendingAdventureId.value === a.id) continue
       adventureQueue.value.push(a.id)
     }
@@ -203,6 +212,7 @@ export function useStory({ cultivation, battle, actions }: {
     const pool = ADVENTURES.filter(
       (a) =>
         a.afterNodeId < player.value.maxChapterId &&
+        openToOrigin(a, player.value) &&
         !resolvedAdventureIds.value.includes(a.id) &&
         !adventureQueue.value.includes(a.id)
     )
@@ -218,7 +228,7 @@ export function useStory({ cultivation, battle, actions }: {
   function resolveAdventureChoice(choice: 'A' | 'B', adventureId: string | null) {
     const tpl = adventureId ? adventureById(adventureId) : undefined
     const c = tpl?.choices.find((x) => x.key === choice)
-    if (!tpl || !c || isBattlePlaying.value || resolvedAdventureIds.value.includes(tpl.id)) return
+    if (!tpl || !c || isBattlePlaying.value || resolvedAdventureIds.value.includes(tpl.id) || !openToOrigin(tpl, player.value)) return
     const snake = tpl.id === STORY_SNAKE_ADVENTURE.id
     if (snake && (player.value.storySnakeChoice || player.value.maxChapterId <= tpl.afterNodeId)) return
     const request = !snake && claimedNodeIds.value.includes(tpl.afterNodeId) ? { id: tpl.id, choice } : undefined
@@ -254,6 +264,7 @@ export function useStory({ cultivation, battle, actions }: {
     const report = simulateServerBattle({
       sceneTitle: tpl.title, mode: 'SOLO_STORY', player: player.value, loadout: currentLoadout.value,
       learnedSkills: learnedSkills.value, ...encounter,
+      environment: { ...battleEnvironmentAt(player.value.currentMapId), ...encounter.environment },
     })
     addAdventureObjective(report, tpl, encounter)
     startLocalBattle(report, null, complete)

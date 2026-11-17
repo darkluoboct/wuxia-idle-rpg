@@ -925,6 +925,33 @@ describe('联机战斗', { skip: connection ? false : '请设置 GAME_TEST_DATAB
     assert.equal((await create({ origin: 'jiangmen' })).statusCode, 409)
   })
 
+  it('家事只对本家开放，家传信物落库，集齐后家人可觉醒', async () => {
+    const taoist = await createRookie('family')
+    const fisher = await register('fish', true, false, 'yujia')
+    for (const { id } of [taoist, fisher]) {
+      await profile(id, { maxChapterId: 5 })
+      await db.query('UPDATE players SET rewarded_chapters = $2 WHERE id = $1', [id, [1, 2, 3, 4]])
+    }
+    assert.equal((await taoist.post('/story/adventures/family_yujia_1', { choice: 'B' })).statusCode, 404)
+    assert.equal((await fisher.post('/story/adventures/family_xuanmen_1', { choice: 'B' })).statusCode, 404)
+    assert.equal((await taoist.post('/story/adventures/family_xuanmen_3', { choice: 'B' })).json().code, 'STORY_ADVENTURE_LOCKED')
+
+    const first = await taoist.act<StoryAdventureResult>('/story/adventures/family_xuanmen_1', { choice: 'B' })
+    assert.equal(first.result.firstPick, true)
+    assert.ok(first.result.narration?.some((seg) => seg.type === 'text' && seg.text.includes('松岩子的家传信物 +10')))
+    const second = await taoist.act<StoryAdventureResult>('/story/adventures/family_xuanmen_2', { choice: 'B' })
+    assert.equal(second.snapshot.player.stats.con, 14)
+    const { affinity, tokens, form } = second.snapshot.companionAffinity.songyanzi
+    assert.deepEqual({ affinity, tokens, form }, { affinity: 180, tokens: 20, form: 'base' })
+    assert.equal((await taoist.read()).companionAffinity.songyanzi.tokens, 20)
+
+    assert.equal((await taoist.post('/companions/awaken', { companionId: 'songyanzi' })).statusCode, 409)
+    await companionState(taoist.id, 'songyanzi', { affinity: 600, tokens: 30 })
+    const awakened = await taoist.act<AwakenResult>('/companions/awaken', { companionId: 'songyanzi' })
+    assert.equal(awakened.snapshot.companionAffinity.songyanzi.form, 'awakened')
+    assert.equal(awakened.snapshot.companionAffinity.songyanzi.tokens, 0)
+  })
+
   it('每日江湖事四件做完才能领元宝，当日只领一次', async () => {
     const actor = await createRookie('daily_a')
     await actor.act('/cultivate/settle')
