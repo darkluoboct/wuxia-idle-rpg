@@ -1,7 +1,7 @@
 import type { CompanionState, PlayerDTO } from './protocol.ts'
 import { COMPANION_SETS, SECTS } from './gameData.ts'
 import { featureUnlocked, type FeatureState } from './features.ts'
-import { FTUE_QUESTS } from './ftueQuests.ts'
+import { ftueVolumeDone } from './ftueQuests.ts'
 import { earnsAuctionTicket } from './ghostAuction.ts'
 import { innVisitDay } from './player.ts'
 import { STORY_CHAPTERS } from './storyData.ts'
@@ -81,7 +81,7 @@ export function ingotMilestones({ player, rewardedChapters, adventureIds, compan
   if (player.currentSectId && SECTS.some(({ id }) => id === player.currentSectId)) {
     for (let rank = 2; rank <= player.sectRank; rank++) out.push({ key: `sect-rank:${rank}`, amount: INGOT.sectRank, label: `门派晋升第 ${rank} 阶` })
   }
-  if ((player.ftue?.index ?? 0) >= FTUE_QUESTS.length) out.push({ key: 'ftue', amount: INGOT.ftue, label: '江湖行历圆满' })
+  if (ftueVolumeDone(player.ftue, 1)) out.push({ key: 'ftue', amount: INGOT.ftue, label: '江湖行历卷一圆满' })
   return out
 }
 

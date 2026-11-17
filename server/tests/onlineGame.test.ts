@@ -1059,6 +1059,13 @@ describe('联机战斗', { skip: connection ? false : '请设置 GAME_TEST_DATAB
     assert.equal(claim.snapshot.player.ftue?.index, 1)
     assert.equal(claim.snapshot.player.silver, player.silver + FTUE_QUESTS[0].rewardSilver)
     assert.equal((await actor.post('/ftue/claim')).json().code, 'FTUE_NOT_READY')
+
+    // 旧版十阶全领过的存档：接着领新加的剧情行历，下一阶是主线 1-2
+    await profile(actor.id, { maxChapterId: 3, ftue: { index: 10, claimed: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], forageCount: 1, refinedRecipeIds: [] } })
+    const resumed = await actor.act<FtueClaimResult>('/ftue/claim')
+    assert.equal(resumed.result.questId, 11)
+    assert.equal(resumed.snapshot.player.ftue?.index, 11)
+    assert.equal((await actor.post('/ftue/claim')).json().code, 'FTUE_NOT_READY') // 下一阶是历练第 3 关
   })
 
   it('鬼市暗拍：领先冻结元宝，被超过原数退还并推送，临近落槌顺延，落槌后由领先者领取', async () => {

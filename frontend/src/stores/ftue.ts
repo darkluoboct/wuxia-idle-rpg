@@ -1,5 +1,5 @@
 import { computed } from 'vue'
-import { claimFtueQuest, emptyFtue, FTUE_QUESTS, ftueProgress, type FtueQuestConfig } from '../../../shared/ftueQuests.ts'
+import { claimFtueQuest, currentFtueQuest, emptyFtue, ftueProgress, type FtueQuestConfig } from '../../../shared/ftueQuests.ts'
 import type { FtueStateDTO } from '@/network/protocol'
 import type { GameActions } from '@/network/gameActions'
 import { usePlayerStore } from './playerStore'
@@ -29,9 +29,9 @@ export function useFtue({ selectTab, actions }: {
   const { jianghuTab, marketTab } = storeToRefs(uiStore)
   const { appendLog, showToast } = uiStore
 
-  // 首日《江湖行历》：进度按现有系统状态推导，领取记录随角色存档（联机由服务端校验发奖）
+  // 《江湖行历》：进度按现有系统状态推导，领取记录随角色存档（联机由服务端校验发奖）
   const ftue = computed(() => player.value.ftue ?? emptyFtue())
-  const ftueQuest = computed(() => FTUE_QUESTS[ftue.value.index] ?? null)
+  const ftueQuest = computed(() => currentFtueQuest(ftue.value) ?? null)
   const progressState = () => ({ player: player.value, openedAcupointIds: openedAcupointIds.value, companionAffinity: companionAffinity.value })
 
   function ftueProgressOf(quest: FtueQuestConfig): number {

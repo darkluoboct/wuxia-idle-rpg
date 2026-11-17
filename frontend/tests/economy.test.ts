@@ -13,7 +13,7 @@ describe('元宝产出规则（docs/19）', () => {
     const all = ingotMilestones({
       player: {
         ...player, realmTier: 3, sectRank: 5, currentSectId: 'gaibang',
-        ftue: { index: FTUE_QUESTS.length, claimed: [], forageCount: 0, refinedRecipeIds: [] },
+        ftue: { index: FTUE_QUESTS.length, claimed: FTUE_QUESTS.map(({ id }) => id), forageCount: 0, refinedRecipeIds: [] },
         trial: { ...player.trial, rewardedStageIds: TRIAL_STAGES.map(({ id }) => id) },
       },
       rewardedChapters: STORY_CHAPTERS.map(({ id }) => id),
