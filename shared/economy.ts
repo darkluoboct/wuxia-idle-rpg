@@ -29,6 +29,7 @@ export const INGOT = {
   raidWeekly: 50,
   sectContestJoin: 50,
   sectContestChief: 200,
+  xiangyang: 20,
 } as const
 
 const lastIdOfChapter = <T extends { id: number; chapter: number }>(nodes: readonly T[]) =>

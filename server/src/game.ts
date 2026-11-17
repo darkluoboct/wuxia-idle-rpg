@@ -31,11 +31,12 @@ import { AUCTION_MASK_COUNT, auctionDay, auctionDividend, auctionLot, auctionWin
 import { claimFtueQuest, emptyFtue, recordFtueForage, recordFtueRefine } from '../../shared/ftueQuests.ts'
 import { FEATURE_BY_ID, featureLockedText, featureUnlocked, markFeatureSeen, type FeatureId } from '../../shared/features.ts'
 import { isOriginId, openToOrigin, originPerk } from '../../shared/origins.ts'
+import { advanceXiangyangGate, isXiangyangGate, XIANGYANG_GATE_BY_ID, XIANGYANG_GATES, XIANGYANG_ORDERS, XIANGYANG_WAVES, xiangyangMerit, xiangyangReward, xiangyangWar, xiangyangWarOf, xiangyangWave, xiangyangWaveNeed, xiangyangWavesCleared } from '../../shared/xiangyang.ts'
 import { gainReunionClues, newReunion, reunionCluesToday, reunionEncounter, reunionWaitTime, REUNION_INQUIRE_COST, REUNION_QUESTS, REUNION_WAIT_HOURS, type ClueSource, type ReunionQuestConfig } from '../../shared/reunion.ts'
 import type {
   ArtifactBoardDTO, ArtifactResult, AuctionBoardDTO, AuctionLotDTO, AuctionResult, AwakenResult, BattleReportDTO, BountyBoardDTO, BountyEntryDTO, ChapterOneStatueDTO, CoCultivationDTO, CoCultivationInviteDTO, CompanionState, CompanionWear, CultivationResult, DuelInviteDTO, FeastResult, ForgeInput, ForgeResult, FtueClaimResult, GachaResult, GameAction, HuashanBoardDTO, HuashanEntryDTO, HuashanResult, IdleGain, InnGiftResult, LibraryResult, LibraryStatusDTO, LoadoutPresetDTO, MapMoveResult, PersonalEquipSlot, PlayerDTO, PlayerSnapshot, StallBoardDTO, StallListingDTO, StallResult,
   MirrorRankEntryDTO, ReunionResult, RichSegment, SectChiefDTO, SectContestBoardDTO, SectContestResult, SectResult, SkillSlotType, SkillUpgradeResult, StoryAdventureResult, StoryChallengeResult, StorySnakeChoiceResult, TrialChallengeResult, TrialDropDTO, TrialPatrolStatusDTO, TrialReplayResult,
-  WsServerEvent,
+  WsServerEvent, XiangyangAwardDTO, XiangyangBoardDTO, XiangyangGateDTO, XiangyangGateId, XiangyangResult,
 } from '../../shared/protocol.ts'
 import { requireSession } from './auth.ts'
 import { serverTime, transaction } from './db.ts'
@@ -1202,6 +1203,145 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
       rating = rating + CASE WHEN player_id = $3 THEN $5::integer ELSE -$5::integer END
       WHERE sect_id = $1 AND week_id = $2 AND player_id = ANY($6::uuid[])`, [sect.id, weekId, id, winnerId, delta, [id, target]])
     return { result: { action, report, rating: attacker.rating + delta, ratingDelta: delta }, changed: false }
+  }))
+
+  // ==================== 襄阳守卫战（docs/20） ====================
+  interface XiangyangEntryRow { war_id: number; gate: XiangyangGateId; sorties: number; merit: number; skill_id: string | null; claimed: boolean }
+
+  async function xiangyangGates(client: PoolClient, warId: number): Promise<XiangyangGateDTO[]> {
+    const { rows } = await client.query<{ gate: XiangyangGateId; wave: number | null; progress: number | null; defenders: number }>(`
+      SELECT g.id AS gate, s.wave, s.progress,
+        (SELECT count(*)::int FROM xiangyang_entries e WHERE e.war_id = $1 AND e.gate = g.id) AS defenders
+      FROM unnest($2::text[]) AS g(id) LEFT JOIN xiangyang_gates s ON s.war_id = $1 AND s.gate = g.id`,
+    [warId, XIANGYANG_GATES.map(({ id }) => id)])
+    return XIANGYANG_GATES.map(({ id }) => {
+      const row = rows.find(({ gate }) => gate === id)!
+      return { id, wave: row.wave ?? 1, progress: row.progress ?? 0, need: xiangyangWaveNeed(row.defenders), defenders: row.defenders }
+    })
+  }
+
+  /** 已经打完、还没领的封赏；名次按本门战功，并列同名次 */
+  async function xiangyangAwards(client: PoolClient, character: Character, now: number): Promise<XiangyangAwardDTO[]> {
+    const { rows } = await client.query<XiangyangEntryRow & { wave: number | null; rank: number }>(`
+      SELECT e.*, g.wave,
+        (SELECT count(*)::int FROM xiangyang_entries o WHERE o.war_id = e.war_id AND o.gate = e.gate AND o.merit > e.merit) + 1 AS rank
+      FROM xiangyang_entries e LEFT JOIN xiangyang_gates g ON g.war_id = e.war_id AND g.gate = e.gate
+      WHERE e.player_id = $1 AND NOT e.claimed AND e.sorties > 0 ORDER BY e.war_id`, [character.player.id])
+    return rows.filter(({ war_id: warId }) => xiangyangWarOf(warId).closesAt <= now).map((row) => {
+      const wavesCleared = xiangyangWavesCleared({ wave: row.wave ?? 1 })
+      const topThree = row.rank <= 3
+      return {
+        warId: row.war_id, gate: row.gate, wavesCleared, merit: row.merit, sorties: row.sorties, topThree,
+        skillId: row.skill_id && SKILLS[row.skill_id] ? row.skill_id : null,
+        reward: xiangyangReward(row, wavesCleared, character.player.level, topThree)!,
+      }
+    })
+  }
+
+  function xiangyangBattle(character: Character, gate: XiangyangGateId, wave: number, now: number, drill: boolean) {
+    const encounter = xiangyangWave(gate, wave, character.player.level)
+    const report = simulateServerBattle({
+      ...duelFighter(character), ...encounter, mode: 'SOLO_STORY', ownedItemIds: character.ownedItemIds,
+      sceneTitle: `${drill ? '城头演练' : '襄阳守城'} · ${XIANGYANG_GATE_BY_ID[gate].name.split(' · ')[0]}第 ${wave} 波`,
+      environment: { at: now, ...encounter.environment },
+    })
+    report.battleId = randomUUID()
+    return report
+  }
+
+  app.get('/api/v1/xiangyang', async (request): Promise<XiangyangBoardDTO> => {
+    const { accountId } = await requireSession(request)
+    return transaction(async (client) => {
+      const character = await readCharacter(client, accountId)
+      requireFeature(character.player, 'XIANGYANG')
+      const now = await serverTime(client)
+      const war = xiangyangWar(now)
+      const playerId = character.player.id
+      const { rows: [self] } = await client.query<XiangyangEntryRow>(
+        'SELECT * FROM xiangyang_entries WHERE war_id = $1 AND player_id = $2', [war.id, playerId])
+      const { rows: feed } = await client.query<{ at: string; nickname: string; gate: XiangyangGateId; wave: number; merit: number; won: boolean; repelled: number | null }>(`
+        SELECT s.created_at AS at, p.nickname, s.gate, s.wave, s.merit, s.won, s.repelled
+        FROM xiangyang_sorties s JOIN players p ON p.id = s.player_id WHERE s.war_id = $1 ORDER BY s.id DESC LIMIT 20`, [war.id])
+      const { rows: [{ last }] } = await client.query<{ last: number | null }>(
+        'SELECT max(war_id) AS last FROM xiangyang_gates WHERE war_id < $1', [war.id])
+      return {
+        war,
+        gates: await xiangyangGates(client, war.id),
+        self: self ? { gate: self.gate, sorties: self.sorties, merit: self.merit } : null,
+        feed: feed.map(({ at, repelled, ...row }) => ({ ...row, at: Number(at), ...(repelled ? { repelled } : {}) })),
+        awards: await xiangyangAwards(client, character, now),
+        last: last === null ? null : {
+          warId: last, gates: (await xiangyangGates(client, last)).map((gate) => ({ id: gate.id, wavesCleared: xiangyangWavesCleared(gate) })),
+        },
+      }
+    }, true)
+  })
+
+  app.post('/api/v1/xiangyang', (request) => respond<XiangyangResult>(request, async (character, now, client) => {
+    const { player } = character
+    requireFeature(player, 'XIANGYANG')
+    const body = objectBody(request.body)
+    if (body.action === 'claim') {
+      const award = (await xiangyangAwards(client, character, now)).find(({ warId }) => warId === body.warId)
+      if (!award) throw new GameError(409, 'XIANGYANG_NO_AWARD', '这一场没有待领的封赏')
+      await client.query('UPDATE xiangyang_entries SET claimed = true WHERE war_id = $1 AND player_id = $2', [award.warId, player.id])
+      const { reward, skillId } = award
+      await grantIngotOnce(client, character, reward.ingot, 'xiangyang', `xiangyang:${award.warId}`)
+      forgeMaterials(player, reward.iron, reward.stones)
+      if (skillId) {
+        const fragments = player.skillFragments ??= {}
+        fragments[skillId] = (fragments[skillId] ?? 0) + reward.fragments
+      }
+      player.qiExp += reward.qiExp
+      player.silver += reward.silver
+      return { result: { action: 'claim', warId: award.warId, skillId, reward }, changed: true }
+    }
+    const { gate } = body
+    if (!isXiangyangGate(gate)) throw new GameError(400, 'XIANGYANG_INVALID_GATE', '请选择要守的城门')
+    if (body.action === 'drill') {
+      const wave = body.wave
+      if (typeof wave !== 'number' || !Number.isInteger(wave) || wave < 1 || wave > XIANGYANG_WAVES) {
+        throw new GameError(400, 'XIANGYANG_INVALID_WAVE', `演练只能选第 1 至 ${XIANGYANG_WAVES} 波`)
+      }
+      const report = xiangyangBattle(character, gate, wave, now, true)
+      return { result: { action: 'drill', report, merit: xiangyangMerit(report) }, changed: false }
+    }
+    if (body.action !== 'sortie') throw new GameError(400, 'XIANGYANG_INVALID_ACTION', '请选择出战、演练或领赏')
+    const war = xiangyangWar(now)
+    if (!war.active) throw new GameError(409, 'XIANGYANG_CLOSED', '襄阳城头还没擂鼓：每周三、周日 20:00 开战，平日可以演练')
+    if (body.warId !== war.id) throw new GameError(409, 'XIANGYANG_WAR_CHANGED', '这一场已经换过，请刷新战况')
+    const { rows: [entry] } = await client.query<XiangyangEntryRow>(
+      'SELECT * FROM xiangyang_entries WHERE war_id = $1 AND player_id = $2', [war.id, player.id])
+    if (entry && entry.gate !== gate) {
+      throw new GameError(409, 'XIANGYANG_GATE_FIXED', `本场你守的是${XIANGYANG_GATE_BY_ID[entry.gate].name.split(' · ')[0]}，不能换门`)
+    }
+    if ((entry?.sorties ?? 0) >= XIANGYANG_ORDERS) throw new GameError(409, 'XIANGYANG_NO_ORDERS', `本场 ${XIANGYANG_ORDERS} 道军令已经用完`)
+    await client.query('INSERT INTO xiangyang_gates (war_id, gate) VALUES ($1, $2) ON CONFLICT DO NOTHING', [war.id, gate])
+    const { rows: [state] } = await client.query<{ wave: number; progress: number }>(
+      'SELECT wave, progress FROM xiangyang_gates WHERE war_id = $1 AND gate = $2 FOR UPDATE', [war.id, gate])
+    if (!entry) await client.query('INSERT INTO xiangyang_entries (war_id, player_id, gate) VALUES ($1, $2, $3)', [war.id, player.id, gate])
+    const { rows: [{ defenders }] } = await client.query<{ defenders: number }>(
+      'SELECT count(*)::int AS defenders FROM xiangyang_entries WHERE war_id = $1 AND gate = $2', [war.id, gate])
+
+    const wave = Math.min(state.wave, XIANGYANG_WAVES)
+    const report = xiangyangBattle(character, gate, wave, now, false)
+    creditBattleEffectLoot(player, report)
+    spendBattleMedicines(player, report)
+    markDaily(character, 'battle', now)
+    const merit = xiangyangMerit(report)
+    const next = advanceXiangyangGate(state, merit, defenders)
+    await client.query('UPDATE xiangyang_gates SET wave = $3, progress = $4 WHERE war_id = $1 AND gate = $2', [war.id, gate, next.wave, next.progress])
+    await client.query('UPDATE xiangyang_entries SET sorties = sorties + 1, merit = merit + $3, skill_id = $4 WHERE war_id = $1 AND player_id = $2',
+      [war.id, player.id, merit, activeLoadout(character).outerSkillId])
+    await client.query(`INSERT INTO xiangyang_sorties (war_id, player_id, gate, wave, merit, won, repelled, created_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`, [war.id, player.id, gate, wave, merit, report.winner === 'ALLY', next.repelled.at(-1) ?? null, now])
+    return {
+      result: {
+        action: 'sortie', report, merit, repelled: next.repelled,
+        gate: { id: gate, wave: next.wave, progress: next.progress, need: xiangyangWaveNeed(defenders), defenders },
+      },
+      changed: true,
+    }
   }))
 
   app.post('/api/v1/cultivate/settle', (request) => respond(request, async (character, now, client) => {

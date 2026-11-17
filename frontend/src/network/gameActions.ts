@@ -36,6 +36,8 @@ import type {
   TrialChallengeResult,
   TrialPatrolStatusDTO,
   TrialReplayResult,
+  XiangyangAction,
+  XiangyangResult,
 } from './protocol'
 import type { cultivatePlayer } from '../../../shared/player.ts'
 import type { extractFurnaceResidue, gatherHerbs } from '../../../shared/alchemy.ts'
@@ -98,6 +100,7 @@ interface Actions {
   sect: [SectAction, SectResult]
   move: [{ mapId: string; action?: 'depart' | 'arrive' }, MapMoveResult]
   huashan: [HuashanAction, HuashanResult]
+  xiangyang: [XiangyangAction, XiangyangResult]
   sectContest: [SectContestAction, SectContestResult]
   raid: [{ teamId: string; revision: number } | undefined, BattleReportDTO]
   coCultivate: [CoCultivationAction, IdleGain]
@@ -156,6 +159,7 @@ const requests: { [K in keyof Actions]: (input: Actions[K][0]) => Request | unde
   sect: (body) => ['POST', '/sect', body],
   move: (body) => ['POST', '/map/move', body],
   huashan: (body) => ['POST', '/huashan', body],
+  xiangyang: (body) => ['POST', '/xiangyang', body],
   sectContest: (body) => ['POST', '/sect/contest', body],
   raid: (body) => body && ['POST', '/raid/start', body],
   coCultivate: (body) => ['POST', '/map/co-cultivate', body],
@@ -176,6 +180,7 @@ const ACTION_FEATURES: Partial<Record<keyof Actions, FeatureId>> = {
   sect: 'SECT', sectContest: 'SECT', library: 'SECT',
   huashan: 'HUASHAN', artifact: 'HUASHAN', duel: 'HUASHAN', escort: 'HUASHAN', acceptBounty: 'HUASHAN',
   raid: 'RAID',
+  xiangyang: 'XIANGYANG',
   feast: 'FEAST',
 }
 

@@ -23,6 +23,7 @@ import { useArtifacts } from './artifacts'
 import { useStalls } from './stalls'
 import { useLocalGame } from './localGame'
 import { useEconomy } from './economy'
+import { useXiangyang } from './xiangyang'
 import { useFeatures } from './features'
 import { featureLockedText, featureUnlocked } from '../../../shared/features.ts'
 
@@ -85,7 +86,9 @@ export const useGameStore = defineStore('wuxiaGame', () => {
 
   const stalls = useStalls({ actions })
 
-  const local = useLocalGame({ battle, companions, world, market, artifacts, stalls })
+  const xiangyang = useXiangyang({ actions, battle })
+
+  const local = useLocalGame({ battle, companions, world, market, artifacts, stalls, xiangyang })
 
   const economy = useEconomy({ actions })
 
@@ -315,6 +318,10 @@ export const useGameStore = defineStore('wuxiaGame', () => {
     challengeTrialStage: trial.challengeTrialStage,
     replayTrialBoss: trial.replayTrialBoss,
     onlineHuashan: world.onlineHuashan,
+    xiangyangBoard: xiangyang.xiangyangBoard,
+    xiangyangError: xiangyang.xiangyangError,
+    refreshXiangyang: xiangyang.refreshXiangyang,
+    xiangyangAction: xiangyang.xiangyangAction,
     onlineSectContest: world.onlineSectContest,
     redeemTrialPart: trial.redeemTrialPart,
     startThreePlayerCoopRaid: world.startThreePlayerCoopRaid,

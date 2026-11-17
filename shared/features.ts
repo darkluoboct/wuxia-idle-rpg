@@ -126,6 +126,16 @@ export const FEATURES: readonly FeatureConfig[] = [
     goto: { tab: 'JIANGHU', sub: 'RAID', label: '去结义副本' },
   },
   {
+    id: 'XIANGYANG', name: '襄阳守卫战', requirement: { node: 6 },
+    opens: ['江湖：襄阳守卫战，每周三、周日 20:00 开战，三门任守其一；平日可上城演练'],
+    speaker: '郭靖', portrait: 'guojing',
+    pages: [
+      '下终南山时，郭靖接到一封飞鸽传书，看完半晌没说话：「蒙古大军南下了，前锋已到襄阳城外。」',
+      '「襄阳守得住，江南才睡得安稳。每逢周三、周日夜里城头擂鼓，东门、北门、水路粮道都缺人手。你若得空，来帮我守一门。」',
+    ],
+    goto: { tab: 'JIANGHU', sub: 'XIANGYANG', label: '去襄阳看看' },
+  },
+  {
     id: 'FEAST', name: '十道绝味', requirement: { node: 7 },
     opens: ['醉仙客栈：北丐·十道绝味，各地采办食材，每日做一道'],
     speaker: '洪七公', portrait: 'hongqigong',

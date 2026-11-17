@@ -128,7 +128,7 @@ export interface PlayerDTO {
 export type OriginId = 'jiangmen' | 'yujia' | 'xinglin' | 'xuanmen'
 
 /** 随剧情开放的玩法（shared/features.ts） */
-export type FeatureId = 'TRIAL' | 'INN' | 'MAPS' | 'DAILY' | 'GACHA' | 'GHOST' | 'SECT' | 'HUASHAN' | 'RAID' | 'FEAST'
+export type FeatureId = 'TRIAL' | 'INN' | 'MAPS' | 'DAILY' | 'GACHA' | 'GHOST' | 'SECT' | 'HUASHAN' | 'RAID' | 'XIANGYANG' | 'FEAST'
 
 /** 首日《江湖行历》进度 */
 export interface FtueStateDTO {
@@ -738,6 +738,70 @@ export type WsServerEvent =
   | { event: 'UNIQUE_ARTIFACT_CHANGED'; data: { itemId: string; cause: 'GRANT' | 'SEIZE' | 'RECALL' | 'BETRAY'; newOwner: string | null; previousOwner: string | null } }
   | { event: 'AUCTION_OUTBID'; data: { day: number; itemId: string; refund: number; price: number } }
   | { event: 'STALL_SOLD'; data: { kind: 'HERB' | 'FRAGMENT'; goodsId: string; qty: number; silver: number } }
+
+/** 襄阳守卫战（shared/xiangyang.ts） */
+export type XiangyangGateId = 'EAST' | 'NORTH' | 'WATER'
+
+export interface XiangyangGateDTO {
+  id: XiangyangGateId
+  /** 正在打的一波；八波都击退后为 9 */
+  wave: number
+  progress: number
+  need: number
+  defenders: number
+}
+
+export interface XiangyangFeedDTO {
+  at: number
+  nickname: string
+  gate: XiangyangGateId
+  wave: number
+  merit: number
+  won: boolean
+  repelled?: number
+}
+
+export interface XiangyangRewardDTO {
+  ingot: number
+  iron: number
+  stones: number
+  fragments: number
+  qiExp: number
+  silver: number
+}
+
+export interface XiangyangAwardDTO {
+  warId: number
+  gate: XiangyangGateId
+  wavesCleared: number
+  merit: number
+  sorties: number
+  topThree: boolean
+  /** 残页落在哪门武学（出战时装着的外功）；没装外功则不发残页 */
+  skillId: string | null
+  reward: XiangyangRewardDTO
+}
+
+export interface XiangyangBoardDTO {
+  war: { id: number; opensAt: number; closesAt: number; active: boolean }
+  gates: XiangyangGateDTO[]
+  self: { gate: XiangyangGateId; sorties: number; merit: number } | null
+  feed: XiangyangFeedDTO[]
+  /** 已结束、还没领的封赏 */
+  awards: XiangyangAwardDTO[]
+  /** 上一场各门战果 */
+  last: { warId: number; gates: { id: XiangyangGateId; wavesCleared: number }[] } | null
+}
+
+export type XiangyangAction =
+  | { action: 'sortie'; warId: number; gate: XiangyangGateId }
+  | { action: 'drill'; gate: XiangyangGateId; wave: number }
+  | { action: 'claim'; warId: number }
+
+export type XiangyangResult =
+  | { action: 'sortie'; report: BattleReportDTO; merit: number; gate: XiangyangGateDTO; repelled: number[] }
+  | { action: 'drill'; report: BattleReportDTO; merit: number }
+  | { action: 'claim'; warId: number; skillId: string | null; reward: XiangyangRewardDTO }
 
 /** 客栈结缘：单抽结果（真实环境由服务端产出并记审计日志，客户端只负责展示） */
 export interface GachaDrawDTO {

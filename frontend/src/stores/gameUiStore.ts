@@ -24,7 +24,7 @@ export const useGameUiStore = defineStore('wuxiaUi', () => {
   // 主题与响应式抽屉状态（默认启动采用燕云玄墨深色护眼主题）
   const isMidnightTheme = ref(true)
   const activeTab = ref<MainTab>('CULTIVATE')
-  const jianghuTab = ref<'STORY' | 'TRIAL' | 'MAPS' | 'RAID' | 'BOUNTY'>('TRIAL')
+  const jianghuTab = ref<'STORY' | 'TRIAL' | 'MAPS' | 'RAID' | 'XIANGYANG' | 'BOUNTY'>('TRIAL')
   const bountyTargetId = ref<string>()
   const arsenalTab = ref<'SKILLS' | 'SQUAD' | 'EQUIP' | 'MERIDIAN'>('SKILLS')
   // 窄屏下左 / 右侧栏以抽屉形式呈现

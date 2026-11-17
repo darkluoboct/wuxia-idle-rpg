@@ -19,10 +19,11 @@ import { AUCTION_BID_STEP, AUCTION_SOFT_CLOSE_MS, auctionDay, auctionLot, auctio
 import { computeDerivedStats } from '../../shared/battle.ts'
 import { huashanSeason } from '../../shared/huashan.ts'
 import { createStarterCharacter, innVisitDay, legacyAcupoints } from '../../shared/player.ts'
-import type { ArtifactBoardDTO, ArtifactResult, AuctionBoardDTO, AuctionResult, AwakenResult, BattleReportDTO, BountyBoardDTO, BountyEntryDTO, FeastResult, FtueClaimResult, GachaResult, GameAction, HuashanBoardDTO, HuashanResult, IdleGain, LibraryResult, LibraryStatusDTO, OriginId, PlayerSnapshot, RaidId, ReunionResult, SectContestBoardDTO, SectContestResult, SectResult, StallBoardDTO, StallResult, StoryAdventureResult, StoryChallengeResult, WsServerEvent } from '../../shared/protocol.ts'
+import type { ArtifactBoardDTO, ArtifactResult, AuctionBoardDTO, AuctionResult, AwakenResult, BattleReportDTO, BountyBoardDTO, BountyEntryDTO, FeastResult, FtueClaimResult, GachaResult, GameAction, HuashanBoardDTO, HuashanResult, IdleGain, LibraryResult, LibraryStatusDTO, OriginId, PlayerSnapshot, RaidId, ReunionResult, SectContestBoardDTO, SectContestResult, SectResult, StallBoardDTO, StallResult, StoryAdventureResult, StoryChallengeResult, WsServerEvent, XiangyangBoardDTO, XiangyangResult } from '../../shared/protocol.ts'
 import { QUANZHEN_LIBRARY } from '../../shared/quanzhen.ts'
 import { BETRAYAL_BOUNTY, SECT_CHIEF_SALUTE_QI, SECT_SALUTE_QI, sectContestEndsAt, sectContestWeek } from '../../shared/sectProgress.ts'
 import { ONLINE_STORY_CHAPTERS, ONLINE_STORY_PROGRESS_VERSION } from '../../shared/storyData.ts'
+import { XIANGYANG_ORDERS, xiangyangWar, xiangyangWarOf } from '../../shared/xiangyang.ts'
 import { GameError } from '../src/http.ts'
 
 const connection = process.env.GAME_TEST_DATABASE_URL ?? process.env.STORY_TEST_DATABASE_URL
@@ -950,6 +951,65 @@ describe('联机战斗', { skip: connection ? false : '请设置 GAME_TEST_DATAB
     const awakened = await taoist.act<AwakenResult>('/companions/awaken', { companionId: 'songyanzi' })
     assert.equal(awakened.snapshot.companionAffinity.songyanzi.form, 'awakened')
     assert.equal(awakened.snapshot.companionAffinity.songyanzi.tokens, 0)
+  })
+
+  it('襄阳守卫战：开战才能出战，一场只守一门、五道军令；战功推动波次，收兵后领一次赏', async () => {
+    const war = xiangyangWarOf(xiangyangWar(Date.now()).id + 1)
+    const guard = await createPlayer('xy_guard')
+    const ally = await createPlayer('xy_ally')
+    const sortie = (who: typeof guard, gate: string, warId = war.id) => who.post('/xiangyang', { action: 'sortie', warId, gate })
+    try {
+      fixedServerTime = war.opensAt - 3_600_000
+      assert.equal((await sortie(guard, 'EAST')).json().code, 'XIANGYANG_CLOSED')
+      const drill = await guard.act<XiangyangResult>('/xiangyang', { action: 'drill', gate: 'NORTH', wave: 8 })
+      assert.equal(drill.result.action, 'drill')
+      assert.equal(drill.result.action === 'drill' && drill.result.report.sceneTitle, '城头演练 · 北门第 8 波')
+      assert.equal((await guard.post('/xiangyang', { action: 'drill', gate: 'NORTH', wave: 9 })).json().code, 'XIANGYANG_INVALID_WAVE')
+      const quiet = await guard.read<XiangyangBoardDTO>('/xiangyang')
+      assert.deepEqual([quiet.war.id, quiet.war.active, quiet.self], [war.id, false, null])
+
+      fixedServerTime = war.opensAt + 60_000
+      const first = await guard.act<XiangyangResult>('/xiangyang', { action: 'sortie', warId: war.id, gate: 'EAST' })
+      assert.ok(first.result.action === 'sortie' && first.result.merit > 0)
+      assert.equal(first.result.action === 'sortie' && first.result.gate.defenders, 1)
+      assert.equal((await sortie(guard, 'NORTH')).json().code, 'XIANGYANG_GATE_FIXED')
+      assert.equal((await sortie(guard, 'EAST', war.id - 1)).json().code, 'XIANGYANG_WAR_CHANGED')
+      const joined = await ally.act<XiangyangResult>('/xiangyang', { action: 'sortie', warId: war.id, gate: 'EAST' })
+      assert.equal(joined.result.action === 'sortie' && joined.result.gate.need, 60)
+      for (let order = 1; order < XIANGYANG_ORDERS; order++) {
+        assert.equal((await sortie(guard, 'EAST')).statusCode, 200)
+      }
+      assert.equal((await sortie(guard, 'EAST')).json().code, 'XIANGYANG_NO_ORDERS')
+      const board = await guard.read<XiangyangBoardDTO>('/xiangyang')
+      const east = board.gates.find(({ id }) => id === 'EAST')!
+      assert.equal(board.self?.sorties, XIANGYANG_ORDERS)
+      assert.equal(east.defenders, 2)
+      assert.ok(east.wave > 1)
+      assert.equal(board.feed.length, XIANGYANG_ORDERS + 1)
+      assert.equal(board.feed[0].nickname, 'story_xy_guard')
+      assert.equal((await guard.post('/xiangyang', { action: 'claim', warId: war.id })).json().code, 'XIANGYANG_NO_AWARD')
+
+      fixedServerTime = war.closesAt + 1
+      const after = await guard.read<XiangyangBoardDTO>('/xiangyang')
+      assert.equal(after.war.id, war.id + 1)
+      assert.deepEqual(after.last?.gates.find(({ id }) => id === 'EAST'), { id: 'EAST', wavesCleared: east.wave - 1 })
+      const [award] = after.awards
+      const before = await guard.read()
+      const outer = before.loadouts.find(({ presetIdx }) => presetIdx === before.player.activePresetIdx)!.outerSkillId
+      assert.deepEqual([award.warId, award.gate, award.sorties, award.merit, award.skillId], [war.id, 'EAST', XIANGYANG_ORDERS, board.self!.merit, outer])
+      const claimed = await guard.act<XiangyangResult>('/xiangyang', { action: 'claim', warId: war.id })
+      const { player } = claimed.snapshot
+      assert.equal(player.goldIngot, before.player.goldIngot + INGOT.xiangyang)
+      // 收功时巡历也可能掉玄铁，至少多出封赏那一份
+      assert.ok((player.equipmentForge?.iron ?? 0) >= (before.player.equipmentForge?.iron ?? 0) + award.reward.iron)
+      if (outer) assert.equal(player.skillFragments?.[outer], (before.player.skillFragments?.[outer] ?? 0) + award.reward.fragments)
+      assert.deepEqual((await ledger(guard.id)).filter(({ reason }) => reason === 'xiangyang').map(({ ref }) => ref), [`xiangyang:${war.id}`])
+      assert.equal((await guard.post('/xiangyang', { action: 'claim', warId: war.id })).json().code, 'XIANGYANG_NO_AWARD')
+    } finally {
+      fixedServerTime = undefined
+    }
+    const newcomer = await createNewcomer('xy_new')
+    assert.equal((await newcomer.get('/xiangyang')).json().code, 'FEATURE_LOCKED')
   })
 
   it('每日江湖事四件做完才能领元宝，当日只领一次', async () => {

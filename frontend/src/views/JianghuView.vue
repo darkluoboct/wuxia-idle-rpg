@@ -14,6 +14,7 @@ import { storyFirstClearReward } from '../../../shared/storyData.ts'
 import { STANCE_META, TIER_META, stanceRelation, trialDropLabel } from '@/config/uiMeta'
 import PortraitCard from '@/components/PortraitCard.vue'
 import RaidLobbyPanel from '@/components/RaidLobbyPanel.vue'
+import XiangyangDefense from '@/components/XiangyangDefense.vue'
 import BountyBoard from '@/components/BountyBoard.vue'
 import SceneBackdrop from '@/components/SceneBackdrop.vue'
 
@@ -24,6 +25,7 @@ const tabs = [
   { k: 'STORY', l: '射雕主线' },
   { k: 'MAPS', l: '江湖地图' },
   { k: 'RAID', l: '结义副本' },
+  { k: 'XIANGYANG', l: '襄阳守城' },
   { k: 'BOUNTY', l: '江湖悬赏榜' },
 ] as const
 // 悬赏榜只在联机；历练、地图、副本、悬赏随剧情开放
@@ -113,7 +115,7 @@ const mapWeather = (mapId: string) => {
         <div class="tabs flex-1" role="tablist">
           <button v-for="t in visibleTabs" :key="t.k" class="tab" role="tab" :aria-selected="sub === t.k" @click="sub = t.k">{{ t.l }}</button>
         </div>
-        <div v-if="sub !== 'BOUNTY'" class="flex items-center gap-2 text-xs text-ink3">
+        <div v-if="sub !== 'BOUNTY' && sub !== 'XIANGYANG'" class="flex items-center gap-2 text-xs text-ink3">
           {{ sub === 'TRIAL' ? '历练' : '通关' }}
           <div class="bar bar-thin bar-gold w-20"><i :style="{ width: `${progressPct}%` }" /></div>
           <b class="tabular-nums text-gold">{{ progressLabel }}</b>
@@ -451,6 +453,7 @@ const mapWeather = (mapId: string) => {
       </div>
 
       <BountyBoard v-else-if="sub === 'BOUNTY'" />
+      <XiangyangDefense v-else-if="sub === 'XIANGYANG'" />
 
       <!-- ============ 结义 + 后续长卷 ============ -->
       <div v-else class="view-scroll -mr-1 space-y-4 pr-1">

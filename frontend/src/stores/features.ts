@@ -15,11 +15,11 @@ type ArsenalTab = UiStore['arsenalTab']
 
 /** 页签与玩法的对应；没列出的随时可用 */
 const MAIN_TABS: Partial<Record<MainTab, FeatureId[]>> = { SECT: ['SECT'], MARKET: ['INN', 'MAPS', 'GHOST', 'HUASHAN'] }
-const JIANGHU_TABS: Partial<Record<JianghuTab, FeatureId>> = { TRIAL: 'TRIAL', MAPS: 'MAPS', RAID: 'RAID', BOUNTY: 'HUASHAN' }
+const JIANGHU_TABS: Partial<Record<JianghuTab, FeatureId>> = { TRIAL: 'TRIAL', MAPS: 'MAPS', RAID: 'RAID', XIANGYANG: 'XIANGYANG', BOUNTY: 'HUASHAN' }
 const MARKET_TABS: Record<MarketTab, FeatureId> = { INN: 'INN', GHOST: 'GHOST', ALCHEMY: 'MAPS', HUASHAN: 'HUASHAN', ARTIFACTS: 'HUASHAN' }
 /** 家人伙伴开局就在队里，伙伴编队随历练一起开放 */
 const ARSENAL_TABS: Partial<Record<ArsenalTab, FeatureId>> = { SQUAD: 'TRIAL' }
-const JIANGHU_ORDER: JianghuTab[] = ['TRIAL', 'STORY', 'MAPS', 'RAID', 'BOUNTY']
+const JIANGHU_ORDER: JianghuTab[] = ['TRIAL', 'STORY', 'MAPS', 'RAID', 'XIANGYANG', 'BOUNTY']
 const MARKET_ORDER: MarketTab[] = ['INN', 'ALCHEMY', 'GHOST', 'HUASHAN', 'ARTIFACTS']
 
 /** 剧情卡；coda 是末尾换人说的一页（如家人的话） */
