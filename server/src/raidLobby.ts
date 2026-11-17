@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
+import { featureLockedText, featureUnlocked, type FeatureState } from '../../shared/features.ts'
 import { COOP_RAIDS } from '../../shared/gameData.ts'
 import type { RaidId, RaidLobbyDTO, RaidTeamDTO } from '../../shared/protocol.ts'
 import { requireSession } from './auth.ts'
@@ -8,6 +9,7 @@ import { GameError, objectBody } from './http.ts'
 import type { registerRooms } from './rooms.ts'
 
 type Identity = { id: string; nickname: string }
+const UUID = /^[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/i
 type Team = {
   id: string
   raidId: RaidId
@@ -149,11 +151,23 @@ export function registerRaidLobby(app: FastifyInstance, rooms: ReturnType<typeof
 
   app.post('/api/v1/raid/team', async (request) => {
     const { accountId } = await requireSession(request)
-    const { rows: [actor] } = await db.query<Identity>('SELECT id, nickname FROM players WHERE account_id = $1', [accountId])
-    if (!actor) throw new GameError(404, 'PLAYER_NOT_CREATED', '先创建你的角色')
+    const { rows: [row] } = await db.query<Identity & { profile: FeatureState }>('SELECT id, nickname, profile FROM players WHERE account_id = $1', [accountId])
+    if (!row) throw new GameError(404, 'PLAYER_NOT_CREATED', '先创建你的角色')
+    const actor: Identity = { id: row.id, nickname: row.nickname }
     const input = objectBody(request.body)
+    if ((input.action === 'invite' || input.action === 'accept') && !featureUnlocked(row.profile, 'RAID')) {
+      throw conflict('FEATURE_LOCKED', featureLockedText('RAID'))
+    }
     switch (input.action) {
-      case 'invite': invitePlayer(actor, input.targetPlayerId, parseRaidId(input.raidId === undefined ? 'shaoshi' : input.raidId)); break
+      case 'invite': {
+        const targetId = input.targetPlayerId
+        if (typeof targetId === 'string' && UUID.test(targetId)) {
+          const { rows: [target] } = await db.query<{ nickname: string; profile: FeatureState }>('SELECT nickname, profile FROM players WHERE id = $1', [targetId])
+          if (target && !featureUnlocked(target.profile, 'RAID')) throw conflict('TARGET_FEATURE_LOCKED', `「${target.nickname}」初入江湖，还没有接触这门玩法`)
+        }
+        invitePlayer(actor, targetId, parseRaidId(input.raidId === undefined ? 'shaoshi' : input.raidId))
+        break
+      }
       case 'accept': replyInvitation(actor, input.invitationId, true); break
       case 'decline': replyInvitation(actor, input.invitationId, false); break
       case 'leave': leaveTeam(actor.id, currentTeam(actor.id, input.teamId)); break

@@ -119,7 +119,12 @@ export interface PlayerDTO {
   auctionDividend?: { day: number; ingot: number } // 最近一次兑付的红封（未中签为 0）
   gacha?: { pulls: number; pity: number }
   feast?: { ingredients: string[]; cooked: string[]; lastCookDay: number }
+  featureGate?: true                // 新手序章之后建的角色：玩法随剧情开放（老角色没有，全部开放）
+  featuresSeen?: FeatureId[]        // 已看过开放剧情的玩法
 }
+
+/** 随剧情开放的玩法（shared/features.ts） */
+export type FeatureId = 'TRIAL' | 'INN' | 'MAPS' | 'DAILY' | 'GACHA' | 'GHOST' | 'SECT' | 'HUASHAN' | 'RAID' | 'FEAST'
 
 /** 首日《江湖行历》进度 */
 export interface FtueStateDTO {

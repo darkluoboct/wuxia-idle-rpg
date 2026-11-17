@@ -132,7 +132,7 @@ function canPierce(point: (typeof ACUPOINTS)[number]) {
       <div class="flex shrink-0 flex-wrap items-center justify-between gap-2">
         <div class="tabs flex-1" role="tablist">
           <button class="tab" role="tab" :aria-selected="sub === 'SKILLS'" @click="sub = 'SKILLS'">武学</button>
-          <button class="tab" role="tab" :aria-selected="sub === 'SQUAD'" @click="sub = 'SQUAD'">伙伴</button>
+          <button v-if="store.arsenalTabOpen('SQUAD')" class="tab" role="tab" :aria-selected="sub === 'SQUAD'" @click="sub = 'SQUAD'">伙伴</button>
           <button class="tab" role="tab" :aria-selected="sub === 'EQUIP'" @click="sub = 'EQUIP'">装备</button>
           <button class="tab" role="tab" :aria-selected="sub === 'MERIDIAN'" @click="sub = 'MERIDIAN'">经脉冲穴</button>
         </div>

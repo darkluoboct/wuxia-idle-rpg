@@ -12,6 +12,7 @@ import {
   type IngotMilestone,
   type MilestoneState,
 } from '../../../shared/economy.ts'
+import { featureUnlocked } from '../../../shared/features.ts'
 import { earnsAuctionTicket } from '../../../shared/ghostAuction.ts'
 import { usePlayerStore } from './playerStore'
 import { useGameUiStore } from './gameUiStore'
@@ -65,7 +66,7 @@ export function useEconomy({ actions }: { actions: GameActions }) {
       reward: INGOT.daily,
       // 鬼市红封签：21:00 前领赏才有
       ticket: player.value.auctionTickets?.includes(state.day) ? 'HELD' as const
-        : !state.claimed && earnsAuctionTicket(state.day, worldTime.value) ? 'OPEN' as const : 'NONE' as const,
+        : !state.claimed && earnsAuctionTicket(state.day, worldTime.value) && featureUnlocked(player.value, 'GHOST') ? 'OPEN' as const : 'NONE' as const,
     }
   })
 

@@ -10,13 +10,17 @@ afterEach(() => {
   for (const pinia of activeGames.splice(0)) disposePinia(pinia)
 })
 
-/** 新建一个隔离的 store；可直接选择开局模式 */
-export function newStore(mode?: 'NEW' | 'DEMO'): Store {
+/**
+ * 新建一个隔离的 store；可直接选择开局模式。
+ * 新游戏默认按老角色处理（玩法全部开放），专门验证各玩法本身；gated 时按新手序章逐步开放（shared/features.ts）。
+ */
+export function newStore(mode?: 'NEW' | 'DEMO', { gated = false } = {}): Store {
   const pinia = createPinia()
   createApp({}).use(pinia)
   activeGames.push(pinia)
   const s = useGameStore(pinia)
   if (mode) s.startGame(mode)
+  if (mode === 'NEW' && !gated) delete s.player.featureGate
   return s
 }
 

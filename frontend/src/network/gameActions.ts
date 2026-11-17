@@ -9,6 +9,7 @@ import type {
   CultivationResult,
   EquipSlotType,
   FeastResult,
+  FeatureId,
   ForgeInput,
   ForgeResult,
   FtueClaimResult,
@@ -87,6 +88,7 @@ interface Actions {
   awaken: [{ companionId: string }, AwakenResult]
   feast: [{ dishId: string }, FeastResult]
   ftueClaim: [undefined, FtueClaimResult]
+  featureSeen: [{ featureId: FeatureId }, { featureId: FeatureId }]
   dailyClaim: [undefined, { ingot: number; ticket: boolean }]
   appraise: [{ masked: boolean }, GhostAppraisalResult]
   buy: [{ listingId: string }, { spentSilver: number }]
@@ -144,6 +146,7 @@ const requests: { [K in keyof Actions]: (input: Actions[K][0]) => Request | unde
   awaken: (body) => ['POST', '/companions/awaken', body],
   feast: (body) => ['POST', '/market/feast', body],
   ftueClaim: () => ['POST', '/ftue/claim'],
+  featureSeen: (body) => ['POST', '/features/seen', body],
   dailyClaim: () => ['POST', '/daily/claim'],
   appraise: (body) => ['POST', '/market/ghost/appraise', body],
   buy: (body) => ['POST', '/market/ghost/buy', body],
@@ -160,6 +163,29 @@ const requests: { [K in keyof Actions]: (input: Actions[K][0]) => Request | unde
   escort: (body) => ['POST', '/escort', body],
   acceptBounty: (body) => ['POST', '/bounties/accept', body],
   library: (body) => ['POST', '/sect/library', body],
+}
+
+/** 随剧情开放的玩法：未开放时不发请求（服务端同样拦截，见 shared/features.ts） */
+const ACTION_FEATURES: Partial<Record<keyof Actions, FeatureId>> = {
+  patrol: 'TRIAL', trial: 'TRIAL', replay: 'TRIAL', redeem: 'TRIAL', openCache: 'TRIAL',
+  innGift: 'INN', awaken: 'INN',
+  forage: 'MAPS', refine: 'MAPS', extract: 'MAPS', move: 'MAPS', coCultivate: 'MAPS',
+  dailyClaim: 'DAILY',
+  gacha: 'GACHA', reunion: 'GACHA',
+  appraise: 'GHOST', buy: 'GHOST', auction: 'GHOST', stall: 'GHOST',
+  sect: 'SECT', sectContest: 'SECT', library: 'SECT',
+  huashan: 'HUASHAN', artifact: 'HUASHAN', duel: 'HUASHAN', escort: 'HUASHAN', acceptBounty: 'HUASHAN',
+  raid: 'RAID',
+  feast: 'FEAST',
+}
+
+export function actionFeature<K extends keyof Actions>(action: K, input: Actions[K][0]): FeatureId | undefined {
+  // 鬼市洗炼走锻造接口；温养、拆解在武库里随时可用
+  if (action === 'forge') return (input as ForgeInput).action === 'reforge' ? 'GHOST' : undefined
+  // 回应邀请不拦：邀请时已经查过双方
+  if ((action === 'coCultivate' || action === 'duel') && input && typeof input === 'object' && 'action' in input &&
+    (input.action === 'accept' || input.action === 'decline' || input.action === 'end')) return undefined
+  return ACTION_FEATURES[action]
 }
 
 export interface GameActions {

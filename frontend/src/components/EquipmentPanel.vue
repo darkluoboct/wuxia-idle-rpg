@@ -245,7 +245,7 @@ function unequip(type: EquipSlotType) {
     <section v-if="!wearer" class="well equip-pane space-y-2" aria-label="百草药囊">
       <header class="equip-heading">
         <h3 class="sec-title">百草药囊</h3>
-        <button class="btn btn-sm" type="button" @click="openAlchemy">去百草丹房</button>
+        <button v-if="store.featureOpen('MAPS')" class="btn btn-sm" type="button" @click="openAlchemy">去百草丹房</button>
       </header>
       <div class="grid gap-2 md:grid-cols-2">
         <label v-for="slot in medicineSlots" :key="slot.field" class="block space-y-1 text-sm">

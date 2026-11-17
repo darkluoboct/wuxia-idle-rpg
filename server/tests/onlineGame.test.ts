@@ -18,7 +18,7 @@ import { arenaDay, arenaWindow, DAGOU_ELDER, DAGOU_STAFF, isArenaDay, nextArenaD
 import { AUCTION_BID_STEP, AUCTION_SOFT_CLOSE_MS, auctionDay, auctionLot, auctionWindow } from '../../shared/ghostAuction.ts'
 import { computeDerivedStats } from '../../shared/battle.ts'
 import { huashanSeason } from '../../shared/huashan.ts'
-import { createStarterCharacter, legacyAcupoints } from '../../shared/player.ts'
+import { createStarterCharacter, innVisitDay, legacyAcupoints } from '../../shared/player.ts'
 import type { ArtifactBoardDTO, ArtifactResult, AuctionBoardDTO, AuctionResult, AwakenResult, BattleReportDTO, BountyBoardDTO, BountyEntryDTO, FeastResult, FtueClaimResult, GachaResult, GameAction, HuashanBoardDTO, HuashanResult, IdleGain, LibraryResult, LibraryStatusDTO, PlayerSnapshot, RaidId, ReunionResult, SectContestBoardDTO, SectContestResult, SectResult, StallBoardDTO, StallResult, StoryAdventureResult, StoryChallengeResult, WsServerEvent } from '../../shared/protocol.ts'
 import { QUANZHEN_LIBRARY } from '../../shared/quanzhen.ts'
 import { BETRAYAL_BOUNTY, SECT_CHIEF_SALUTE_QI, SECT_SALUTE_QI, sectContestEndsAt, sectContestWeek } from '../../shared/sectProgress.ts'
@@ -103,7 +103,8 @@ describe('联机战斗', { skip: connection ? false : '请设置 GAME_TEST_DATAB
       [id, JSON.stringify(Object.values(starter.presets))])
   }
 
-  async function register(name: string, fresh: boolean) {
+  /** fresh：联机新角色；gated 时保留新手序章的玩法开放顺序，否则按老角色处理（玩法全部开放） */
+  async function register(name: string, fresh: boolean, gated = false) {
     const loginName = `story_${name}`
     const registration = await app.inject({ method: 'POST', url: '/api/v1/auth/register', payload: { loginName, password: randomUUID() } })
     assert.equal(registration.statusCode, 201)
@@ -114,6 +115,7 @@ describe('联机战斗', { skip: connection ? false : '请设置 GAME_TEST_DATAB
     let snapshot = creation.json<PlayerSnapshot>()
     const id = snapshot.player.id
     if (!fresh) await veteran(id, snapshot)
+    else if (!gated) await db.query("UPDATE players SET profile = profile - 'featureGate' WHERE id = $1", [id])
     const write = (method: 'POST' | 'PUT', path: string, payload?: Record<string, unknown>, requestId: string = randomUUID()) =>
       app.inject({ method, url: `/api/v1${path}`, headers: { ...headers, 'idempotency-key': requestId }, payload })
     const post = (path: string, payload?: Record<string, unknown>, key?: string) => write('POST', path, payload, key)
@@ -128,7 +130,7 @@ describe('联机战斗', { skip: connection ? false : '请设置 GAME_TEST_DATAB
       assert.equal(response.statusCode, 200, response.body)
       return response.json<T>()
     }
-    if (!fresh) snapshot = await read()
+    if (!fresh || !gated) snapshot = await read()
     const connect = async () => {
       const options = { headers }
       const socket = new WebSocket(`ws://127.0.0.1:${(app.server.address() as { port: number }).port}/ws`, options)
@@ -142,6 +144,7 @@ describe('联机战斗', { skip: connection ? false : '请设置 GAME_TEST_DATAB
   }
   const createPlayer = (name: string) => register(name, false)
   const createRookie = (name: string) => register(name, true)
+  const createNewcomer = (name: string) => register(name, true, true)
 
   async function profile(id: string, patch: Record<string, unknown>) {
     await db.query('UPDATE players SET profile = profile || $2::jsonb WHERE id = $1', [id, patch])
@@ -915,6 +918,62 @@ describe('联机战斗', { skip: connection ? false : '请设置 GAME_TEST_DATAB
     assert.equal(claimed.snapshot.player.goldIngot, before.player.goldIngot + INGOT.daily)
     assert.equal((await actor.post('/daily/claim')).json().code, 'DAILY_NOT_READY')
     assert.equal((await ledger(actor.id)).filter(({ reason }) => reason === 'daily').length, 1)
+  })
+
+  it('新手序章后的新角色：玩法随剧情开放，服务端拦截未开放的玩法和拉新人同玩，开放剧情的已读记在存档', async () => {
+    const newcomer = await createNewcomer('newcomer')
+    assert.equal(newcomer.snapshot.player.featureGate, true)
+    const code = async (path: string, payload?: Record<string, unknown>) => (await newcomer.post(path, payload)).json().code
+    assert.equal(await code('/trial/1/challenge'), 'FEATURE_LOCKED')
+    assert.equal(await code('/trial/patrol', { stageId: 1 }), 'FEATURE_LOCKED')
+    assert.equal(await code('/market/inn/gift', { companionId: 'kezhene', favorite: false }), 'FEATURE_LOCKED')
+    assert.equal(await code('/market/gacha', { count: 1 }), 'FEATURE_LOCKED')
+    assert.equal(await code('/alchemy/forage'), 'FEATURE_LOCKED')
+    assert.equal(await code('/sect', { action: 'join', sectId: 'quanzhen' }), 'FEATURE_LOCKED')
+    assert.equal(await code('/huashan', { action: 'mirror', seasonId: huashanSeason(Date.now()) }), 'FEATURE_LOCKED')
+    // 还没开放的玩法不能先记已读
+    const early = await newcomer.act<{ featureId: string }>('/features/seen', { featureId: 'TRIAL' })
+    assert.equal(early.snapshot.player.featuresSeen, undefined)
+    assert.equal((await newcomer.post('/features/seen', { featureId: 'NOPE' })).statusCode, 400)
+
+    // 序章就是主线 1-1：打赢后历练开放，客栈仍要等 1-2
+    const prologue = await newcomer.act<StoryChallengeResult>('/story/1-1/challenge')
+    assert.equal(prologue.result.report.winner, 'ALLY')
+    assert.equal((await newcomer.post('/trial/1/challenge')).statusCode, 200)
+    assert.equal(await code('/market/inn/gift', { companionId: 'kezhene', favorite: false }), 'FEATURE_LOCKED')
+    const seen = await newcomer.act('/features/seen', { featureId: 'TRIAL' })
+    assert.deepEqual(seen.snapshot.player.featuresSeen, ['TRIAL'])
+    const again = await newcomer.act('/features/seen', { featureId: 'TRIAL' })
+    assert.deepEqual(again.snapshot.player.featuresSeen, ['TRIAL'])
+
+    // 老侠客拉新人切磋、组队、共修：对方没开放就拒绝
+    const host = await createPlayer('host_n')
+    assert.equal((await host.post('/duel', { action: 'invite', targetPlayerId: newcomer.id })).json().code, 'TARGET_FEATURE_LOCKED')
+    assert.equal((await host.post('/raid/team', { action: 'invite', targetPlayerId: newcomer.id })).json().code, 'TARGET_FEATURE_LOCKED')
+    assert.equal((await host.post('/map/co-cultivate', { action: 'invite', targetPlayerId: newcomer.id })).json().code, 'TARGET_FEATURE_LOCKED')
+
+    // 每日江湖事要等客栈（1-2）与丹房（历练第 3 关）都开放；鬼市（历练第 8 关）开放前领赏不带红封签
+    assert.equal(await code('/daily/claim'), 'FEATURE_LOCKED')
+    const { player } = await newcomer.read()
+    await profile(newcomer.id, { maxChapterId: 3, trial: { ...player.trial, rewardedStageIds: [1, 3] } })
+    assert.equal(await code('/daily/claim'), 'DAILY_NOT_READY')
+    const morning = Date.UTC(2026, 10, 18, 3) // 北京时间 11:00，暗拍 21:00 才截止领签
+    const done = DAILY_TASKS.map(({ id }) => id)
+    try {
+      fixedServerTime = morning
+      await profile(newcomer.id, { daily: { day: innVisitDay(morning), done, claimed: false } })
+      const withoutGhost = await newcomer.act<{ ticket: boolean }>('/daily/claim')
+      assert.equal(withoutGhost.result.ticket, false)
+      assert.equal(withoutGhost.snapshot.player.auctionTickets, undefined)
+
+      fixedServerTime = morning + 24 * 3_600_000
+      await profile(newcomer.id, { daily: { day: innVisitDay(fixedServerTime), done, claimed: false }, trial: { ...player.trial, rewardedStageIds: [1, 3, 8] } })
+      const withGhost = await newcomer.act<{ ticket: boolean }>('/daily/claim')
+      assert.equal(withGhost.result.ticket, true)
+      assert.deepEqual(withGhost.snapshot.player.auctionTickets, [innVisitDay(fixedServerTime)])
+    } finally {
+      fixedServerTime = undefined
+    }
   })
 
   it('联机结缘由服务端出签、扣元宝并记审计，觉醒形态、信物与硬保底同本地规则', async () => {

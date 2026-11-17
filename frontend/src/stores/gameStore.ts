@@ -2,7 +2,7 @@ import { defineStore, storeToRefs } from 'pinia'
 import { computed, onScopeDispose } from 'vue'
 import { validateGameData } from '@/config/gameData'
 import { useOnlineStore } from './onlineStore'
-import { onlineGameActions } from '@/network/gameActions'
+import { actionFeature, onlineGameActions, type GameActions } from '@/network/gameActions'
 import { mockGameActions } from '@/network/mockEngine'
 import { IS_MOCK_MODE } from '@/network/apiClient'
 import { validateGachaData } from '@/config/gachaData'
@@ -23,6 +23,8 @@ import { useArtifacts } from './artifacts'
 import { useStalls } from './stalls'
 import { useLocalGame } from './localGame'
 import { useEconomy } from './economy'
+import { useFeatures } from './features'
+import { featureLockedText, featureUnlocked } from '../../../shared/features.ts'
 
 export type { MainTab } from './gameUiStore'
 export type { GachaResultView } from './companions'
@@ -36,10 +38,18 @@ export const useGameStore = defineStore('wuxiaGame', () => {
 
   const onlineStore = useOnlineStore()
   const session = storeToRefs(onlineStore)
-  const actions = IS_MOCK_MODE ? mockGameActions : onlineGameActions(onlineStore.action)
-
   const playerStore = usePlayerStore()
   const uiStore = useGameUiStore()
+
+  // 随剧情开放的玩法没开放时不发请求，只提示开放条件
+  const baseActions = IS_MOCK_MODE ? mockGameActions : onlineGameActions(onlineStore.action)
+  const actions: GameActions = {
+    run(action, input, onResult, playLocally) {
+      const feature = actionFeature(action, input)
+      if (feature && !featureUnlocked(playerStore.player, feature)) return uiStore.showToast(featureLockedText(feature), 'info')
+      return baseActions.run(action, input, onResult, playLocally)
+    },
+  }
 
   const battle = useBattlePlayback({
     claimNodeFirstClear: (nodeId) => story.claimNodeFirstClear(nodeId),
@@ -78,6 +88,8 @@ export const useGameStore = defineStore('wuxiaGame', () => {
   const local = useLocalGame({ battle, companions, world, market, artifacts, stalls })
 
   const economy = useEconomy({ actions })
+
+  const features = useFeatures({ actions, selectTab })
 
   const playerRefs = storeToRefs(playerStore)
   const { onlineState, activeCoCultivation, player, coCultivationInvite } = playerRefs
@@ -124,6 +136,10 @@ export const useGameStore = defineStore('wuxiaGame', () => {
   onScopeDispose(unbindGame)
 
   function selectTab(tab: MainTab) {
+    if (!features.mainTabOpen(tab)) {
+      const feature = tab === 'SECT' ? 'SECT' : 'INN'
+      return showToast(featureLockedText(feature), 'info')
+    }
     activeTab.value = tab
     mobileDrawer.value = 'NONE'
     if (activeBattle.value && !isBattlePlaying.value) closeBattleStage()
@@ -358,5 +374,14 @@ export const useGameStore = defineStore('wuxiaGame', () => {
     refreshArtifacts: artifacts.refreshArtifacts,
     challengeArtifact: artifacts.challengeArtifact,
     sendChatMessage: world.sendChatMessage,
+    featureOpen: features.featureOpen,
+    mainTabOpen: features.mainTabOpen,
+    jianghuTabOpen: features.jianghuTabOpen,
+    marketTabOpen: features.marketTabOpen,
+    arsenalTabOpen: features.arsenalTabOpen,
+    guardFeature: features.guardFeature,
+    featureCard: features.featureCard,
+    closeFeatureCard: features.closeFeatureCard,
+    upcomingFeature: features.upcomingFeature,
   }
 })

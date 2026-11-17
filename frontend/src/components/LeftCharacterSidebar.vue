@@ -26,6 +26,7 @@ const party = computed(() => {
 })
 
 function openArsenal(tab: typeof store.arsenalTab) {
+  if (tab === 'SQUAD' && !store.guardFeature('INN')) return
   store.arsenalTab = tab
   store.selectTab('ARSENAL')
 }
@@ -77,7 +78,7 @@ function openArsenal(tab: typeof store.arsenalTab) {
       <div class="character-shortcuts">
         <button @click="openArsenal('EQUIP')"><Backpack aria-hidden="true" /><span>装备</span></button>
         <button @click="openArsenal('SKILLS')"><Swords aria-hidden="true" /><span>武学</span></button>
-        <button @click="openArsenal('SQUAD')"><UsersRound aria-hidden="true" /><span>伙伴</span></button>
+        <button v-if="store.arsenalTabOpen('SQUAD')" @click="openArsenal('SQUAD')"><UsersRound aria-hidden="true" /><span>伙伴</span></button>
       </div>
       <div class="preset-strip" role="radiogroup" aria-label="出战方案">
         <button

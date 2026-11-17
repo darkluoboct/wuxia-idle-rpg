@@ -25,7 +25,8 @@ const tabs = [
   { k: 'RAID', l: '结义副本' },
   { k: 'BOUNTY', l: '江湖悬赏榜' },
 ] as const
-const visibleTabs = IS_MOCK_MODE ? tabs.filter((tab) => tab.k !== 'BOUNTY') : tabs
+// 悬赏榜只在联机；历练、地图、副本、悬赏随剧情开放
+const visibleTabs = computed(() => tabs.filter((tab) => !(IS_MOCK_MODE && tab.k === 'BOUNTY') && store.jianghuTabOpen(tab.k)))
 
 const chapters = IS_MOCK_MODE ? STORY_CHAPTERS : ONLINE_STORY_CHAPTERS
 const storyGroups = STORY_ARCS.map((arc) => ({ ...arc, nodes: chapters.filter((node) => node.chapter === arc.chapter) }))
@@ -432,7 +433,7 @@ const mapWeather = (mapId: string) => {
                 <button v-if="getMapHerbs(m.id).length" class="btn btn-sm btn-gold" @click="store.forageHerbs(m.id)">采药</button>
               </div>
             </div>
-            <div v-if="!IS_MOCK_MODE && m.id === store.player.currentMapId && m.safety === 'CONTESTED'" class="flex items-center justify-between gap-2 text-xs">
+            <div v-if="!IS_MOCK_MODE && m.id === store.player.currentMapId && m.safety === 'CONTESTED' && store.featureOpen('HUASHAN')" class="flex items-center justify-between gap-2 text-xs">
               <template v-if="store.player.escortDart?.mapId === m.id">
                 <span>{{ store.player.escortDart.robbed ? '镖银已遭劫掠' : store.onlineTime >= store.player.escortDart.endsAt ? '镖车已抵达' : '押镖中' }} · {{ store.player.escortDart.silver.toLocaleString() }} 两</span>
                 <button class="btn btn-sm btn-gold" :disabled="store.onlineActionBusy || store.onlineTime < store.player.escortDart.endsAt" @click="store.escortAction('claim')">交镖</button>

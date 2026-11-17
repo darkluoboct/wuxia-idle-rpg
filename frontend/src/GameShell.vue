@@ -57,6 +57,8 @@ const navTabs: { key: MainTab; label: string; icon: Component; hotkey: string; v
 const inBattle = computed(() => !!store.activeBattle)
 const currentTab = computed(() => (inBattle.value ? 'CULTIVATE' : store.activeTab))
 const currentView = computed(() => navTabs.find((t) => t.key === currentTab.value)!.view)
+/** 门派、市井随剧情开放，未开放时不显示 */
+const openTabs = computed(() => navTabs.filter((t) => store.mainTabOpen(t.key)))
 const stage = ref<HTMLElement>()
 watch([currentTab, inBattle], () => { if (stage.value) stage.value.scrollTop = 0 })
 const toggleDrawer = (d: 'CHAR' | 'WORLD') => (store.mobileDrawer = store.mobileDrawer === d ? 'NONE' : d)
@@ -75,7 +77,7 @@ function handleKeydown(e: KeyboardEvent) {
   if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e.ctrlKey || e.metaKey || e.altKey) return
   if (store.confirmDialog || store.inspectModal) return
 
-  const hit = navTabs.find((t) => t.hotkey === e.key)
+  const hit = openTabs.value.find((t) => t.hotkey === e.key)
   if (hit) store.selectTab(hit.key)
   else if (e.code === 'Space' && store.activeBattle && tag !== 'BUTTON' && tag !== 'SUMMARY') {
     e.preventDefault()
@@ -118,7 +120,7 @@ const TOAST_GLYPH = { gold: '喜', danger: '警', info: '讯' } as const
       <div class="wuxia-navigation">
         <nav class="wuxia-nav" role="tablist" aria-label="主导航">
           <button
-            v-for="t in navTabs" :key="t.key" role="tab" :aria-selected="!inBattle && store.activeTab === t.key"
+            v-for="t in openTabs" :key="t.key" role="tab" :aria-selected="!inBattle && store.activeTab === t.key"
             :title="`${t.label}（${t.hotkey}）`" :aria-keyshortcuts="t.hotkey" @click="store.selectTab(t.key)"
           >
             <component :is="t.icon" aria-hidden="true" />
@@ -166,7 +168,7 @@ const TOAST_GLYPH = { gold: '喜', danger: '警', info: '讯' } as const
       <aside id="world-rail" class="wuxia-rail world-rail" aria-label="江湖卷" :data-open="store.mobileDrawer === 'WORLD'">
         <div class="rail-frame">
           <JianghuQuestScroll />
-          <DailyTasks />
+          <DailyTasks v-if="store.featureOpen('DAILY')" />
           <RightJianghuSidebar />
         </div>
       </aside>
@@ -193,7 +195,7 @@ const TOAST_GLYPH = { gold: '喜', danger: '警', info: '讯' } as const
     <!-- ==================== 底部导航（< 768px） ==================== -->
     <nav class="wuxia-mobile-nav" role="tablist" aria-label="主导航">
       <button
-        v-for="t in navTabs" :key="t.key"
+        v-for="t in openTabs" :key="t.key"
         role="tab" :aria-selected="!inBattle && store.activeTab === t.key"
         @click="store.selectTab(t.key)"
       >

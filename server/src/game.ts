@@ -29,6 +29,7 @@ import { ARENA_SCENE, artifactChallengeBlock, artifactState, DAGOU_STAFF, defend
 import { buySystemStall, checkStallOffer, moveStallGoods, STALL, stallDay, stallInventory, stallMask, stallTax, SYSTEM_STALL_SELLER, systemStalls, systemStallsBought, type StallGoodsKind } from '../../shared/stalls.ts'
 import { AUCTION_MASK_COUNT, auctionDay, auctionDividend, auctionLot, auctionWindow, bidderMask, nextAuctionBid, ownsAuctionLot, settleAuctionTickets, softCloseAt, type AuctionTicketLot } from '../../shared/ghostAuction.ts'
 import { claimFtueQuest, emptyFtue, recordFtueForage, recordFtueRefine } from '../../shared/ftueQuests.ts'
+import { FEATURE_BY_ID, featureLockedText, featureUnlocked, markFeatureSeen, type FeatureId } from '../../shared/features.ts'
 import { gainReunionClues, newReunion, reunionCluesToday, reunionEncounter, reunionWaitTime, REUNION_INQUIRE_COST, REUNION_QUESTS, REUNION_WAIT_HOURS, type ClueSource, type ReunionQuestConfig } from '../../shared/reunion.ts'
 import type {
   ArtifactBoardDTO, ArtifactResult, AuctionBoardDTO, AuctionLotDTO, AuctionResult, AwakenResult, BattleReportDTO, BountyBoardDTO, BountyEntryDTO, ChapterOneStatueDTO, CoCultivationDTO, CoCultivationInviteDTO, CompanionState, CompanionWear, CultivationResult, DuelInviteDTO, FeastResult, ForgeInput, ForgeResult, FtueClaimResult, GachaResult, GameAction, HuashanBoardDTO, HuashanEntryDTO, HuashanResult, IdleGain, InnGiftResult, LibraryResult, LibraryStatusDTO, LoadoutPresetDTO, MapMoveResult, PersonalEquipSlot, PlayerDTO, PlayerSnapshot, StallBoardDTO, StallListingDTO, StallResult,
@@ -101,6 +102,16 @@ async function grantIngotOnce(client: PoolClient, character: Character, amount: 
 async function saveCompanion(client: PoolClient, character: Character, id: string) {
   await client.query(`INSERT INTO player_companions (player_id, companion_id, state) VALUES ($1, $2, $3)
     ON CONFLICT (player_id, companion_id) DO UPDATE SET state = EXCLUDED.state`, [character.player.id, id, character.companionAffinity[id]])
+}
+
+/** 玩法尚未随剧情开放时拒绝（老角色全部开放） */
+function requireFeature(player: PlayerDTO, id: FeatureId) {
+  if (!featureUnlocked(player, id)) throw new GameError(409, 'FEATURE_LOCKED', featureLockedText(id))
+}
+
+/** 对方的玩法还没开放时，不能拉他一起来 */
+function requireTargetFeature(target: PlayerDTO, id: FeatureId) {
+  if (!featureUnlocked(target, id)) throw new GameError(409, 'TARGET_FEATURE_LOCKED', `「${target.nickname}」初入江湖，还没有接触这门玩法`)
 }
 
 function markDaily(character: Character, task: DailyTaskId, now: number) {
@@ -1026,6 +1037,7 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
   })
 
   app.post('/api/v1/huashan', (request) => respond<HuashanResult>(request, async (character, now, client, readRelated) => {
+    requireFeature(character.player, 'HUASHAN')
     const { action, seasonId, targetPlayerId, honor, suffix, inscription } = objectBody(request.body)
     if (typeof seasonId !== 'number' || !Number.isInteger(seasonId)) throw new GameError(400, 'HUASHAN_INVALID_SEASON', '请选择一届华山论剑')
     const currentSeason = huashanSeason(now)
@@ -1143,6 +1155,7 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
   })
 
   app.post('/api/v1/sect/contest', (request) => respond<SectContestResult>(request, async (character, _now, client, readRelated) => {
+    requireFeature(character.player, 'SECT')
     const { action, sectId, weekId, targetPlayerId } = objectBody(request.body)
     const { id, currentSectId, sectRank } = character.player
     const sect = SECTS.find(({ id }) => id === sectId)
@@ -1240,6 +1253,7 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
       (lock !== undefined && (action !== 'reforge' || (lock !== 'primary' && lock !== 'secondary')))) {
       throw new GameError(400, 'INVALID_FORGE_ACTION', '请选择装备和精铸操作')
     }
+    if (action === 'reforge') requireFeature(character.player, 'GHOST')
     const index = character.ownedItemIds.indexOf(itemId)
     const item = index >= 0 ? ITEMS[itemId] : undefined
     if (!item) throw new GameError(404, 'FORGE_ITEM_NOT_OWNED', '背包里没有这件装备')
@@ -1337,6 +1351,7 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
   })
 
   app.post('/api/v1/sect/library', (request) => respond<LibraryResult>(request, async (character, now, client, readRelated) => {
+    requireFeature(character.player, 'SECT')
     const { action, enabled, skillId } = objectBody(request.body)
     const { player } = character
     if (action === 'guard') {
@@ -1567,6 +1582,7 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
   })
 
   app.post('/api/v1/market/artifacts', (request) => respond<ArtifactResult>(request, async (character, now, client, readRelated) => {
+    requireFeature(character.player, 'HUASHAN')
     const { action, itemId, holderId } = objectBody(request.body)
     if (action !== 'challenge' || itemId !== DAGOU_STAFF.itemId || (holderId !== null && (typeof holderId !== 'string' || !UUID.test(holderId)))) {
       throw new GameError(400, 'INVALID_ARTIFACT_ACTION', '请选择要争夺的真品')
@@ -1618,6 +1634,7 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
   }))
 
   app.post('/api/v1/sect', (request) => respond<SectResult>(request, async (character, now, client, readRelated) => {
+    requireFeature(character.player, 'SECT')
     const { action, sectId, expectedRank, branch, answer, dishId } = objectBody(request.body)
     const { player } = character
     if (action === 'wanderer-gear') {
@@ -1779,6 +1796,7 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
   }))
 
   app.post('/api/v1/market/ghost/appraise', (request) => respond(request, async (character, now, client) => {
+    requireFeature(character.player, 'GHOST')
     const { masked } = objectBody(request.body)
     if (typeof masked !== 'boolean') throw new GameError(400, 'INVALID_GHOST_MASK', '请选择是否蒙面')
     const result = appraiseGhostCurio(character.player, activeLoadout(character), character.ownedItemIds.includes(GHOST_APPRAISAL_SWORD),
@@ -1789,6 +1807,7 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
   }))
 
   app.post('/api/v1/market/inn/gift', (request) => respond<InnGiftResult>(request, async (character, now, client) => {
+    requireFeature(character.player, 'INN')
     const { companionId, favorite } = objectBody(request.body)
     const companion = typeof companionId === 'string' && Object.hasOwn(COMPANIONS, companionId) ? COMPANIONS[companionId] : undefined
     if (!companion || typeof favorite !== 'boolean') throw new GameError(400, 'INVALID_INN_GIFT', '请选择结识的侠客与要送的礼物')
@@ -1829,6 +1848,7 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
   }))
 
   app.post('/api/v1/market/gacha', (request) => respond<GachaResult>(request, async (character, now, client) => {
+    requireFeature(character.player, 'GACHA')
     const { count } = objectBody(request.body)
     if (count !== 1 && count !== 10) throw new GameError(400, 'INVALID_GACHA_COUNT', '请选择单抽或十连')
     const { player } = character
@@ -1860,6 +1880,7 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
   }))
 
   app.post('/api/v1/companions/awaken', (request) => respond<AwakenResult>(request, async (character, _now, client) => {
+    requireFeature(character.player, 'INN')
     const { companionId } = objectBody(request.body)
     if (typeof companionId !== 'string' || !Object.hasOwn(COMPANIONS, companionId)) {
       throw new GameError(400, 'INVALID_COMPANION', '请选择一位伙伴')
@@ -1871,6 +1892,7 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
   }))
 
   app.post('/api/v1/market/feast', (request) => respond<FeastResult>(request, async (character, now, client) => {
+    requireFeature(character.player, 'FEAST')
     const { dishId } = objectBody(request.body)
     if (typeof dishId !== 'string') throw new GameError(400, 'INVALID_DISH', '请选择一道菜')
     const { player } = character
@@ -1896,7 +1918,14 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
     return { result, changed: true }
   }))
 
+  app.post('/api/v1/features/seen', (request) => respond<{ featureId: FeatureId }>(request, async (character) => {
+    const { featureId } = objectBody(request.body)
+    if (typeof featureId !== 'string' || !Object.hasOwn(FEATURE_BY_ID, featureId)) throw new GameError(400, 'INVALID_FEATURE', '没有这项玩法')
+    return { result: { featureId: featureId as FeatureId }, changed: markFeatureSeen(character.player, featureId as FeatureId) }
+  }))
+
   app.post('/api/v1/daily/claim', (request) => respond<{ ingot: number; ticket: boolean }>(request, async (character, now) => {
+    requireFeature(character.player, 'DAILY')
     const result = claimDailyIngot(character.player, now)
     if ('error' in result) throw new GameError(409, 'DAILY_NOT_READY', result.error)
     logIngot(character, result.ingot, 'daily', `daily:${character.player.daily!.day}`)
@@ -1904,6 +1933,7 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
   }))
 
   app.post('/api/v1/market/ghost/buy', (request) => respond(request, async (character, _now, client) => {
+    requireFeature(character.player, 'GHOST')
     const { listingId } = objectBody(request.body)
     const listing = GHOST_MARKET_LISTINGS.find(({ id }) => id === listingId)
     if (listing?.listingType !== 'FIXED' || listing.currency !== 'SILVER') {
@@ -1980,6 +2010,7 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
     let outbid: { playerId: string; event: WsServerEvent } | undefined
     const { response, updates } = await writeAction<AuctionResult>(request, async (character, now, client, readRelated) => {
       outbid = undefined
+      requireFeature(character.player, 'GHOST')
       const { action, day, expectedPrice } = objectBody(request.body)
       if (typeof day !== 'number' || !Number.isInteger(day)) throw new GameError(400, 'INVALID_AUCTION', '请选择一场暗拍')
       const { player, learnedSkills, ownedItemIds } = character
@@ -2081,6 +2112,7 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
   })
 
   app.post('/api/v1/market/stalls', (request) => respond<StallResult>(request, async (character, now, client) => {
+    requireFeature(character.player, 'GHOST')
     const body = objectBody(request.body)
     const { action, listingId, qty, unitPrice } = body
     const { player } = character
@@ -2141,6 +2173,7 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
 
   app.post('/api/v1/alchemy/forage', (request) => respond(request, async (character, now) => {
     const { player } = character
+    requireFeature(player, 'MAPS')
     if (player.qiExp < FORAGE_QI_COST) throw new GameError(409, 'QI_INSUFFICIENT', `采药需 ${FORAGE_QI_COST} 点真气`)
     const herbs = gatherHerbs(player.currentMapId, effectiveMartialStats(player, activeLoadout(character)).luck, shichenIdxFromDate(new Date(now)))
     if (!herbs.length) throw new GameError(409, 'NO_HERBS', '此地没有可采的药材')
@@ -2154,6 +2187,7 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
 
   app.post('/api/v1/alchemy/refine', (request) => respond(request, async (character, now) => {
     const { player } = character
+    requireFeature(player, 'MAPS')
     const { recipeId } = objectBody(request.body)
     const baseRecipe = typeof recipeId === 'string' && Object.hasOwn(PILL_RECIPES, recipeId) ? PILL_RECIPES[recipeId] : undefined
     if (!baseRecipe || baseRecipe.category === 'BODY') throw new GameError(400, 'INVALID_RECIPE', '请选择一份可用的药方')
@@ -2183,6 +2217,7 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
   }))
 
   app.post('/api/v1/alchemy/extract', (request) => respond(request, async ({ player }) => {
+    requireFeature(player, 'MAPS')
     const alchemy = player.alchemy
     if (!alchemy || alchemy.residue < 5) throw new GameError(409, 'RESIDUE_INSUFFICIENT', '攒够 5 团药渣即可萃取')
     const result = extractFurnaceResidue()
@@ -2195,6 +2230,7 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
   app.post('/api/v1/map/move', (request) => {
     let voyageRoll: number | undefined
     return respond<MapMoveResult>(request, async (character, now, client, readRelated) => {
+      requireFeature(character.player, 'MAPS')
       const { mapId, action } = objectBody(request.body)
       if (action !== undefined && action !== 'depart' && action !== 'arrive') throw new GameError(400, 'INVALID_MAP_ACTION', '请选择出发或抵达')
       const map = ONLINE_MAPS.find((entry) => entry.id === mapId)
@@ -2258,7 +2294,9 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
       if (typeof targetPlayerId !== 'string' || !UUID.test(targetPlayerId)) {
         throw new GameError(400, 'INVALID_PARTNER', '请选择一位同图侠客')
       }
+      requireFeature(character.player, 'MAPS')
       const [partner] = await readRelated([targetPlayerId.toLowerCase()])
+      requireTargetFeature(partner.player, 'MAPS')
       const mapId = character.player.currentMapId
       requireCoCultivationPartners(character, partner, mapId, now)
       const existing = pendingInvite(character, now)
@@ -2314,6 +2352,7 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
   }))
 
   app.post('/api/v1/escort', (request) => respond(request, async (character, now) => {
+    requireFeature(character.player, 'HUASHAN')
     const { action } = objectBody(request.body)
     const { player } = character
     if (action === 'start') {
@@ -2356,6 +2395,7 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
   })
 
   app.post('/api/v1/bounties/accept', (request) => respond<BountyEntryDTO>(request, async (character, now, _client, readRelated) => {
+    requireFeature(character.player, 'HUASHAN')
     const { targetPlayerId, expiresAt } = objectBody(request.body)
     if (typeof targetPlayerId !== 'string' || !UUID.test(targetPlayerId)) throw new GameError(400, 'INVALID_PARTNER', '请选择悬赏榜上的侠客')
     const [target] = await readRelated([targetPlayerId.toLowerCase()])
@@ -2396,7 +2436,9 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
           if (typeof targetPlayerId !== 'string' || !UUID.test(targetPlayerId)) throw new GameError(400, 'INVALID_PARTNER', '请选择一位同图侠客')
           otherId = targetPlayerId.toLowerCase()
         }
+        if (action !== 'decline') requireFeature(player, 'HUASHAN')
         const [other] = await readRelated([otherId])
+        if (action === 'invite') requireTargetFeature(other.player, 'HUASHAN')
         const expiresAt = other.player.bountyUntil ?? 0
         const bounty = expiresAt > now
         if (pursuing) {
@@ -2502,8 +2544,10 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
         const { raidId, playerIds: [, leftId, rightId] } = raid.lineup(leader.player.id, teamId, revision)
         const config = COOP_RAIDS[raidId]
         const clears = config.clearField
+        requireFeature(leader.player, 'RAID')
         const [left, right] = await readRelated([leftId, rightId])
         const party = [leader, left, right] as const
+        for (const { player } of [left, right]) requireTargetFeature(player, 'RAID')
         if (party.some(({ player }) => player.currentMapId !== leader.player.currentMapId)) {
           throw new GameError(409, 'RAID_NOT_NEARBY', '三位侠客要在同一处才能入阵')
         }
@@ -2604,6 +2648,7 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
   }))
 
   app.post('/api/v1/trial/qusan-cache', (request) => respond(request, async (character, now) => {
+    requireFeature(character.player, 'TRIAL')
     if (!character.ownedItemIds.includes(QUSAN_CACHE_KEY)) throw new GameError(409, 'QUSAN_KEY_REQUIRED', '还没有曲三酒馆暗格钥')
     const result = searchQusanCache(character.player, activeLoadout(character), now)
     if ('error' in result) throw new GameError(409, 'QUSAN_CACHE_UNAVAILABLE', result.error)
@@ -2725,6 +2770,7 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
   }))
 
   app.post<{ Params: { companionId: string } }>('/api/v1/story/reunion/:companionId', (request) => respond<ReunionResult>(request, async (character, now, client) => {
+    requireFeature(character.player, 'GACHA')
     const id = request.params.companionId
     const quest = Object.hasOwn(REUNION_QUESTS, id) ? REUNION_QUESTS[id] : undefined
     if (!quest || !reunionAvailable(character, quest)) throw new GameError(409, 'REUNION_UNAVAILABLE', '此时没有可寻访的这位故人')
@@ -2784,6 +2830,7 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
   }))
 
   app.post('/api/v1/trial/patrol', (request) => respond<TrialPatrolStatusDTO>(request, async (character) => {
+    requireFeature(character.player, 'TRIAL')
     const { stageId } = objectBody(request.body)
     const stage = typeof stageId === 'number' ? trialStageOf(stageId) : undefined
     if (!stage) throw new GameError(400, 'INVALID_TRIAL_STAGE', '找不到这一关')
@@ -2851,6 +2898,7 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
   }
 
   app.post<{ Params: { stageId: string } }>('/api/v1/trial/:stageId/challenge', (request) => respond<TrialChallengeResult>(request, async (character, now, client) => {
+    requireFeature(character.player, 'TRIAL')
     const stage = trialStageOf(Number(request.params.stageId))
     if (!stage) throw new GameError(404, 'TRIAL_STAGE_NOT_FOUND', '江湖图上没有这一关')
     const player = character.player
@@ -2931,6 +2979,7 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
   }))
 
   app.post<{ Params: { stageId: string } }>('/api/v1/trial/:stageId/replay', (request) => respond<TrialReplayResult>(request, async (character, now, client) => {
+    requireFeature(character.player, 'TRIAL')
     const stage = trialStageOf(Number(request.params.stageId))
     if (!stage) throw new GameError(404, 'TRIAL_STAGE_NOT_FOUND', '江湖图上没有这一关')
     if (!stage.replayPartIds) throw new GameError(400, 'TRIAL_NOT_REPLAYABLE', '这一关没有首领复战')
@@ -2961,6 +3010,7 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
   }))
 
   app.post<{ Params: { stageId: string } }>('/api/v1/trial/:stageId/redeem', (request) => respond<{ itemId: string; name: string }>(request, async (character, _now, client) => {
+    requireFeature(character.player, 'TRIAL')
     const stage = trialStageOf(Number(request.params.stageId))
     if (!stage) throw new GameError(404, 'TRIAL_STAGE_NOT_FOUND', '江湖图上没有这一关')
     const { slot } = objectBody(request.body)

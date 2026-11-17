@@ -177,11 +177,11 @@ const FLAME_META = {
     <section class="panel flex min-h-0 flex-1 flex-col gap-3 p-3 md:p-4">
       <div class="flex shrink-0 flex-wrap items-center justify-between gap-2">
         <div class="tabs flex-1" role="tablist">
-          <button class="tab" role="tab" :aria-selected="sub === 'INN'" @click="sub = 'INN'">醉仙客栈</button>
-          <button class="tab" role="tab" :aria-selected="sub === 'GHOST'" @click="enterGhostMarket()">子时鬼市</button>
-          <button class="tab" role="tab" :aria-selected="sub === 'ALCHEMY'" @click="sub = 'ALCHEMY'">百草丹房</button>
-          <button class="tab" role="tab" :aria-selected="sub === 'HUASHAN'" @click="sub = 'HUASHAN'">华山论剑</button>
-          <button class="tab" role="tab" :aria-selected="sub === 'ARTIFACTS'" @click="sub = 'ARTIFACTS'">兵器谱</button>
+          <button v-if="store.marketTabOpen('INN')" class="tab" role="tab" :aria-selected="sub === 'INN'" @click="sub = 'INN'">醉仙客栈</button>
+          <button v-if="store.marketTabOpen('GHOST')" class="tab" role="tab" :aria-selected="sub === 'GHOST'" @click="enterGhostMarket()">子时鬼市</button>
+          <button v-if="store.marketTabOpen('ALCHEMY')" class="tab" role="tab" :aria-selected="sub === 'ALCHEMY'" @click="sub = 'ALCHEMY'">百草丹房</button>
+          <button v-if="store.marketTabOpen('HUASHAN')" class="tab" role="tab" :aria-selected="sub === 'HUASHAN'" @click="sub = 'HUASHAN'">华山论剑</button>
+          <button v-if="store.marketTabOpen('ARTIFACTS')" class="tab" role="tab" :aria-selected="sub === 'ARTIFACTS'" @click="sub = 'ARTIFACTS'">兵器谱</button>
         </div>
         <span class="flex items-center gap-1.5 text-xs text-ink3">
           真气 <b class="text-sm tabular-nums text-jade">{{ store.player.qiExp.toLocaleString() }}</b> ·
@@ -195,7 +195,7 @@ const FLAME_META = {
       <div v-if="sub === 'INN'" class="view-scroll -mr-1 space-y-3 pr-1">
         <p v-if="store.jianghuTitle && !store.jianghuTitle.marketDiscount" class="well p-3 text-sm text-ink2">{{ store.jianghuTitle.greetingText }}</p>
         <!-- 醉仙楼·结缘（抽卡入口） -->
-        <article class="well relative overflow-hidden p-4" style="background-image: radial-gradient(ellipse at 100% 0, color-mix(in srgb, var(--tier-red) 14%, transparent), transparent 60%)">
+        <article v-if="store.featureOpen('GACHA')" class="well relative overflow-hidden p-4" style="background-image: radial-gradient(ellipse at 100% 0, color-mix(in srgb, var(--tier-red) 14%, transparent), transparent 60%)">
           <div class="relative grid items-center gap-3 md:grid-cols-[1fr_auto]">
             <div class="min-w-0">
               <div class="flex items-center gap-2.5">
@@ -231,7 +231,7 @@ const FLAME_META = {
         </article>
 
         <!-- 故人寻访：错过的剧情伙伴。免费线约 30 天；重逢令可随时跳过 -->
-        <article v-if="store.reunionCandidates.length" class="well space-y-3 p-3.5">
+        <article v-if="store.reunionCandidates.length && store.featureOpen('GACHA')" class="well space-y-3 p-3.5">
           <div class="flex items-center gap-2"><span class="seal h-7 w-7 text-base">逢</span><b class="font-brush text-xl">故人寻访</b></div>
           <p class="hint">这些故人曾与你擦肩而过。日积月累打听线索（每日有数），集齐后赴故地相候、以礼相邀、了却前尘，便可重续前缘。也可直接以「故人重逢令」相邀。</p>
           <div v-for="id in store.reunionCandidates" :key="id" class="space-y-2 border-t border-line pt-2.5">
@@ -299,7 +299,7 @@ const FLAME_META = {
         </article>
 
         <!-- 北丐·十道绝味：每日一道，食材需在各地挂机采办 -->
-        <article v-if="store.feastActive" class="well space-y-2.5 p-3.5">
+        <article v-if="store.feastActive && store.featureOpen('FEAST')" class="well space-y-2.5 p-3.5">
           <div class="flex flex-wrap items-center justify-between gap-2">
             <div class="flex items-center gap-2"><span class="seal h-7 w-7 text-base">味</span><b class="font-brush text-xl">北丐 · 十道绝味</b></div>
             <span class="chip chip-gold tabular-nums">{{ store.feast.cooked.length }} / {{ DISHES.length }}</span>

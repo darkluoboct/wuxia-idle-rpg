@@ -206,6 +206,7 @@ export function createNewGameCharacter(identity: Pick<PlayerDTO, 'id' | 'nicknam
       marks: {},
       recentDrops: [],
     },
+    featureGate: true,
   }
   const blank = (presetIdx: 1 | 2 | 3, name: string, stance: LoadoutPresetDTO['stance']): LoadoutPresetDTO => ({
     presetIdx, name, stance,
