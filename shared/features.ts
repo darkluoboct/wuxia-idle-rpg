@@ -21,6 +21,8 @@ type Tab = 'CULTIVATE' | 'JIANGHU' | 'ARSENAL' | 'SECT' | 'MARKET'
 export interface FeatureConfig {
   id: FeatureId
   name: string
+  /** 剧情卡标题，缺省为「新机缘 · 玩法名」 */
+  title?: string
   requirement: Requirement
   /** 开放的具体内容，写在剧情卡末页 */
   opens: readonly string[]
@@ -34,7 +36,7 @@ export interface FeatureConfig {
 /** 按开放先后排列 */
 export const FEATURES: readonly FeatureConfig[] = [
   {
-    id: 'TRIAL', name: '三十关历练', requirement: { node: 1 },
+    id: 'TRIAL', name: '三十关历练', title: '序章 · 忘机遗言', requirement: { node: 1 },
     opens: ['修行：打坐吐纳、冲穴、突破', '江湖：三十关历练与巡历挂机', '武库：武学与装备'],
     speaker: '忘机客', portrait: 'wangchongyang',
     pages: [

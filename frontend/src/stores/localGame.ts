@@ -365,7 +365,8 @@ export function useLocalGame({ battle, companions, world, market, artifacts, sta
           ],
         },
       ]
-      activeTab.value = 'JIANGHU'
+      // 序章盖在修行页上，打完 1-1 由忘机客的剧情卡带去历练
+      activeTab.value = 'CULTIVATE'
       jianghuTab.value = 'STORY'
     } else {
       applySave(demoFor(player.value))

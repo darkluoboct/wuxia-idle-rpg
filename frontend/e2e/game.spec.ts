@@ -6,6 +6,18 @@ const enter = (game: FrameLocator) =>
 const tab = (game: FrameLocator, name: string) =>
   game.locator('.wuxia-header').getByRole('tab', { name, exact: true })
 
+/** 联机新角色先过序章：跳过文字，打主线 1-1，再看完忘机客的剧情卡 */
+async function playPrologue(game: FrameLocator) {
+  await game.getByRole('button', { name: '跳过剧情' }).click()
+  await game.getByRole('button', { name: /^以.+出手$/ }).click()
+  await game.getByRole('button', { name: '跳过回放' }).click()
+  await game.getByRole('button', { name: /^返回/ }).click()
+  const card = game.getByRole('dialog', { name: '序章 · 忘机遗言' })
+  for (let page = 0; page < 2; page++) await card.getByRole('button', { name: '继续' }).click()
+  await card.getByRole('button', { name: '知道了' }).click()
+  await expect(card).toHaveCount(0)
+}
+
 test('游客进入演武，切换五个页签并从浏览器读档', async ({ page }) => {
   const scripts = new Set<string>()
   const illustrations = new Set<string>()
@@ -78,6 +90,10 @@ test('联机注册、创角、同图聊天、领取收益和换装读档', async
         await game.getByRole('button', { name: '创建侠客' }).click()
         await expect(game.getByRole('region', { name: '当前侠客' })).toContainText(nickname)
         await enter(game)
+        await playPrologue(game)
+        // 序章之后只开修行、江湖、武库
+        await expect(game.locator('.wuxia-header').getByRole('tab')).toHaveText(['修行', '江湖', '武库'])
+        await game.getByRole('tab', { name: '附近' }).click()
         await game.getByRole('tab', { name: '同图聊天' }).click()
         return { game, page, nickname }
       }),

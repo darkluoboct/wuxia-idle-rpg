@@ -11,6 +11,8 @@ import RightJianghuSidebar from '@/components/RightJianghuSidebar.vue'
 import './wuxia.css'
 const CharacterSelect = defineAsyncComponent(() => import('@/components/CharacterSelect.vue'))
 const GachaOverlay = defineAsyncComponent(() => import('@/components/GachaOverlay.vue'))
+const PrologueStage = defineAsyncComponent(() => import('@/components/PrologueStage.vue'))
+const FeatureStoryCard = defineAsyncComponent(() => import('@/components/FeatureStoryCard.vue'))
 const CultivateView = defineAsyncComponent(() => import('@/views/CultivateView.vue'))
 const JianghuView = defineAsyncComponent(() => import('@/views/JianghuView.vue'))
 const ArsenalView = defineAsyncComponent(() => import('@/views/ArsenalView.vue'))
@@ -63,10 +65,16 @@ const stage = ref<HTMLElement>()
 watch([currentTab, inBattle], () => { if (stage.value) stage.value.scrollTop = 0 })
 const toggleDrawer = (d: 'CHAR' | 'WORLD') => (store.mobileDrawer = store.mobileDrawer === d ? 'NONE' : d)
 
+/* ---------- 新手序章与玩法开放剧情 ---------- */
+// 序章演到主线 1-1 开打为止；战斗播放时让出舞台，打赢后由忘机客的剧情卡接上
+const inJianghu = computed(() => !IS_MOCK_MODE || !!store.gameMode)
+const prologueOpen = computed(() => inJianghu.value && !!store.player.featureGate && !store.featureOpen('TRIAL') && !store.activeBattle)
+const featureCardOpen = computed(() => inJianghu.value && !!store.featureCard && !store.activeBattle && !store.gachaReveal)
+
 /* ---------- 键盘 ---------- */
 function handleKeydown(e: KeyboardEvent) {
   if (!props.visible || store.onlinePhase !== 'ready' || choosingCharacter.value) return
-  if ((IS_MOCK_MODE && !store.gameMode) || store.gachaReveal) return
+  if ((IS_MOCK_MODE && !store.gameMode) || store.gachaReveal || prologueOpen.value || featureCardOpen.value) return
   if (e.key === 'Escape') {
     if (store.confirmDialog) store.resolveConfirm(false)
     else if (store.inspectModal) store.inspectModal = null
@@ -244,6 +252,10 @@ const TOAST_GLYPH = { gold: '喜', danger: '警', info: '讯' } as const
 
     <!-- ==================== 客栈结缘揭晓动画 ==================== -->
     <GachaOverlay v-if="store.gachaReveal" />
+
+    <!-- ==================== 新手序章 / 玩法开放剧情 ==================== -->
+    <PrologueStage v-if="prologueOpen" />
+    <FeatureStoryCard v-else-if="featureCardOpen" />
 
     <!-- ==================== 开局选择 ==================== -->
     <div
