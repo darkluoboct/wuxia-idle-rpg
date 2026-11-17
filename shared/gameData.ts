@@ -1,7 +1,7 @@
 import type { BattleEffect } from './battleEffects.ts'
 import { temperedItem, type EquipmentRolls } from './equipmentForge.ts'
 import { BASE_ACTION_SPEED, HUANG_YAOSHI_COMBAT, IRON_PALM_WOUND, KE_POISON_DART, MAX_CRIT_PERCENT, type AttackForm, type BattleEnemyGuard, type BattleEscortAlly, type BattleObjective, type BattleOpponent, type BattleStatusRule, type CombatAlignment, type DamageElement, type EnemyCombatConfig, type PeriodicRule } from './combatMeta.ts'
-import type { CombatUnitDTO, EquipSlotType, GhostMarketListingDTO, LoadoutPresetDTO, PlayerDTO, PlayerSnapshot, RaidId, SixStats, SkillSlotType, StanceType, TierColor, ZoneSafety } from './protocol.ts'
+import type { CombatUnitDTO, EquipSlotType, GhostMarketListingDTO, LoadoutPresetDTO, OriginId, PlayerDTO, PlayerSnapshot, RaidId, SixStats, SkillSlotType, StanceType, TierColor, ZoneSafety } from './protocol.ts'
 import { GAIBANG_DIVISION, GAIBANG_FINAL_EXAM, JUNSHAN_EXAM } from './gaibang.ts'
 import { QUANZHEN_GUARD_EXAM, QUANZHEN_SEVEN_IDS } from './quanzhen.ts'
 import { TAOHUA_FINAL_EXAM, TAOHUA_RESCUE_EXAM } from './taohua.ts'
@@ -1135,6 +1135,80 @@ export const SKILLS: Record<string, SkillConfig> = {
     castNarrative: '黑气缠绕右掌无声无息印上敌方胸口，阴毒劲力如针芒直贯心脉气海！',
   },
 
+  // 5. 家传武学（开局家世，docs/17 §七）：家人伙伴的看家本事，生死之交时传授或由家事所得
+  beiwei_qiang: {
+    id: 'beiwei_qiang',
+    name: '背嵬枪法',
+    slot: 'OUTER',
+    tier: 'blue',
+    source: '将门家传 · 义兄雷铮生死之交时传授',
+    powerRatio: 1.26,
+    critBonus: 8,
+    battleEffects: [{ kind: 'INTERRUPT_CHARGE' }],
+    desc: '岳家军背嵬军的马上枪法。敌人蓄力时命中可将其打断。',
+    castNarrative: '拧腰回身，一杆长枪自肋下反挑而出，正是背嵬军冲阵时的「回马枪」',
+  },
+  fenshui_ci: {
+    id: 'fenshui_ci',
+    name: '分水刺',
+    slot: 'OUTER',
+    tier: 'blue',
+    source: '渔家家传 · 阮家家事所得',
+    powerRatio: 1.22,
+    speedBonus: 10,
+    battleEffects: [{ kind: 'WATER_BATTLE_DAMAGE', percent: 30 }],
+    desc: '南湖渔家贴身短刺的功夫。水战时伤害提高 30%。',
+    castNarrative: '身子一矮贴着水面掠过，袖中短刺翻出，专挑对方腰肋空门',
+  },
+  talang_bu: {
+    id: 'talang_bu',
+    name: '踏浪步',
+    slot: 'LIGHT',
+    tier: 'blue',
+    source: '渔家家传 · 大姐阮青篙生死之交时传授',
+    powerRatio: 1.0,
+    speedBonus: 20,
+    dodgeBonus: 12,
+    battleEffects: [{ kind: 'RAIN_NIGHT_SPEED', percent: 15 }],
+    desc: '踩着船舷浪头练出的步法。雨天与夜里出手速度再快 15%。',
+    castNarrative: '脚下似踩着一叶小舟，随浪起伏，对方的刀锋总差了那么半寸',
+  },
+  huichun_zhen: {
+    id: 'huichun_zhen',
+    name: '回春点穴针',
+    slot: 'OUTER',
+    tier: 'blue',
+    source: '杏林家传 · 表姐沈青黛生死之交时传授',
+    powerRatio: 1.18,
+    critBonus: 6,
+    battleEffects: [{ kind: 'ON_HIT_STATUS', rule: { status: 'HIT_DOWN', percent: 15, rounds: 1, nextRound: true } }],
+    desc: '回春堂沈家救人的银针，也能伤人。命中使目标下回合命中降低 15 个百分点。',
+    castNarrative: '指间寒芒一闪，三枚银针没入对方曲池、手三里，那条胳膊顿时酸麻',
+  },
+  yanyu_jian: {
+    id: 'yanyu_jian',
+    name: '烟雨剑法',
+    slot: 'OUTER',
+    tier: 'blue',
+    source: '玄门家传 · 烟雨观家事所得',
+    powerRatio: 1.24,
+    critBonus: 8,
+    battleEffects: [{ kind: 'TARGET_STANCE_DAMAGE', stance: 'FIERCE', percent: 15 }],
+    desc: '烟雨观历代观主看南湖雨势悟出的剑法，以柔克刚。对刚猛架势的对手伤害提高 15%。',
+    castNarrative: '剑尖轻颤，如细雨斜织，对方的刚猛劲道一头撞进这片雨幕，竟使不上力',
+  },
+  zuowang_xinjing: {
+    id: 'zuowang_xinjing',
+    name: '坐忘心经',
+    slot: 'INNER',
+    tier: 'blue',
+    source: '玄门家传 · 师兄松岩子生死之交时传授',
+    powerRatio: 1.14,
+    idleQiBonus: 18,
+    desc: '烟雨观静坐的根本法门。打坐时真气积累更快。',
+    castNarrative: '收视返听，心若止水，周身真气如细流归海',
+  },
+
   // -------------------------------------------------------------------------
   // 五、 凡品 (Green · 共27门 · 市井粗浅、门派入门与江湖底层功法)
   // -------------------------------------------------------------------------
@@ -1580,23 +1654,23 @@ export const SKILLS: Record<string, SkillConfig> = {
 const techniquesByForm = [
   ['FIST', ['kongming_quan', 'da_fumo_quan', 'lingshe_quan', 'xiaoyaoyou_quan', 'gaibang_tongchui', 'taizu_changquan', 'yanqing_quan', 'chaquan', 'luohan_quan', 'yehu_quan', 'xiaoyao_you', 'shuangshou_hubo']],
   ['PALM', ['xianglong_18', 'xianglong_sanshi', 'kanglong_youhui', 'feilong_zaitian', 'luoying_zhang', 'yinyang_mo', 'tiezhang_gong', 'lvshuang_pobing', 'wuluo_qingyan', 'tiezhang_pikan', 'bipo_zhang', 'tiesha_zhang', 'mizong_da_shou', 'cuixin_zhang', 'nanshan_zhang', 'kaishan_zhang', 'dashouyin']],
-  ['FINGER', ['yiyang_zhi', 'lanhua_shou', 'hanyin_shenjian', 'tanzhi_shentong', 'lanhua_fuxue']],
+  ['FINGER', ['yiyang_zhi', 'lanhua_shou', 'hanyin_shenjian', 'tanzhi_shentong', 'lanhua_fuxue', 'huichun_zhen']],
   ['CLAW', ['jiuyin_baiguzhua', 'miaoshou_kongkong']],
   ['KICK', ['xuanfeng_saoye_tui', 'shisheng_chuang']],
-  ['BLADE', ['dugu_jiujian', 'chongyang_jianfa', 'tonggui_jianfa', 'quanzhen_jianfa', 'duanjia_jianfa', 'kuangfeng_daofa', 'dingyang_zhen', 'yuenv_jian', 'tuniu_daofa', 'wuhu_duanmen_dao', 'ditang_dao', 'duanmen_pikan', 'tonggui_jian']],
+  ['BLADE', ['dugu_jiujian', 'chongyang_jianfa', 'tonggui_jianfa', 'quanzhen_jianfa', 'duanjia_jianfa', 'kuangfeng_daofa', 'dingyang_zhen', 'yuenv_jian', 'tuniu_daofa', 'wuhu_duanmen_dao', 'ditang_dao', 'duanmen_pikan', 'tonggui_jian', 'yanyu_jian']],
   ['AXE', ['kaishan_fu', 'luanpi_chai']],
   ['STAFF', ['dagou_bangfa', 'tianxia_wugou', 'fumo_zhang', 'feitian_shending', 'fengmo_zhang', 'jiaohua_bang']],
-  ['SPEAR', ['yangjia_qiang', 'huyan_qiang', 'duanhun_qiang', 'huima_qiang']],
+  ['SPEAR', ['yangjia_qiang', 'huyan_qiang', 'duanhun_qiang', 'huima_qiang', 'beiwei_qiang']],
   ['WHIP', ['baimang_bian', 'jinlong_bian']],
-  ['ODD', ['zheshan_dianxue', 'pan_guan_bi', 'dagan_dianxue']],
+  ['ODD', ['zheshan_dianxue', 'pan_guan_bi', 'dagan_dianxue', 'fenshui_ci']],
   ['BOW', ['lianzhu_shenjian']], ['SOUND', ['bihai_chaosheng']], ['PROJECTILE', ['pikong_zhang']], ['QI', ['nizhuan_jiuyin', 'yihun_dafa']],
 ] as const satisfies readonly (readonly [AttackForm, readonly string[]])[]
 
 for (const [form, ids] of techniquesByForm) for (const id of ids) SKILLS[id].combatForm = form
 for (const id of ['quanzhen_jianfa', 'chongyang_jianfa', 'tonggui_jian', 'tonggui_jianfa', 'lvshuang_pobing', 'dingyang_zhen',
-  'kongming_quan', 'da_fumo_quan', 'jiuyin_baiguzhua', 'baimang_bian', 'yihun_dafa']) SKILLS[id].tradition = 'TAOIST'
+  'kongming_quan', 'da_fumo_quan', 'jiuyin_baiguzhua', 'baimang_bian', 'yihun_dafa', 'yanyu_jian']) SKILLS[id].tradition = 'TAOIST'
 for (const id of ['yiyang_zhi', 'lanhua_shou', 'lanhua_fuxue', 'tanzhi_shentong', 'dingyang_zhen', 'zheshan_dianxue',
-  'pan_guan_bi', 'dagan_dianxue', 'hanyin_shenjian']) SKILLS[id].pointStrike = true
+  'pan_guan_bi', 'dagan_dianxue', 'hanyin_shenjian', 'huichun_zhen']) SKILLS[id].pointStrike = true
 
 
 export interface VipSkillBenefit {
@@ -2458,8 +2532,10 @@ export interface CompanionConfig extends CompanionForm {
   alignment?: CombatAlignment
   /** EITHER：左右翼皆可编入（如周伯通，可与洪七公组成「射雕三绝」） */
   role: 'LEFT' | 'RIGHT' | 'EITHER'
-  /** 获取路线：主线、历练、好感或客栈结缘 */
-  route: 'STORY' | 'TRIAL' | 'AFFINITY' | 'GACHA'
+  /** 获取路线：主线、历练、好感、客栈结缘，或开局家世自带 */
+  route: 'STORY' | 'TRIAL' | 'AFFINITY' | 'GACHA' | 'FAMILY'
+  /** 家世伙伴：只有这一家出身的侠客结识得到（shared/origins.ts） */
+  origin?: OriginId
   /** 好感线橙品的资质（下/中/上），影响属性系数；其余为 undefined */
   grade?: '下' | '中' | '上'
   /** 觉醒形态（需好感 ≥600 + 伙伴信物）；基础形态由本配置的顶层字段给出 */
@@ -3084,6 +3160,93 @@ export const COMPANIONS: Record<string, CompanionConfig> = {
     battleAttack: { stance: 'AGILE', target: 'FRONT', everyRound: true, hitStatus: { status: 'SLOW', rounds: 1, percent: 20 } },
     baseHp: 4300,
     baseAtk: 440,
+  },
+  // ───── 开局家世的家人伙伴（docs/17 §七）：蓝品起步，家事集齐信物后觉醒 ─────
+  leizheng: {
+    id: 'leizheng',
+    alignment: 'RIGHTEOUS',
+    name: '雷铮',
+    title: '背嵬遗孤·义兄',
+    tier: 'blue',
+    role: 'LEFT',
+    route: 'FAMILY',
+    origin: 'jiangmen',
+    portraitStyle: 'leizheng',
+    meetHint: '将门出身的侠客开局即同行',
+    poem: '一杆铁枪随父老，风波亭外不言冤。',
+    favGift: '绍兴花雕',
+    teachSkillId: 'beiwei_qiang',
+    assistSkillName: '回马枪',
+    assistDesc: '随你出手，以背嵬枪法追击敌方前排；敌人蓄力时命中可将其打断。',
+    battleAttack: { skillId: 'beiwei_qiang', stance: 'FIERCE', target: 'FRONT', powerRatio: 0.45 },
+    baseHp: 3000,
+    baseAtk: 330,
+  },
+  ruanqinggao: {
+    id: 'ruanqinggao',
+    alignment: 'RIGHTEOUS',
+    female: true,
+    name: '阮青篙',
+    title: '南湖渡娘·大姐',
+    tier: 'blue',
+    role: 'LEFT',
+    route: 'FAMILY',
+    origin: 'yujia',
+    portraitStyle: 'ruanqinggao',
+    meetHint: '渔家出身的侠客开局即同行',
+    poem: '一篙撑破南湖雨，半生风浪笑谈中。',
+    favGift: '南湖菱角',
+    teachSkillId: 'talang_bu',
+    assistSkillName: '分水刺',
+    assistDesc: '随你出手，绕到敌阵后方突袭后排；水战时伤害提高 30%。',
+    battleAttack: { skillId: 'fenshui_ci', stance: 'AGILE', target: 'REAR', powerRatio: 0.45 },
+    baseHp: 2700,
+    baseAtk: 340,
+  },
+  shenqingdai: {
+    id: 'shenqingdai',
+    alignment: 'RIGHTEOUS',
+    female: true,
+    name: '沈青黛',
+    title: '回春堂·表姐',
+    tier: 'blue',
+    role: 'RIGHT',
+    route: 'FAMILY',
+    origin: 'xinglin',
+    portraitStyle: 'shenqingdai',
+    meetHint: '杏林出身的侠客开局即同行',
+    poem: '银针三寸渡人厄，药香一缕暖寒门。',
+    favGift: '湖州紫毫笔',
+    teachSkillId: 'huichun_zhen',
+    assistSkillName: '回春针',
+    assistDesc: '回合末为主角回复 2% 最大气血；每战替主角解开一次封穴。',
+    battleSupport: [
+      { kind: 'HEAL', trigger: 'ROUND_END', target: 'LEADER', unit: 'MAX_HP_PERCENT', amount: 2 },
+      { kind: 'FIRST_LEADER_CLEANSE', status: 'SEAL' },
+    ],
+    baseHp: 2600,
+    baseAtk: 280,
+  },
+  songyanzi: {
+    id: 'songyanzi',
+    alignment: 'RIGHTEOUS',
+    name: '松岩子',
+    title: '烟雨观·大师兄',
+    tier: 'blue',
+    role: 'RIGHT',
+    route: 'FAMILY',
+    origin: 'xuanmen',
+    portraitStyle: 'songyanzi',
+    meetHint: '玄门出身的侠客开局即同行',
+    poem: '一炉香尽观云起，三尺青锋不染尘。',
+    favGift: '明前龙井',
+    teachSkillId: 'zuowang_xinjing',
+    assistSkillName: '坐忘剑幕',
+    assistDesc: '替主角分摊 25% 盾后单体伤害，并使攻击者下回合攻击降低 10%。',
+    battleSupport: [{ kind: 'LEADER_COVER', trigger: 'HIT', percent: 25,
+      status: { status: 'ATTACK_DOWN', percent: 10, rounds: 1, nextRound: true } }],
+    baseHp: 3200,
+    baseAtk: 290,
   },
 }
 

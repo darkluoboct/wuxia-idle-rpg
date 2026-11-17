@@ -8,6 +8,9 @@ import LeftCharacterSidebar from '@/components/LeftCharacterSidebar.vue'
 import JianghuQuestScroll from '@/components/JianghuQuestScroll.vue'
 import DailyTasks from '@/components/DailyTasks.vue'
 import RightJianghuSidebar from '@/components/RightJianghuSidebar.vue'
+import OriginPicker from '@/components/OriginPicker.vue'
+import type { OriginId } from '@/network/protocol'
+import { isOriginId, ORIGIN_IDS } from '../../shared/origins.ts'
 import './wuxia.css'
 const CharacterSelect = defineAsyncComponent(() => import('@/components/CharacterSelect.vue'))
 const GachaOverlay = defineAsyncComponent(() => import('@/components/GachaOverlay.vue'))
@@ -94,10 +97,22 @@ function handleKeydown(e: KeyboardEvent) {
   }
 }
 
+/* ---------- 本地试玩开局：新游戏先选家世 ---------- */
+const pickingOrigin = ref(false)
+const newOrigin = ref<OriginId>()
+function startNewGame() {
+  if (!newOrigin.value) return
+  store.startGame('NEW', newOrigin.value)
+  pickingOrigin.value = false
+}
+
 onMounted(() => {
-  const mode = new URLSearchParams(window.location.search).get('mode')
+  const params = new URLSearchParams(window.location.search)
+  const mode = params.get('mode')
   if (IS_MOCK_MODE && (mode === 'new' || mode === 'demo')) {
-    store.startGame(mode === 'new' ? 'NEW' : 'DEMO')
+    // ?mode=new&origin=yujia 直接以某个家世开局，不给就用第一个
+    const origin = params.get('origin')
+    store.startGame(mode === 'new' ? 'NEW' : 'DEMO', isOriginId(origin) ? origin : ORIGIN_IDS[0])
 
     enterJianghu()
   }
@@ -282,11 +297,18 @@ const TOAST_GLYPH = { gold: '喜', danger: '警', info: '讯' } as const
           </div>
         </div>
         <p v-if="store.savedGame" class="text-center text-xs text-cinnabar">开始新的游戏或演武模式，将覆盖浏览器中的试玩存档。</p>
-        <div class="grid gap-3 sm:grid-cols-2">
-          <button class="well well-hover flex flex-col gap-2 p-4 text-left" @click="store.startGame('NEW')">
+        <form v-if="pickingOrigin" class="space-y-3" @submit.prevent="startNewGame">
+          <OriginPicker v-model="newOrigin" />
+          <div class="flex justify-end gap-2">
+            <button type="button" class="btn" @click="pickingOrigin = false">返回</button>
+            <button type="submit" class="btn btn-seal" :disabled="!newOrigin">启程</button>
+          </div>
+        </form>
+        <div v-else class="grid gap-3 sm:grid-cols-2">
+          <button class="well well-hover flex flex-col gap-2 p-4 text-left" @click="pickingOrigin = true">
             <span class="flex items-center gap-2"><span class="seal h-8 w-8 text-lg">新</span><b class="font-brush text-2xl leading-none">新游戏</b></span>
             <span class="text-sm leading-relaxed text-ink2">
-              Lv.1 白衣散人，孤身入世。伙伴靠剧情结识、在客栈以诚相交，好感随章节推进抬高上限，送礼每日有数。
+              Lv.1 起步，先选家世，家人伙伴陪你入世。其余伙伴靠剧情结识、在客栈以诚相交，好感随章节推进抬高上限，送礼每日有数。
             </span>
             <span class="chip chip-gold self-start">正式规则</span>
           </button>

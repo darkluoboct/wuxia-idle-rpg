@@ -5,8 +5,9 @@ import { useGameStore } from '@/stores/gameStore'
 import { IS_MOCK_MODE } from '@/network/apiClient'
 import { SECTS } from '@/config/gameData'
 import { PLAYER_AVATARS } from '@/config/uiMeta'
-import type { PlayerAvatarId } from '@/network/protocol'
+import type { OriginId, PlayerAvatarId } from '@/network/protocol'
 import scene from '@/assets/selection-scene.webp'
+import OriginPicker from './OriginPicker.vue'
 
 defineProps<{ canReturn: boolean }>()
 const emit = defineEmits<{ enter: []; back: [] }>()
@@ -21,6 +22,8 @@ const modal = ref<HTMLDialogElement>()
 const modalKind = ref<'create' | 'delete' | 'server' | 'settings'>('create')
 const nickname = ref('')
 const avatarId = ref<PlayerAvatarId>('hero_sword')
+/** 联机创角时选家世；本地试玩在「新游戏」开局时选 */
+const origin = ref<OriginId>()
 const formError = ref('')
 const movingScene = ref(true)
 const submitting = ref(false)
@@ -34,6 +37,7 @@ async function openModal(kind: typeof modalKind.value) {
   formError.value = ''
   store.authError = ''
   nickname.value = ''
+  origin.value = undefined
   avatarId.value = selected.value?.avatarId ?? 'hero_sword'
   modal.value?.showModal()
   await nextTick()
@@ -47,11 +51,15 @@ async function createCharacter() {
     formError.value = '侠客名须为 2–16 位汉字、字母或数字，可用 · _ -'
     return
   }
+  if (!IS_MOCK_MODE && !origin.value) {
+    formError.value = '请选择家世'
+    return
+  }
   submitting.value = true
   try {
     if (IS_MOCK_MODE) selectedId.value = store.createLocalCharacter(name, avatarId.value) ?? selectedId.value
     else {
-      await store.createOnlinePlayer(name, avatarId.value)
+      await store.createOnlinePlayer(name, avatarId.value, origin.value!)
       if (store.authError) return
       selectedId.value = store.player.id
     }
@@ -148,7 +156,7 @@ async function toggleFullscreen() {
     </footer>
     <span class="scene-caption" aria-hidden="true">第一卷 <i /> 射雕英雄传</span>
 
-    <dialog ref="modal" class="selection-dialog" aria-labelledby="selection-dialog-title" @click="($event.target === modal) && modal?.close()" @cancel="store.authBusy && $event.preventDefault()">
+    <dialog ref="modal" class="selection-dialog" :class="{ 'is-wide': modalKind === 'create' && !IS_MOCK_MODE }" aria-labelledby="selection-dialog-title" @click="($event.target === modal) && modal?.close()" @cancel="store.authBusy && $event.preventDefault()">
       <div class="dialog-content">
         <button class="dialog-close selection-icon" aria-label="关闭弹窗" :disabled="store.authBusy" @click="modal?.close()"><X /></button>
         <h2 id="selection-dialog-title" class="font-brush">{{ { create: '初入江湖', delete: '删除角色', server: '江湖区服', settings: '界面设置' }[modalKind] }}</h2>
@@ -164,6 +172,7 @@ async function toggleFullscreen() {
               </label>
             </div>
           </fieldset>
+          <OriginPicker v-if="!IS_MOCK_MODE" v-model="origin" class="character-origin" :disabled="submitting || store.authBusy" />
           <label class="name-label" for="character-name">侠客名</label>
           <input id="character-name" v-model="nickname" class="character-name-input" required minlength="2" maxlength="16" autocomplete="off" placeholder="留下你的江湖名号" :disabled="submitting || store.authBusy" :aria-invalid="!!(formError || store.authError)" aria-describedby="character-form-message" />
           <p id="character-form-message" class="form-message" :class="{ 'form-error': formError || store.authError }" :role="formError || store.authError ? 'alert' : undefined">{{ formError || store.authError || '2–16 位汉字、字母或数字，可用 · _ -' }}</p>
@@ -278,6 +287,9 @@ async function toggleFullscreen() {
 .selection-petals { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 3; }
 .selection-petals i { --drift: calc(80px + var(--petal) * 17px); position: absolute; top: -3%; left: calc(var(--petal) * 11%); width: calc(5px + var(--petal) * .7px); height: 6px; border-radius: 90% 10% 80% 20%; background: #f6c6dc; box-shadow: 0 0 5px #ffe3f244; opacity: 0; animation: petal-fall calc(11s + var(--petal) * 1.3s) calc(var(--petal) * -2.7s) linear infinite; }
 .selection-dialog { width: min(26rem, calc(100vw - 2rem)); max-height: calc(100dvh - 2rem); overflow: auto; padding: 0; margin: auto; border: 1px solid #b99a61; border-radius: 4px 16px; color: #eae0cc; background: url('../assets/cloud-etch.svg') right bottom / 17rem no-repeat, #1f242a; box-shadow: inset 0 0 0 4px #1f242a, inset 0 0 0 5px #b99a6140, 0 20px 80px #0009; }
+.selection-dialog.is-wide { width: min(36rem, calc(100vw - 2rem)); }
+.selection-dialog.is-wide .gender-option img { height: 6rem; }
+.character-origin { --origin-line: #a58a584d; --origin-fill: #10182160; --origin-active: #e2bc77; --origin-active-fill: #a5894826; --origin-text: #e6dac2; --origin-muted: #aaa08e; margin-bottom: 1.2rem; }
 .selection-dialog::backdrop { background: #0c162594; backdrop-filter: blur(5px); }
 .dialog-content { position: relative; padding: 2rem; }
 .dialog-close { position: absolute; right: .7rem; top: .7rem; }

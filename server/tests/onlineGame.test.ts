@@ -19,7 +19,7 @@ import { AUCTION_BID_STEP, AUCTION_SOFT_CLOSE_MS, auctionDay, auctionLot, auctio
 import { computeDerivedStats } from '../../shared/battle.ts'
 import { huashanSeason } from '../../shared/huashan.ts'
 import { createStarterCharacter, innVisitDay, legacyAcupoints } from '../../shared/player.ts'
-import type { ArtifactBoardDTO, ArtifactResult, AuctionBoardDTO, AuctionResult, AwakenResult, BattleReportDTO, BountyBoardDTO, BountyEntryDTO, FeastResult, FtueClaimResult, GachaResult, GameAction, HuashanBoardDTO, HuashanResult, IdleGain, LibraryResult, LibraryStatusDTO, PlayerSnapshot, RaidId, ReunionResult, SectContestBoardDTO, SectContestResult, SectResult, StallBoardDTO, StallResult, StoryAdventureResult, StoryChallengeResult, WsServerEvent } from '../../shared/protocol.ts'
+import type { ArtifactBoardDTO, ArtifactResult, AuctionBoardDTO, AuctionResult, AwakenResult, BattleReportDTO, BountyBoardDTO, BountyEntryDTO, FeastResult, FtueClaimResult, GachaResult, GameAction, HuashanBoardDTO, HuashanResult, IdleGain, LibraryResult, LibraryStatusDTO, OriginId, PlayerSnapshot, RaidId, ReunionResult, SectContestBoardDTO, SectContestResult, SectResult, StallBoardDTO, StallResult, StoryAdventureResult, StoryChallengeResult, WsServerEvent } from '../../shared/protocol.ts'
 import { QUANZHEN_LIBRARY } from '../../shared/quanzhen.ts'
 import { BETRAYAL_BOUNTY, SECT_CHIEF_SALUTE_QI, SECT_SALUTE_QI, sectContestEndsAt, sectContestWeek } from '../../shared/sectProgress.ts'
 import { ONLINE_STORY_CHAPTERS, ONLINE_STORY_PROGRESS_VERSION } from '../../shared/storyData.ts'
@@ -104,13 +104,13 @@ describe('联机战斗', { skip: connection ? false : '请设置 GAME_TEST_DATAB
   }
 
   /** fresh：联机新角色；gated 时保留新手序章的玩法开放顺序，否则按老角色处理（玩法全部开放） */
-  async function register(name: string, fresh: boolean, gated = false) {
+  async function register(name: string, fresh: boolean, gated = false, origin: OriginId = 'xuanmen') {
     const loginName = `story_${name}`
     const registration = await app.inject({ method: 'POST', url: '/api/v1/auth/register', payload: { loginName, password: randomUUID() } })
     assert.equal(registration.statusCode, 201)
     const cookie = registration.cookies[0]
     const headers = { cookie: `${cookie.name}=${cookie.value}` }
-    const creation = await app.inject({ method: 'POST', url: '/api/v1/player/create', headers, payload: { nickname: loginName } })
+    const creation = await app.inject({ method: 'POST', url: '/api/v1/player/create', headers, payload: { nickname: loginName, origin } })
     assert.equal(creation.statusCode, 200, creation.body)
     let snapshot = creation.json<PlayerSnapshot>()
     const id = snapshot.player.id
@@ -889,8 +889,12 @@ describe('联机战斗', { skip: connection ? false : '请设置 GAME_TEST_DATAB
     assert.equal(start.player.goldIngot, INGOT.start)
     assert.deepEqual(start.ownedItemIds, ['qinggang_sword'])
     assert.deepEqual(start.learnedSkills, {})
-    assert.ok(Object.values(start.companionAffinity).every(({ met, recruited }) => !met && !recruited))
-    assert.ok(start.loadouts.every(({ weaponId, leftCompanionId }) => weaponId === 'qinggang_sword' && leftCompanionId === null))
+    // 玄门出身：根骨 +3、悟性 +1，师兄松岩子开局就在右翼，其余伙伴都还没结识
+    assert.equal(start.player.origin, 'xuanmen')
+    assert.deepEqual(start.player.stats, { str: 10, con: 13, agi: 10, intStat: 11, luck: 10, karma: 0 })
+    assert.deepEqual(Object.entries(start.companionAffinity).filter(([, { met, recruited }]) => met || recruited).map(([id]) => id), ['songyanzi'])
+    assert.ok(start.loadouts.every(({ weaponId, leftCompanionId, rightCompanionId }) =>
+      weaponId === 'qinggang_sword' && leftCompanionId === null && rightCompanionId === 'songyanzi'))
 
     await profile(rookie.id, { trial: { ...start.player.trial, rewardedStageIds: [1, 7] }, realmTier: 2 })
     const settled = await rookie.act<IdleGain>('/cultivate/settle')
@@ -900,6 +904,25 @@ describe('联机战斗', { skip: connection ? false : '请设置 GAME_TEST_DATAB
     const rows = await ledger(rookie.id)
     assert.deepEqual(rows.map(({ ref }) => ref), ['start', 'trial:1', 'trial:7', 'realm:2'])
     assert.equal(rows.at(-1)?.balance, again.snapshot.player.goldIngot)
+  })
+
+  it('建角须选家世；同一账号重复建角只认原来的家世', async () => {
+    const registration = await app.inject({ method: 'POST', url: '/api/v1/auth/register', payload: { loginName: 'story_origin', password: randomUUID() } })
+    const cookie = registration.cookies[0]
+    const headers = { cookie: `${cookie.name}=${cookie.value}` }
+    const create = (payload: Record<string, unknown>) => app.inject({ method: 'POST', url: '/api/v1/player/create', headers, payload: { nickname: 'origin_n', ...payload } })
+    for (const origin of [undefined, 'shaolin', '__proto__']) {
+      const rejected = await create({ origin })
+      assert.equal(rejected.statusCode, 400)
+      assert.equal(rejected.json().code, 'INVALID_ORIGIN')
+    }
+    const created = await create({ origin: 'yujia' })
+    assert.equal(created.statusCode, 200, created.body)
+    const { player, loadouts } = created.json<PlayerSnapshot>()
+    assert.equal(player.origin, 'yujia')
+    assert.ok(loadouts.every(({ leftCompanionId }) => leftCompanionId === 'ruanqinggao'))
+    assert.equal((await create({ origin: 'yujia' })).statusCode, 200)
+    assert.equal((await create({ origin: 'jiangmen' })).statusCode, 409)
   })
 
   it('每日江湖事四件做完才能领元宝，当日只领一次', async () => {

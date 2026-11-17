@@ -7,7 +7,7 @@ import { computed, useId } from 'vue'
 import type { PortraitStyle } from '@/config/typesHelper'
 
 type Hair = 'bun' | 'ribbons' | 'messy' | 'long' | 'cap' | 'beard' | 'bald' | 'wrap'
-type Item = 'sword' | 'staff' | 'gourd' | 'flute' | 'snake' | 'claw' | 'taiji' | 'beads' | 'crutch' | 'palm'
+type Item = 'sword' | 'staff' | 'spear' | 'gourd' | 'flute' | 'snake' | 'claw' | 'taiji' | 'beads' | 'crutch' | 'palm'
 interface Look {
   robe: string
   robe2: string
@@ -48,6 +48,11 @@ const LOOKS: Record<PortraitStyle, Look> = {
   sunbuer: { robe: '#4a6d78', robe2: '#2e4851', trim: '#d6e4e0', hair: '#14171a', hairKind: 'ribbons', item: 'sword', band: '#cfe0dc' },
   luchengfeng: { robe: '#3f5a4a', robe2: '#28392f', trim: '#cbd8bd', hair: '#14171a', hairKind: 'cap', item: 'palm' },
   zhuziliu: { robe: '#5b5f78', robe2: '#3a3d50', trim: '#d8d4c4', hair: '#14171a', hairKind: 'cap', item: 'flute' },
+  // 开局家世的家人伙伴
+  leizheng: { robe: '#6b3a32', robe2: '#45241f', trim: '#c9a35c', hair: '#15130f', hairKind: 'bun', item: 'spear', band: '#8a2f28', broad: true },
+  ruanqinggao: { robe: '#3d5f6a', robe2: '#283f47', trim: '#d9c79a', hair: '#14171a', hairKind: 'wrap', item: 'staff', band: '#c96a4a' },
+  shenqingdai: { robe: '#6f8a7a', robe2: '#4a6152', trim: '#efe3c4', hair: '#14171a', hairKind: 'ribbons', item: 'gourd', band: '#b9d4c4' },
+  songyanzi: { robe: '#59646f', robe2: '#3a434c', trim: '#dfe4e2', hair: '#14171a', hairKind: 'bun', item: 'sword' },
 }
 
 const props = withDefaults(
@@ -94,6 +99,12 @@ const beltX = computed(() => (look.value.broad ? 28 : 32))
       <line x1="95" y1="22" x2="92" y2="146" stroke="#2d4a2a" stroke-width="4.2" stroke-linecap="round" />
       <line x1="95" y1="22" x2="92" y2="146" stroke="#8cc27a" stroke-width="2.2" stroke-linecap="round" />
       <path d="M92.8,70 h4 M92.4,100 h4" stroke="#2d4a2a" stroke-width="1.2" />
+    </g>
+    <g v-else-if="look.item === 'spear'">
+      <line x1="96" y1="18" x2="92" y2="146" stroke="#2a2420" stroke-width="4" stroke-linecap="round" />
+      <line x1="96" y1="18" x2="92" y2="146" stroke="#8a6a44" stroke-width="2" stroke-linecap="round" />
+      <path d="M96.4,4 L99.6,18 L93.2,18 Z" fill="#c4ccd3" stroke="#2a2d33" stroke-width="0.8" />
+      <path d="M93,20 q3,6 7,0" fill="none" :stroke="look.band" stroke-width="2" stroke-linecap="round" />
     </g>
     <g v-else-if="look.item === 'snake'">
       <line x1="96" y1="20" x2="93" y2="146" stroke="#2a2230" stroke-width="4" stroke-linecap="round" />

@@ -121,7 +121,11 @@ export interface PlayerDTO {
   feast?: { ingredients: string[]; cooked: string[]; lastCookDay: number }
   featureGate?: true                // 新手序章之后建的角色：玩法随剧情开放（老角色没有，全部开放）
   featuresSeen?: FeatureId[]        // 已看过开放剧情的玩法
+  origin?: OriginId                 // 创角时选的家世（shared/origins.ts），老角色没有
 }
+
+/** 开局家世：将门、渔家、杏林、玄门 */
+export type OriginId = 'jiangmen' | 'yujia' | 'xinglin' | 'xuanmen'
 
 /** 随剧情开放的玩法（shared/features.ts） */
 export type FeatureId = 'TRIAL' | 'INN' | 'MAPS' | 'DAILY' | 'GACHA' | 'GHOST' | 'SECT' | 'HUASHAN' | 'RAID' | 'FEAST'
@@ -499,6 +503,7 @@ export interface CombatUnitDTO {
     | 'hero_sword' | 'guojing' | 'huangrong' | 'hongqigong' | 'huangyaoshi' | 'ouyangfeng' | 'meichaofeng' | 'zhoubotong' | 'monk' | 'assassin'
     | 'munianci' | 'ouyangke' | 'wanyankang' | 'qiuqianren' | 'daoist' | 'chenxuanfeng' | 'bandit'
     | 'wangchongyang' | 'yideng' | 'zhebie' | 'yinggu' | 'yangtiexin' | 'sunbuer' | 'luchengfeng' | 'zhuziliu' | 'baoxiruo'
+    | 'leizheng' | 'ruanqinggao' | 'shenqingdai' | 'songyanzi'
   avatarId?: PlayerAvatarId
   isPlayer: boolean
   maxHp: number

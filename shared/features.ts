@@ -37,7 +37,7 @@ export interface FeatureConfig {
 export const FEATURES: readonly FeatureConfig[] = [
   {
     id: 'TRIAL', name: '三十关历练', title: '序章 · 忘机遗言', requirement: { node: 1 },
-    opens: ['修行：打坐吐纳、冲穴、突破', '江湖：三十关历练与巡历挂机', '武库：武学与装备'],
+    opens: ['修行：打坐吐纳、冲穴、突破', '江湖：三十关历练与巡历挂机', '武库：武学、装备与伙伴编队'],
     speaker: '忘机客', portrait: 'wangchongyang',
     pages: [
       '黑衣人落荒而逃。老者倚着神龛喘息，把一册残卷和一枚铁八卦塞进你手里：「老朽自号忘机客……这卷《武库残卷》不载招式，却映得出天下武学。旁人说你经脉郁结、学不得武，那是他们不识货。」',
@@ -48,7 +48,7 @@ export const FEATURES: readonly FeatureConfig[] = [
   },
   {
     id: 'INN', name: '醉仙客栈', requirement: { node: 2 },
-    opens: ['市井：醉仙客栈，请酒、送礼、结交伙伴', '武库：伙伴上阵'],
+    opens: ['市井：醉仙客栈，请酒、送礼、结交伙伴'],
     speaker: '郭靖', portrait: 'guojing',
     pages: [
       '郭靖把你按在酒桌边，给你满上一大碗：「大哥好身手！我师父们说，闯江湖光靠自己不成，得有朋友。」',

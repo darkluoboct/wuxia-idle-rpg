@@ -12,7 +12,7 @@ import {
   switchPatrolStage, TRIAL_PATROL_HOURS, TRIAL_REPLAY_HOURS, TRIAL_STAGES, trialFirstClearKarma, trialItemOf, trialPartId, trialPuzzleOutcome,
   trialStageOf, upgradesPatrolYield, type TrialStageConfig,
 } from '../../shared/trialStages.ts'
-import { appraiseGhostCurio, autoEquipItem, autoEquipSkill, canEnterMap, canReceiveSnakeRecipe, cityInspectionDue, coCultivationRate, createNewGameCharacter, createStarterCharacter, cultivatePlayer, cultivationRate, cultivationRates, enemySilverReward, GHOST_APPRAISAL_SWORD, idleQiNumerator, innAffinityGain, innGiftsRemaining, innVisitDay, karmaAfterEvent, legacyAcupoints, planMapJourney, recipeForPlayer, resolveSeaVoyage, settlePatrolCaches } from '../../shared/player.ts'
+import { appraiseGhostCurio, autoEquipItem, autoEquipSkill, canEnterMap, canReceiveSnakeRecipe, cityInspectionDue, coCultivationRate, createNewGameCharacter, createStarterCharacter, cultivatePlayer, cultivationRate, cultivationRates, GHOST_APPRAISAL_SWORD, idleQiNumerator, innAffinityGain, innGiftsRemaining, innVisitDay, karmaAfterEvent, legacyAcupoints, planMapJourney, recipeForPlayer, resolveSeaVoyage, settlePatrolCaches, trialFirstClearSilver } from '../../shared/player.ts'
 import { HUASHAN_HONORS, HUASHAN_RESPECT_QI, huashanDay, huashanRankReward, huashanRatingSwing, huashanSeason, huashanSeasonEndsAt } from '../../shared/huashan.ts'
 import { GAIBANG_DEBATE, GAIBANG_FINAL_DISHES, gaibangDishFlag, gaibangDishPrepared, gaibangSilverGain } from '../../shared/gaibang.ts'
 import { BETRAYAL_BOUNTY, SECT_CHIEF_SALUTE_QI, SECT_CONTEST_MIN_RANK, SECT_SALUTE_QI, sectContestEndsAt, sectContestWeek, sectContributionGain, sectExamBlockReason, sectPromotion, sectPromotionRewards, simulateSectTrial } from '../../shared/sectProgress.ts'
@@ -30,6 +30,7 @@ import { buySystemStall, checkStallOffer, moveStallGoods, STALL, stallDay, stall
 import { AUCTION_MASK_COUNT, auctionDay, auctionDividend, auctionLot, auctionWindow, bidderMask, nextAuctionBid, ownsAuctionLot, settleAuctionTickets, softCloseAt, type AuctionTicketLot } from '../../shared/ghostAuction.ts'
 import { claimFtueQuest, emptyFtue, recordFtueForage, recordFtueRefine } from '../../shared/ftueQuests.ts'
 import { FEATURE_BY_ID, featureLockedText, featureUnlocked, markFeatureSeen, type FeatureId } from '../../shared/features.ts'
+import { isOriginId, originPerk } from '../../shared/origins.ts'
 import { gainReunionClues, newReunion, reunionCluesToday, reunionEncounter, reunionWaitTime, REUNION_INQUIRE_COST, REUNION_QUESTS, REUNION_WAIT_HOURS, type ClueSource, type ReunionQuestConfig } from '../../shared/reunion.ts'
 import type {
   ArtifactBoardDTO, ArtifactResult, AuctionBoardDTO, AuctionLotDTO, AuctionResult, AwakenResult, BattleReportDTO, BountyBoardDTO, BountyEntryDTO, ChapterOneStatueDTO, CoCultivationDTO, CoCultivationInviteDTO, CompanionState, CompanionWear, CultivationResult, DuelInviteDTO, FeastResult, ForgeInput, ForgeResult, FtueClaimResult, GachaResult, GameAction, HuashanBoardDTO, HuashanEntryDTO, HuashanResult, IdleGain, InnGiftResult, LibraryResult, LibraryStatusDTO, LoadoutPresetDTO, MapMoveResult, PersonalEquipSlot, PlayerDTO, PlayerSnapshot, StallBoardDTO, StallListingDTO, StallResult,
@@ -504,7 +505,7 @@ export function getSnapshot(accountId: string) {
 }
 
 async function createPlayer(accountId: string, input: unknown) {
-  const { nickname: name, avatarId = 'hero_sword' } = objectBody(input)
+  const { nickname: name, avatarId = 'hero_sword', origin } = objectBody(input)
   const nickname = typeof name === 'string' ? name.trim().normalize('NFKC') : ''
   if (!/^[\p{L}\p{N}·_-]{2,16}$/u.test(nickname)) {
     throw new GameError(400, 'INVALID_PLAYER', '取个 2 至 16 字的侠客名，可用文字、数字或 · _ -')
@@ -512,6 +513,7 @@ async function createPlayer(accountId: string, input: unknown) {
   if (avatarId !== 'hero_sword' && avatarId !== 'hero_sword_male') {
     throw new GameError(400, 'INVALID_AVATAR', '请选择男侠或女侠')
   }
+  if (!isOriginId(origin)) throw new GameError(400, 'INVALID_ORIGIN', '请选择家世')
   return transaction(async (client) => {
     await client.query('SELECT id FROM accounts WHERE id = $1 FOR UPDATE', [accountId])
     const { rows: [existing] } = await client.query<Pick<CharacterRow, 'nickname' | 'profile'>>(
@@ -519,7 +521,7 @@ async function createPlayer(accountId: string, input: unknown) {
     )
     const now = await serverTime(client)
     if (existing) {
-      if (existing.nickname !== nickname || existing.profile.avatarId !== avatarId) {
+      if (existing.nickname !== nickname || existing.profile.avatarId !== avatarId || existing.profile.origin !== origin) {
         throw new GameError(409, 'PLAYER_ALREADY_CREATED', '这个账号已有角色')
       }
       const character = await readCharacter(client, accountId, true)
@@ -527,7 +529,7 @@ async function createPlayer(accountId: string, input: unknown) {
     }
 
     const id = randomUUID()
-    const starter = createNewGameCharacter({ id, nickname, avatarId }, now)
+    const starter = createNewGameCharacter({ id, nickname, avatarId }, now, origin)
     starter.player.openedAcupointIds = starter.openedAcupointIds
     starter.player.acupointPills = { pozhang_dan: starter.pillCount }
     starter.player.alchemy = { herbs: starter.herbInventory, pity: {}, residue: 0 }
@@ -2175,7 +2177,8 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
     const { player } = character
     requireFeature(player, 'MAPS')
     if (player.qiExp < FORAGE_QI_COST) throw new GameError(409, 'QI_INSUFFICIENT', `采药需 ${FORAGE_QI_COST} 点真气`)
-    const herbs = gatherHerbs(player.currentMapId, effectiveMartialStats(player, activeLoadout(character)).luck, shichenIdxFromDate(new Date(now)))
+    const herbs = gatherHerbs(player.currentMapId, effectiveMartialStats(player, activeLoadout(character)).luck, shichenIdxFromDate(new Date(now)),
+      undefined, originPerk(player, 'HERB_ROLL'))
     if (!herbs.length) throw new GameError(409, 'NO_HERBS', '此地没有可采的药材')
     const alchemy = player.alchemy ??= { herbs: {}, pity: {}, residue: 0 }
     player.qiExp -= FORAGE_QI_COST
@@ -2201,7 +2204,7 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
     player.qiExp -= recipe.costQi
     player.silver -= recipe.costSilver
     for (const { herbId, count } of recipe.requiredHerbs) alchemy.herbs[herbId] -= count
-    const success = Math.random() * 100 < pillSuccessRate(recipe, stats, alchemy.pity[recipe.id])
+    const success = Math.random() * 100 < pillSuccessRate(recipe, stats, alchemy.pity[recipe.id], originPerk(player, 'PILL_RATE'))
     const count = success ? (Math.random() * 100 < pillDoubleRate(stats) ? 2 : 1) : 0
     if (count) {
       const stock = recipe.category === 'BATTLE' ? (player.battleMedicines ??= {}) : (player.acupointPills ??= {})
@@ -2923,7 +2926,7 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
     const rewardDrops = [...drops.map(({ id, name, tier }) => ({ id, name, tier })), ...(skillDrop ? [skillDrop] : [])]
     const recruits = stage.clearCompanionIds?.filter((id) => !character.companionAffinity[id]?.recruited) ?? []
     const rewardQi = firstClear ? Math.round(stage.boss.hp * 2) : 0
-    const rewardSilver = firstClear ? enemySilverReward(stage.boss.hp) : 0
+    const rewardSilver = firstClear ? trialFirstClearSilver(stage.boss.hp, player) : 0
     const report = trialBattle(character, stage, now, firstClear || drops.length || skillDrop || recruits.length
       ? { qiExp: rewardQi, silver: rewardSilver, items: rewardDrops, ...(recruits.length ? { companions: recruits } : {}) }
       : undefined, answer, battleRetreatRequested(request.body))

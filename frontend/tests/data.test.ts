@@ -17,7 +17,7 @@ describe('配置数据自检', () => {
   it('射雕篇内容规模', () => {
     expect(STORY_CHAPTERS).toHaveLength(16)
     expect(ADVENTURES.length).toBeGreaterThanOrEqual(13)
-    expect(Object.keys(COMPANIONS)).toHaveLength(27)
+    expect(Object.keys(COMPANIONS)).toHaveLength(31) // 含四位开局家世的家人伙伴
     expect(SECTS).toHaveLength(7)
     expect(MAPS).toHaveLength(11)
     expect(MAPS.map(({ id }) => id)).toEqual(expect.arrayContaining(['linan_city', 'linan_manor', 'chongyang_hall']))

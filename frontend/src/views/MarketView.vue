@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { useGameStore } from '@/stores/gameStore'
 import { apiClient, IS_MOCK_MODE } from '@/network/apiClient'
 import { pillDoubleRate, pillSuccessRate } from '../../../shared/alchemy.ts'
+import { companionOpenTo, originPerk } from '../../../shared/origins.ts'
 import { innVisitDay, recipeForPlayer, SNAKE_FEEDING_RECIPE } from '../../../shared/player.ts'
 import { computeDerivedStats, mockDuelOpponent } from '@/network/mockEngine'
 import {
@@ -107,7 +108,8 @@ function willTrigger(id: string) {
   const st = store.companionAffinity[id]
   return !!st && !st.taught && st.affinity < 600 && st.affinity + store.innGiftGain(id, true) >= 600
 }
-const innCompanions = Object.values(COMPANIONS)
+/** 别家的家人伙伴不在客栈里出现 */
+const innCompanions = computed(() => Object.values(COMPANIONS).filter((c) => companionOpenTo(c, store.player)))
 
 /* 五绝（东邪 / 西毒 / 南帝 / 北丐 / 中神通），数据与策划案 01、08 册一致 */
 const fiveGreats: { title: string; nickname: string; sect: string; stance: StanceType; poem: string }[] = [
@@ -155,7 +157,7 @@ function canCraftRecipe(recipe: PillRecipeConfig) {
 }
 
 function calcCraftRate(recipe: PillRecipeConfig) {
-  return pillSuccessRate(recipe, store.martialStats, store.alchemyPity[recipe.id])
+  return pillSuccessRate(recipe, store.martialStats, store.alchemyPity[recipe.id], originPerk(store.player, 'PILL_RATE'))
 }
 
 function calcDoubleRate() {

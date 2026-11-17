@@ -2,6 +2,7 @@ import { createPinia, disposePinia } from 'pinia'
 import { createApp } from 'vue'
 import { afterEach } from 'vitest'
 import { useGameStore } from '@/stores/gameStore'
+import type { OriginId } from '@/network/protocol'
 
 export type Store = ReturnType<typeof useGameStore>
 const activeGames: ReturnType<typeof createPinia>[] = []
@@ -13,13 +14,14 @@ afterEach(() => {
 /**
  * 新建一个隔离的 store；可直接选择开局模式。
  * 新游戏默认按老角色处理（玩法全部开放），专门验证各玩法本身；gated 时按新手序章逐步开放（shared/features.ts）。
+ * origin 给新游戏选家世（shared/origins.ts），不给就是没有家世的老式开局。
  */
-export function newStore(mode?: 'NEW' | 'DEMO', { gated = false } = {}): Store {
+export function newStore(mode?: 'NEW' | 'DEMO', { gated = false, origin }: { gated?: boolean; origin?: OriginId } = {}): Store {
   const pinia = createPinia()
   createApp({}).use(pinia)
   activeGames.push(pinia)
   const s = useGameStore(pinia)
-  if (mode) s.startGame(mode)
+  if (mode) s.startGame(mode, origin)
   if (mode === 'NEW' && !gated) delete s.player.featureGate
   return s
 }

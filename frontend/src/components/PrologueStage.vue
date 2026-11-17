@@ -2,35 +2,42 @@
 import { computed, ref } from 'vue'
 import { useGameStore } from '@/stores/gameStore'
 import { IS_MOCK_MODE } from '@/network/apiClient'
-import { ONLINE_STORY_CHAPTERS, STORY_CHAPTERS } from '@/config/gameData'
+import { COMPANIONS, ONLINE_STORY_CHAPTERS, STORY_CHAPTERS } from '@/config/gameData'
 import { STANCE_META, stanceRelation } from '@/config/uiMeta'
 import type { LoadoutPresetDTO } from '@/network/protocol'
 import dusk from '@/assets/jiaxing-dusk.webp'
 import InkFigure from './InkFigure.vue'
+import { ORIGINS } from '../../../shared/origins.ts'
 
 /**
  * 新手序章：新角色第一次进江湖时播放（docs/17 §六）。
  * 几页文字交代身世与破庙，最后一页教打法克制，随后打主线 1-1；打赢后由忘机客的剧情卡接上。
+ * 选了家世的，楔子按家世讲，家人陪你进破庙、一起打这一战（docs/17 §七）。
  * 文字可以跳过，这一战不能跳过。
  */
 const store = useGameStore()
 const node = (IS_MOCK_MODE ? STORY_CHAPTERS : ONLINE_STORY_CHAPTERS)[0]
 const foe = node.bossStance
+const origin = computed(() => store.player.origin && ORIGINS[store.player.origin])
+const ally = computed(() => origin.value && COMPANIONS[origin.value.companionId])
 
-const pages = computed(() => [
-  {
-    title: '楔子 · 寒门',
-    text: `南宋嘉定年间，金兵压境，朝廷偏安临安。嘉兴城外有个少年人，名叫${store.player.nickname}，生来奇经郁结、六脉微弱。城里三家武馆都把你拒之门外：「这副身子骨，学不得武。」`,
-  },
-  {
-    title: '风雨破庙',
-    text: '这一夜风雨大作，你躲进城外一座破庙。神龛后头蜷着一位白发老者，浑身是血，怀里死死护着一只布包。他睁眼看了看你，嘴唇动了动，没说出话来。',
-  },
-  {
-    title: '追兵',
-    text: '庙门「砰」地被踹开，几个黑衣人提刀闯进来，火把把墙上的影子拉得老长。为首的冷笑：「老东西，东西交出来，给你留个全尸。」老者撑了两撑，又跌坐回去。你攥紧了手里的青钢剑。',
-  },
-])
+const pages = computed(() => {
+  const story = origin.value?.prologue
+  return [
+    story ? { title: story.title, text: story.home.replace('{name}', store.player.nickname) } : {
+      title: '楔子 · 寒门',
+      text: `南宋嘉定年间，金兵压境，朝廷偏安临安。嘉兴城外有个少年人，名叫${store.player.nickname}，生来奇经郁结、六脉微弱。城里三家武馆都把你拒之门外：「这副身子骨，学不得武。」`,
+    },
+    {
+      title: '风雨破庙',
+      text: story?.temple ?? '这一夜风雨大作，你躲进城外一座破庙。神龛后头蜷着一位白发老者，浑身是血，怀里死死护着一只布包。他睁眼看了看你，嘴唇动了动，没说出话来。',
+    },
+    {
+      title: '追兵',
+      text: `庙门「砰」地被踹开，几个黑衣人提刀闯进来，火把把墙上的影子拉得老长。为首的冷笑：「老东西，东西交出来，给你留个全尸。」老者撑了两撑，又跌坐回去。${story?.stand ?? ''}你攥紧了手里的青钢剑。`,
+    },
+  ]
+})
 const page = ref(0)
 const atStance = computed(() => page.value >= pages.value.length)
 const current = computed(() => pages.value[Math.min(page.value, pages.value.length - 1)])
@@ -82,6 +89,13 @@ async function fight() {
         <div>
           <b>{{ node.bossName }}</b>
           <p>{{ attempted ? '刺客的刀光逼得你连连后退。老者在神龛后喘息：「别硬拼……看准他的身法。」' : `为首的刺客身法诡谲，出手全走${STANCE_META[foe].name}路数。` }}</p>
+        </div>
+      </div>
+      <div v-if="origin && ally" class="prologue-foe prologue-ally">
+        <div class="prologue-figure"><InkFigure :style-type="ally.portraitStyle" /></div>
+        <div>
+          <b>{{ origin.kin }} {{ ally.name }}</b>
+          <p>与你并肩。「{{ ally.assistSkillName }}」{{ ally.assistDesc }}</p>
         </div>
       </div>
       <p class="prologue-rule">
@@ -144,6 +158,8 @@ async function fight() {
 .prologue-figure { width: 4.4rem; height: 5.8rem; flex: none; overflow: hidden; border: 1px solid #c6a66a50; background: #0d1013; }
 .prologue-foe b { font-size: 1.15rem; color: #f0c2a8; }
 .prologue-foe p { margin: .35rem 0 0; line-height: 1.7; color: #e4dccd; }
+.prologue-ally b { color: #8fd1b8; }
+.prologue-ally p { font-size: .95rem; color: #cfc5b2; }
 .prologue-rule { margin: 0 0 1rem; padding: .7rem .9rem; border-left: 2px solid #c6a66a; background: #0e1216a8; font-size: .95rem; line-height: 1.75; color: #cfc5b2; }
 .prologue-stances { display: grid; grid-template-columns: repeat(3, 1fr); gap: .7rem; }
 .prologue-stances button {

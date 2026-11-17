@@ -15,6 +15,7 @@ import { useGameUiStore } from './gameUiStore'
 import type { GameActions } from '@/network/gameActions'
 import type { useCultivation } from './cultivation'
 import { recordFtueForage, recordFtueRefine } from '../../../shared/ftueQuests.ts'
+import { originPerk } from '../../../shared/origins.ts'
 import { auctionDay, auctionDividend, auctionLot, auctionLotInfo, auctionWindow, nextAuctionBid, ownsAuctionLot, settleAuctionTickets, softCloseAt } from '../../../shared/ghostAuction.ts'
 
 export function useMarket({ actions, cultivation }: {
@@ -123,7 +124,7 @@ export function useMarket({ actions, cultivation }: {
         showToast(`采药需 ${FORAGE_QI_COST} 点真气。`, 'danger')
         return
       }
-      const gathered = gatherHerbs(mapId, martialStats.value.luck, shichenIdx.value)
+      const gathered = gatherHerbs(mapId, martialStats.value.luck, shichenIdx.value, undefined, originPerk(player.value, 'HERB_ROLL'))
       if (!gathered.length) {
         showToast('此地没有可采的药材。', 'info')
         return
@@ -178,7 +179,7 @@ export function useMarket({ actions, cultivation }: {
 
       // 成功率计算 (基础 + 悟性超额加成 + 福缘加成 + 保底)
       const pity = alchemyPity.value[recipeId] ?? 0
-      const finalRate = pillSuccessRate(recipe, martialStats.value, pity)
+      const finalRate = pillSuccessRate(recipe, martialStats.value, pity, originPerk(player.value, 'PILL_RATE'))
 
       const roll = Math.random() * 100
       const isSuccess = roll < finalRate

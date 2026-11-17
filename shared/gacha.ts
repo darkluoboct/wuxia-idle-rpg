@@ -73,7 +73,8 @@ export const GACHA_POOL: Record<GachaTier, GachaEntry[]> = {
 }
 
 /** 可被抽到“觉醒信物”的伙伴（拥有觉醒形态） */
-export const AWAKENABLE_IDS = Object.values(COMPANIONS).filter((c) => !!c.awakened).map((c) => c.id)
+/** 结缘签里的伙伴信物只给结缘与好感线的伙伴；家人的家传信物只从家事里得（docs/17 §七） */
+export const AWAKENABLE_IDS = Object.values(COMPANIONS).filter((c) => !!c.awakened && c.route !== 'FAMILY').map((c) => c.id)
 
 /** 错过后可用重逢令补救的剧情送伙伴：伙伴ID → 触发支线（与免费的故人寻访同一份名单） */
 export const REUNION_AFTER: Record<string, string> = Object.fromEntries(
@@ -150,7 +151,7 @@ export function validateGachaData(): string[] {
       if (e.kind === 'COMPANION') {
         const c = COMPANIONS[e.id]
         if (!c) errs.push(`抽卡 ${tier}: 未知伙伴 ${e.id}`)
-        else if (c.route === 'STORY' || c.route === 'TRIAL') errs.push(`抽卡 ${tier}: 直接入队伙伴 ${c.name} 不应进入卡池`)
+        else if (c.route === 'STORY' || c.route === 'TRIAL' || c.route === 'FAMILY') errs.push(`抽卡 ${tier}: 直接入队伙伴 ${c.name} 不应进入卡池`)
       }
       if (e.kind === 'SKILL' && !SKILLS[e.id]) errs.push(`抽卡 ${tier}: 未知武学 ${e.id}`)
       if (e.kind === 'ITEM' && !ITEMS[e.id]) errs.push(`抽卡 ${tier}: 未知装备 ${e.id}`)

@@ -1,6 +1,7 @@
 import { COMPANIONS, COMPANION_SETS, ITEMS, MAPS, SECTS, SKILLS, TRIO_SYNERGIES } from '../../../shared/gameData.ts'
 import type { TierColor } from '../../../shared/protocol.ts'
 import { ADVENTURES, STORY_CHAPTERS } from './storyData'
+import { ORIGINS } from '../../../shared/origins.ts'
 import type { AdventureCtx, Reward } from './storyData'
 
 export * from '../../../shared/gameData.ts'
@@ -100,7 +101,8 @@ export function validateGameData(): string[] {
   for (const m of MAPS) chk(m.reqCleared === undefined || nodeIds.includes(m.reqCleared), `地图 ${m.name}: reqCleared 不存在`)
   // 剧情送的伙伴基础形态最多紫品（伙伴专题 §一）；觉醒形态不受此限
   for (const c of Object.values(COMPANIONS)) {
-    if (c.route === 'STORY' || c.route === 'TRIAL') chk(['green', 'blue', 'purple'].includes(c.tier), `伙伴 ${c.name}: 直接入队伙伴基础形态不得高于紫品`)
+    if (c.route === 'STORY' || c.route === 'TRIAL' || c.route === 'FAMILY') chk(['green', 'blue', 'purple'].includes(c.tier), `伙伴 ${c.name}: 直接入队伙伴基础形态不得高于紫品`)
+    chk((c.route === 'FAMILY') === !!c.origin && (!c.origin || ORIGINS[c.origin]?.companionId === c.id), `伙伴 ${c.name}: 家世伙伴须与家世一一对应`)
     if (c.route === 'GACHA') chk(!!c.meetHint, `伙伴 ${c.name}: 抽卡伙伴需要 meetHint`)
     if (c.grade) chk(c.tier === 'orange', `伙伴 ${c.name}: 资质仅用于橙品`)
     if (c.route === 'AFFINITY' && c.tier === 'orange') chk(c.grade === '下', `伙伴 ${c.name}: 好感线橙品应为「橙·下」`)
@@ -109,6 +111,7 @@ export function validateGameData(): string[] {
       chk(TIER_RANK[c.awakened.tier] > TIER_RANK[c.tier], `伙伴 ${c.name}: 觉醒形态品质应高于基础形态`)
     }
   }
+  for (const origin of Object.values(ORIGINS)) chk(COMPANIONS[origin.companionId]?.origin === origin.id, `家世 ${origin.name}: 家人伙伴 ${origin.companionId} 不存在`)
   for (const set of COMPANION_SETS) {
     set.memberIds.forEach((id) => chk(!!COMPANIONS[id], `套装 ${set.name}: 未知伙伴 ${id}`))
     chk(set.tiers.every((t, i) => i === 0 || t.count > set.tiers[i - 1].count), `套装 ${set.name}: 档位必须递增`)

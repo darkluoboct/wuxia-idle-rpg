@@ -1,5 +1,5 @@
 import { computed, onScopeDispose, ref, shallowRef } from 'vue'
-import type { GameAction, PlayerAvatarId, PlayerSnapshot, WsServerEvent } from '@/network/protocol'
+import type { GameAction, OriginId, PlayerAvatarId, PlayerSnapshot, WsServerEvent } from '@/network/protocol'
 import { apiClient, ApiError, IS_MOCK_MODE } from '@/network/apiClient'
 
 export interface OnlineGameCallbacks {
@@ -141,9 +141,9 @@ export function useOnlineGame(callbacks: OnlineGameCallbacks, prepare: () => Pro
     })
   }
 
-  function create(nickname: string, avatarId: PlayerAvatarId = 'hero_sword') {
+  function create(nickname: string, avatarId: PlayerAvatarId, origin: OriginId) {
     return authorize(async () => {
-      await enter(await apiClient.request<PlayerSnapshot>('POST', '/player/create', { nickname, avatarId }))
+      await enter(await apiClient.request<PlayerSnapshot>('POST', '/player/create', { nickname, avatarId, origin }))
     })
   }
 

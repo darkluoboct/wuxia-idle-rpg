@@ -5,7 +5,7 @@ import { trialDropLabel } from '@/config/uiMeta'
 import { IS_MOCK_MODE } from '@/network/apiClient'
 import { battleEnvironmentAt } from '../../../shared/combatMeta.ts'
 import { forgeMaterialLabel, forgeMaterials } from '../../../shared/equipmentForge.ts'
-import { enemySilverReward, settlePatrolCaches } from '../../../shared/player.ts'
+import { settlePatrolCaches, trialFirstClearSilver } from '../../../shared/player.ts'
 import { patrolCacheIngot } from '../../../shared/economy.ts'
 import {
   advancePatrol,
@@ -165,7 +165,7 @@ export function useTrial({ actions, cultivation, battle }: {
       const recruits = stage.clearCompanionIds?.filter((id) => !companionAffinity.value[id]?.recruited) ?? []
       const rewards = firstClear || drops.length || skill || recruits.length ? {
         qiExp: firstClear ? Math.round(stage.boss.hp * 2) : 0,
-        silver: firstClear ? enemySilverReward(stage.boss.hp) : 0,
+        silver: firstClear ? trialFirstClearSilver(stage.boss.hp, player.value) : 0,
         items: [...drops, ...(skill ? [skill] : [])].map(({ id, name, tier }) => ({ id, name, tier })),
         ...(recruits.length ? { companions: recruits } : {}),
       } : undefined

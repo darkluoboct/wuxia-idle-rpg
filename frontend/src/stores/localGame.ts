@@ -1,5 +1,5 @@
 import { computed, onScopeDispose, ref, watch } from 'vue'
-import type { PlayerAvatarId, PlayerDTO } from '@/network/protocol'
+import type { OriginId, PlayerAvatarId, PlayerDTO } from '@/network/protocol'
 import { generateRoomPlayers } from '@/network/mockEngine'
 import { MEDICINES, STORY_CHAPTERS } from '@/config/gameData'
 import { IS_MOCK_MODE } from '@/network/apiClient'
@@ -61,7 +61,7 @@ export function useLocalGame({ battle, companions, world, market, artifacts, sta
     mapArrivedAt,
     effectiveQiPerHour,
   } = storeToRefs(playerStore)
-  const { restoreCompanionStates, blankCompanionStates } = playerStore
+  const { restoreCompanionStates } = playerStore
   const { closeBattleStage } = battle
   const uiStore = useGameUiStore()
   const { activeTab, jianghuTab, mobileDrawer, inspectModal, confirmDialog, toasts, isMidnightTheme, logs, shichenIdx } = storeToRefs(uiStore)
@@ -315,15 +315,15 @@ export function useLocalGame({ battle, companions, world, market, artifacts, sta
   // ==================== 开局模式 ====================
   /**
    * 选择开局。DEMO 沿用 store 初始化时的“全伙伴 Lv.32”状态（后续版本移除）；
-   * NEW 则整体重置为 Lv.1、0 伙伴、从主线 1-1 起步，伙伴靠剧情与客栈逐步结识。
+   * NEW 则整体重置为 Lv.1、从主线 1-1 起步，只带所选家世的家人伙伴，其余伙伴靠剧情与客栈逐步结识。
    */
-  function startGame(mode: 'NEW' | 'DEMO') {
+  function startGame(mode: 'NEW' | 'DEMO', origin?: OriginId) {
     if (!IS_MOCK_MODE) return
     if (mode === 'NEW') {
       const now = Date.now()
       const { id, nickname, avatarId } = player.value
       // 与联机新角色同一套开局；首次收功能看到几分钟的打坐收益
-      const start = createNewGameCharacter({ id, nickname, avatarId }, now)
+      const start = createNewGameCharacter({ id, nickname, avatarId }, now, origin)
       player.value = { ...start.player, lastSettleAt: now - 5 * 60_000 }
       learnedSkills.value = start.learnedSkills
       ownedItemIds.value = start.ownedItemIds
@@ -339,7 +339,7 @@ export function useLocalGame({ battle, companions, world, market, artifacts, sta
       resolvedAdventureIds.value = []
       adventureQueue.value = []
       pendingAdventureId.value = null
-      companionAffinity.value = blankCompanionStates()
+      companionAffinity.value = restoreCompanionStates(start.companionAffinity)
       innDay.value = ''
       innGiftsToday.value = {}
       gachaHistory.value = []

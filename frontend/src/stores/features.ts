@@ -3,6 +3,8 @@ import { storeToRefs } from 'pinia'
 import type { FeatureId } from '@/network/protocol'
 import type { GameActions } from '@/network/gameActions'
 import { FEATURES, featureLockedText, featureUnlocked, markFeatureSeen, nextFeature, unseenFeature, type FeatureConfig } from '../../../shared/features.ts'
+import { COMPANIONS } from '@/config/gameData'
+import { ORIGINS } from '../../../shared/origins.ts'
 import { usePlayerStore } from './playerStore'
 import { useGameUiStore, type MainTab } from './gameUiStore'
 
@@ -15,9 +17,13 @@ type ArsenalTab = UiStore['arsenalTab']
 const MAIN_TABS: Partial<Record<MainTab, FeatureId[]>> = { SECT: ['SECT'], MARKET: ['INN', 'MAPS', 'GHOST', 'HUASHAN'] }
 const JIANGHU_TABS: Partial<Record<JianghuTab, FeatureId>> = { TRIAL: 'TRIAL', MAPS: 'MAPS', RAID: 'RAID', BOUNTY: 'HUASHAN' }
 const MARKET_TABS: Record<MarketTab, FeatureId> = { INN: 'INN', GHOST: 'GHOST', ALCHEMY: 'MAPS', HUASHAN: 'HUASHAN', ARTIFACTS: 'HUASHAN' }
-const ARSENAL_TABS: Partial<Record<ArsenalTab, FeatureId>> = { SQUAD: 'INN' }
+/** 家人伙伴开局就在队里，伙伴编队随历练一起开放 */
+const ARSENAL_TABS: Partial<Record<ArsenalTab, FeatureId>> = { SQUAD: 'TRIAL' }
 const JIANGHU_ORDER: JianghuTab[] = ['TRIAL', 'STORY', 'MAPS', 'RAID', 'BOUNTY']
 const MARKET_ORDER: MarketTab[] = ['INN', 'ALCHEMY', 'GHOST', 'HUASHAN', 'ARTIFACTS']
+
+/** 剧情卡；coda 是末尾换人说的一页（如家人的话） */
+export type FeatureCard = FeatureConfig & { coda?: { speaker: string; portrait: FeatureConfig['portrait']; text: string } }
 
 /** 玩法随剧情开放（shared/features.ts）：页签显隐、开放剧情卡与下一个机缘 */
 export function useFeatures({ actions, selectTab }: { actions: GameActions; selectTab: (tab: MainTab) => void }) {
@@ -52,9 +58,15 @@ export function useFeatures({ actions, selectTab }: { actions: GameActions; sele
   // ==================== 开放剧情卡 ====================
   // 联机下「已看过」要等服务端回包才写进存档，先在本地记下，免得同一张卡再弹一次
   const dismissed = ref<{ playerId: string; ids: FeatureId[] }>({ playerId: '', ids: [] })
-  const featureCard = computed<FeatureConfig | undefined>(() => {
+  const featureCard = computed<FeatureCard | undefined>(() => {
     const local = dismissed.value.playerId === player.value.id ? dismissed.value.ids : []
-    return unseenFeature({ ...player.value, featuresSeen: [...player.value.featuresSeen ?? [], ...local] })
+    const card = unseenFeature({ ...player.value, featuresSeen: [...player.value.featuresSeen ?? [], ...local] })
+    // 忘机客说完，家人再补一句
+    const origin = player.value.origin && ORIGINS[player.value.origin]
+    const kin = origin && COMPANIONS[origin.companionId]
+    return card?.id === 'TRIAL' && origin && kin
+      ? { ...card, coda: { speaker: kin.name, portrait: kin.portraitStyle, text: origin.prologue.trialLine } }
+      : card
   })
 
   function gotoFeature(feature: FeatureConfig) {

@@ -1,4 +1,4 @@
-import type { CoCultivationDTO, CompanionState, CultivationResult, GhostAppraisalResult, LoadoutPresetDTO, PatrolCacheReward, PlayerDTO, SixStats, VoyageResult } from './protocol.ts'
+import type { CoCultivationDTO, CompanionState, CultivationResult, GhostAppraisalResult, LoadoutPresetDTO, OriginId, PatrolCacheReward, PlayerDTO, SixStats, VoyageResult } from './protocol.ts'
 import { calcNextLevelQi } from './battle.ts'
 import { resolveBattleLoadout } from './battleEffects.ts'
 import { battleEnvironmentAt, EQUIP_SLOT_META, jianghuHour } from './combatMeta.ts'
@@ -6,6 +6,7 @@ import { ACUPOINTS, ACUPOINT_PILLS, activeJianghuTitle, COMPANIONS, equipmentIte
 import { gaibangAttributeBonus, gaibangSilverGain } from './gaibang.ts'
 import { huashanDay } from './huashan.ts'
 import { clampKarma, effectiveMartialStats, hasMartialFreedom, martialEffectiveness } from './martialSchools.ts'
+import { ORIGINS, originPerk } from './origins.ts'
 import { trialPartId } from './trialStages.ts'
 import { activeSectEquipmentSets } from './sectEquipment.ts'
 
@@ -170,8 +171,14 @@ export function createStarterCharacter(identity: Pick<PlayerDTO, 'id' | 'nicknam
   }
 }
 
-/** 正式开局（本地「新游戏」与联机新角色共用）：Lv.1、无伙伴、主线 1-1 起步，伙伴靠剧情与客栈逐步结识 */
-export function createNewGameCharacter(identity: Pick<PlayerDTO, 'id' | 'nickname' | 'avatarId'>, now: number) {
+/**
+ * 正式开局（本地「新游戏」与联机新角色共用）：Lv.1、主线 1-1 起步。
+ * 选了家世的，六维按家世微调，家人伙伴开局就在队里（docs/17 §七）；其余伙伴靠剧情与客栈逐步结识。
+ */
+export function createNewGameCharacter(identity: Pick<PlayerDTO, 'id' | 'nickname' | 'avatarId'>, now: number, originId?: OriginId) {
+  const origin = originId ? ORIGINS[originId] : undefined
+  const stats: SixStats = { str: 10, con: 10, agi: 10, intStat: 10, luck: 10, karma: 0 }
+  for (const [key, value] of Object.entries(origin?.stats ?? {})) stats[key as keyof SixStats] += value
   const player: PlayerDTO = {
     ...identity,
     level: 1,
@@ -182,7 +189,7 @@ export function createNewGameCharacter(identity: Pick<PlayerDTO, 'id' | 'nicknam
     nextLevelQi: calcNextLevelQi(1),
     silver: 600,
     goldIngot: 300,
-    stats: { str: 10, con: 10, agi: 10, intStat: 10, luck: 10, karma: 0 },
+    stats,
     shaQi: 0,
     currentSectId: null,
     sectRank: 1,
@@ -207,16 +214,19 @@ export function createNewGameCharacter(identity: Pick<PlayerDTO, 'id' | 'nicknam
       recentDrops: [],
     },
     featureGate: true,
+    ...(origin ? { origin: origin.id } : {}),
   }
+  const kin = origin ? COMPANIONS[origin.companionId] : undefined
   const blank = (presetIdx: 1 | 2 | 3, name: string, stance: LoadoutPresetDTO['stance']): LoadoutPresetDTO => ({
     presetIdx, name, stance,
     innerSkillId: null, outerSkillId: null, lightSkillId: null, ultSkillId: null,
-    leftCompanionId: null, rightCompanionId: null,
+    leftCompanionId: kin?.role === 'LEFT' ? kin.id : null, rightCompanionId: kin?.role === 'RIGHT' ? kin.id : null,
     weaponId: 'qinggang_sword', armorId: null, accId: null, relicBookId: null,
   })
   const companionAffinity: Record<string, CompanionState> = Object.fromEntries(Object.values(COMPANIONS).map((c) => [
     c.id, { affinity: 0, recruited: false, taught: false, met: false, form: 'base' as const, grade: c.grade ?? null, tokens: 0 },
   ]))
+  if (kin) Object.assign(companionAffinity[kin.id], { affinity: 100, recruited: true, met: true })
   return {
     player,
     ownedItemIds: ['qinggang_sword'],
@@ -292,8 +302,9 @@ export function cultivationRates(player: PlayerDTO, preset: LoadoutPresetDTO, co
   const desertQiBonus = map.id === 'damo_caravan' && preset.bootsId === trialPartId('damo_qibing', 'BOOTS') ? 5 : 0
   const bonus = inner + armor + accessoryBonus + sect + coCultivate + collectionBonus + title
   const silverBonus = accessory?.slot === 'ACC' ? accessory.patrolSilverBonus ?? 0 : 0
+  const originQiBonus = originPerk(player, 'IDLE_QI')
   return {
-    qi: Math.round(base * (100 + bonus + patrolBonus + setQiBonus + meridianQiBonus + desertQiBonus) / 100) + flatQi,
+    qi: Math.round(base * (100 + bonus + patrolBonus + setQiBonus + meridianQiBonus + desertQiBonus + originQiBonus) / 100) + flatQi,
     silverBasis: Math.round((Math.round(base * (100 + bonus) / 100) + flatQi) * (100 + silverBonus) / 100),
   }
 }
@@ -316,6 +327,11 @@ export function settlePatrolCaches(player: PlayerDTO, preset: LoadoutPresetDTO, 
 
 export function enemySilverReward(maxHp: number) {
   return Math.round(maxHp * 0.8)
+}
+
+/** 历练首胜的纹银：将门家学再加一成 */
+export function trialFirstClearSilver(bossHp: number, player: Pick<PlayerDTO, 'origin'>) {
+  return Math.round(enemySilverReward(bossHp) * (100 + originPerk(player, 'TRIAL_SILVER')) / 100)
 }
 
 export function realmBreakChance(player: PlayerDTO, preset: LoadoutPresetDTO, baseRate: number, usePill: boolean) {

@@ -7,13 +7,17 @@ const tab = (game: FrameLocator, name: string) =>
   game.locator('.wuxia-header').getByRole('tab', { name, exact: true })
 
 /** 联机新角色先过序章：跳过文字，打主线 1-1，再看完忘机客的剧情卡 */
-async function playPrologue(game: FrameLocator) {
+/** 打完序章：楔子按家世讲，家人并肩出战，忘机客说完由家人补一句 */
+async function playPrologue(game: FrameLocator, family: { title: string; kin: string }) {
+  await expect(game.getByRole('heading', { name: family.title })).toBeVisible()
   await game.getByRole('button', { name: '跳过剧情' }).click()
+  await expect(game.locator('.prologue-ally')).toContainText(family.kin)
   await game.getByRole('button', { name: /^以.+出手$/ }).click()
   await game.getByRole('button', { name: '跳过回放' }).click()
   await game.getByRole('button', { name: /^返回/ }).click()
   const card = game.getByRole('dialog', { name: '序章 · 忘机遗言' })
-  for (let page = 0; page < 2; page++) await card.getByRole('button', { name: '继续' }).click()
+  for (let page = 0; page < 3; page++) await card.getByRole('button', { name: '继续' }).click()
+  await expect(card).toContainText(family.kin)
   await card.getByRole('button', { name: '知道了' }).click()
   await expect(card).toHaveCount(0)
 }
@@ -87,10 +91,16 @@ test('联机注册、创角、同图聊天、领取收益和换装读档', async
         await game.getByRole('button', { name: '注册并启程' }).click()
         await game.getByRole('button', { name: '创建角色', exact: true }).click()
         await game.locator('#character-name').fill(nickname)
+        // 不选家世建不了角
+        await game.getByRole('button', { name: '创建侠客' }).click()
+        await expect(game.getByRole('alert')).toHaveText('请选择家世')
+        const family = index ? { name: '杏林', title: '楔子 · 杏林', kin: '沈青黛' } : { name: '渔家', title: '楔子 · 渔家', kin: '阮青篙' }
+        await game.locator('label.origin-option', { hasText: family.name }).click()
+        await expect(game.locator('.origin-detail')).toContainText(family.kin)
         await game.getByRole('button', { name: '创建侠客' }).click()
         await expect(game.getByRole('region', { name: '当前侠客' })).toContainText(nickname)
         await enter(game)
-        await playPrologue(game)
+        await playPrologue(game, family)
         // 序章之后只开修行、江湖、武库
         await expect(game.locator('.wuxia-header').getByRole('tab')).toHaveText(['修行', '江湖', '武库'])
         await game.getByRole('tab', { name: '附近' }).click()
