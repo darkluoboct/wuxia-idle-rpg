@@ -335,6 +335,32 @@ const coCultivationTimeLeft = computed(() => {
             >邀请组队</button>
           </div>
         </li>
+        <template v-if="!IS_MOCK_MODE && store.featureOpen('HUASHAN') && store.absentPlayers.length">
+          <li class="pt-1 text-xs text-ink3">不在线、停在本图：出手由对方的镜像应战</li>
+          <li v-for="pl in store.absentPlayers" :key="`absent-${pl.id}`" class="well space-y-2 p-2.5">
+            <div class="flex items-start gap-2.5">
+              <span class="seal h-9 w-9 text-xl opacity-70">{{ pl.nickname.replace(/^[^一-龥]*·?/, '').slice(0, 1) || pl.nickname.slice(0, 1) }}</span>
+              <div class="min-w-0 flex-1">
+                <div class="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                  <b class="truncate text-sm" :class="pl.isBetrayerBounty ? 'text-cinnabar' : ''">{{ pl.nickname }}</b>
+                  <span class="chip !py-0 !text-[0.68rem]">离线</span>
+                  <span v-if="pl.isBetrayerBounty" class="chip chip-red !py-0 !text-[0.68rem]">被通缉</span>
+                  <span v-if="pl.isEscortingDart" class="chip chip-gold !py-0 !text-[0.68rem]">押镖</span>
+                </div>
+                <div class="truncate text-xs text-ink3">{{ pl.sectName }} · {{ pl.realmName }}</div>
+              </div>
+              <div class="shrink-0 text-right text-xs tabular-nums">
+                <div class="text-ink3">Lv.{{ pl.level }}</div>
+                <div class="font-bold text-gold">{{ pl.combatPower.toLocaleString() }}</div>
+              </div>
+            </div>
+            <button
+              v-if="(store.currentMap.safety === 'CONTESTED' && pl.isEscortingDart) || pl.isBetrayerBounty"
+              class="btn btn-sm btn-danger w-full" :disabled="store.onlineActionBusy || !store.roomConnected || store.isBattlePlaying"
+              @click="store.interactNearbyPlayer(pl, 'AMBUSH')"
+            >{{ pl.isBetrayerBounty ? '追捕' : '劫镖' }}</button>
+          </li>
+        </template>
       </ul>
 
       <!-- 飞鸽传书 -->

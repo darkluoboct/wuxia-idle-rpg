@@ -2,10 +2,11 @@ import { describe, expect, it } from 'vitest'
 import { ADVENTURES, STORY_CHAPTERS } from '@/config/gameData'
 import type { PlayerDTO } from '@/network/protocol'
 import { INGOT, ingotMilestones, patrolCacheIngot } from '../../shared/economy.ts'
+import { sectContestEndsAt, sectContestWeek } from '../../shared/sectProgress.ts'
 import { FTUE_QUESTS } from '../../shared/ftueQuests.ts'
-import { createNewGameCharacter } from '../../shared/player.ts'
+import { createNewGameCharacter, idleQiNumerator } from '../../shared/player.ts'
 import { openToOrigin } from '../../shared/origins.ts'
-import { TRIAL_STAGES } from '../../shared/trialStages.ts'
+import { advancePatrol, IDLE_CAP_MS, TRIAL_STAGES } from '../../shared/trialStages.ts'
 import { boost, newStore, playNode } from './helpers'
 
 describe('元宝产出规则（docs/19）', () => {
@@ -34,14 +35,28 @@ describe('元宝产出规则（docs/19）', () => {
     expect(total).toBeLessThan(3_400)
   })
 
-  it('巡历宝箱每箱 5 元宝，每日最多 30，子时后重新计', () => {
+  it('巡历宝箱每箱 5 元宝，每周最多 210，隔几天上线一次也不吃亏', () => {
     const player: Pick<PlayerDTO, 'goldIngot' | 'patrolIngot'> = { goldIngot: 0 }
-    const noon = Date.UTC(2026, 10, 16, 4) // 北京时间正午
-    expect(patrolCacheIngot(player, 4, noon)).toBe(20)
-    expect(patrolCacheIngot(player, 4, noon + 60_000)).toBe(10)
-    expect(patrolCacheIngot(player, 1, noon + 120_000)).toBe(0)
-    expect(patrolCacheIngot(player, 1, noon + 86_400_000)).toBe(5)
-    expect(player.goldIngot).toBe(35)
+    const week = sectContestWeek(Date.UTC(2026, 10, 16, 4))
+    const start = sectContestEndsAt(week - 1)
+    expect(INGOT.patrolWeeklyCap).toBe(210)
+    expect(patrolCacheIngot(player, 30, start + 3_600_000)).toBe(150)
+    expect(patrolCacheIngot(player, 30, start + 4 * 86_400_000)).toBe(60)
+    expect(patrolCacheIngot(player, 1, start + 6 * 86_400_000)).toBe(0)
+    expect(patrolCacheIngot(player, 1, sectContestEndsAt(week) + 3_600_000)).toBe(5)
+    expect(player.goldIngot).toBe(215)
+  })
+
+  it('打坐与巡历最多累计 24 小时未领：一天上线一次不吃亏', () => {
+    const now = Date.UTC(2026, 10, 16, 4)
+    const hour = 3_600_000
+    expect(IDLE_CAP_MS).toBe(24 * hour)
+    expect(idleQiNumerator(now - 20 * hour, now, 3_600, null)).toBe(BigInt(20 * hour * 3_600))
+    expect(idleQiNumerator(now - 40 * hour, now, 3_600, null)).toBe(BigInt(24 * hour * 3_600))
+    const trial = { ...createNewGameCharacter({ id: 'cap', nickname: '挂机', avatarId: 'hero_sword_male' }, now - 40 * hour).player.trial }
+    trial.lastPatrolAt = now - 40 * hour
+    advancePatrol(trial, now, 100)
+    expect(trial.stageHours[String(trial.selectedStageId)]).toBe(24)
   })
 })
 

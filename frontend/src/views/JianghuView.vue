@@ -463,7 +463,7 @@ const mapWeather = (mapId: string) => {
             <div class="space-y-2">
               <span class="chip chip-gold">三人合战</span>
               <h4 class="font-brush text-2xl leading-tight">少室山 · 金刚伏魔圈</h4>
-              <p class="hint">这场由乔北冥和清风道长与你并肩出战，两人会替换你平时带的伙伴。</p>
+              <p class="hint">本地试玩没有别的侠客：由乔北冥、清风道长两份结义镜像与你同闯，替换你平时带的伙伴。</p>
               <p v-if="store.nextRaidRelic" class="text-sm text-gold">打赢可得《{{ store.nextRaidRelic.name }}》</p>
               <p v-else class="hint">副本秘宝已集齐，再战仍可获得真气和纹银。</p>
               <button class="btn btn-seal mt-1" @click="store.startThreePlayerCoopRaid()">挑战副本</button>

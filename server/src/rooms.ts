@@ -195,7 +195,7 @@ export function registerRooms(app: FastifyInstance) {
   }
 
   return {
-    publish, closeSession, onlineMap,
+    publish, closeSession, onlineMap, publicPlayer,
     isOnlineInMap: (playerId: string, mapId: string) => onlineMap(playerId) === mapId,
     onlinePlayer: (playerId: string) => onlineMap(playerId) ? online.get(playerId)?.info : undefined,
     sendToPlayer: (playerId: string, event: WsServerEvent) => {

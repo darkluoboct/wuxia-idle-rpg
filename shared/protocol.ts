@@ -108,13 +108,14 @@ export interface PlayerDTO {
   ftue?: FtueStateDTO
   ingotClaims?: string[]            // 已领的一次性元宝里程碑
   daily?: { day: number; done: string[]; claimed: boolean }
-  patrolIngot?: { day: number; got: number }
+  patrolIngot?: { week: number; got: number } // 巡历宝箱本周已得的元宝（按周封顶）
   artifactDuel?: { day: number; used: number } // 君山擂台当日已上擂次数
   artifactHonors?: string[]         // 曾执掌过的全服唯一真品
   artifactLoss?: { itemId: string; at: number; cause: 'SEIZE' | 'RECALL' | 'BETRAY'; iron: number; by: string | null } // 最近一次失去真品
   stallOpen?: number                // 自己在鬼市还没收摊的摊位数
   stallSystem?: { day: number; bought: string[] } // 当日已买过的鬼市散客摊
   stallIncome?: { at: number; silver: number; returned: number } // 最近一次收摊结算：入账纹银、退回的货物份数
+  defenseNotices?: DefenseNoticeDTO[] // 下线期间被劫镖、被追捕的战果，收功时告知后清空
   auctionTickets?: number[]         // 鬼市红封签：领过每日江湖事的鬼市日，当日子时开签兑付
   auctionDividend?: { day: number; ingot: number } // 最近一次兑付的红封（未中签为 0）
   gacha?: { pulls: number; pity: number }
@@ -277,6 +278,8 @@ export interface IdleGain {
   reunionClues?: Record<string, number>
   feastIngredient?: string
   contestIngot?: number
+  /** 下线期间镜像替你应战的劫镖与追捕，告知后清空 */
+  defenseNotices?: DefenseNoticeDTO[]
   /** 收功时顺带领到的襄阳封赏 */
   xiangyang?: { warId: number; skillId: string | null; reward: XiangyangRewardDTO }[]
 }
@@ -469,6 +472,18 @@ export interface RoomPlayerDTO {
   isBetrayerBounty: boolean // 是否背负全服叛师追杀令
   isEscortingDart: boolean  // 是否正在押镖(限定纷争区可劫掠)
   holdingUniqueArtifact?: string // 若持有全服唯一真品神兵则高亮公示
+  offline?: true            // 不在线、停在本图：劫镖或追捕由他的镜像应战
+}
+
+/** 下线时被劫镖或被追捕：镜像替你应战，收功时一并告知（docs/21） */
+export interface DefenseNoticeDTO {
+  at: number
+  kind: 'ESCORT' | 'BOUNTY'
+  attacker: string
+  /** 镜像守住了 */
+  held: boolean
+  /** 镖车被劫走的纹银 */
+  silver?: number
 }
 
 export interface BountyEntryDTO {
@@ -476,7 +491,8 @@ export interface BountyEntryDTO {
   nickname: string
   sectId: string
   expiresAt: number
-  mapId?: string
+  mapId?: string            // 接令后可见：目标停留的地图（不在线也查得到）
+  online?: boolean          // 接令后可见：目标是否在线；不在线时追捕由他的镜像应战
   silver: number
   sectContrib: number
   accepted: boolean
@@ -600,6 +616,29 @@ export interface RaidLobbyDTO {
   team: RaidTeamDTO | null
   invitation: { id: string; raidId: RaidId; leaderNickname: string; expiresAt: number } | null
 }
+
+/** 结义镜像：打过副本或主动登记的侠客按当时配装冻结，同伴不在线时可借来同闯（docs/21） */
+export interface RaidMirrorDTO {
+  id: string
+  nickname: string
+  level: number
+  realmName: string
+  sectName: string
+  stance: StanceType
+  weaponName?: string
+  companions: string[]
+  /** 与你同门，排在前面 */
+  sameSect: boolean
+}
+
+export interface RaidMirrorBoardDTO {
+  /** 自己登记的结义镜像 */
+  mine: { mirrorAt: number } | null
+  candidates: RaidMirrorDTO[]
+}
+
+/** 开打三人副本：三人队伍由队长开打；或独自带两位侠客的结义镜像 */
+export type RaidStartInput = { teamId: string; revision: number } | { raidId: RaidId; mirrorIds: string[] }
 
 /** 全服唯一真品神兵状态 DTO */
 export interface UniqueArtifactStatusDTO {

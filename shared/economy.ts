@@ -3,6 +3,7 @@ import { COMPANION_SETS, SECTS } from './gameData.ts'
 import { featureUnlocked, type FeatureState } from './features.ts'
 import { ftueVolumeDone } from './ftueQuests.ts'
 import { innVisitDay } from './player.ts'
+import { sectContestWeek } from './sectProgress.ts'
 import { STORY_CHAPTERS } from './storyData.ts'
 import { STORY_SNAKE_ADVENTURE } from './storySnake.ts'
 import { TRIAL_STAGES } from './trialStages.ts'
@@ -24,7 +25,7 @@ export const INGOT = {
   sectRank: 50,
   daily: 60,
   patrolCache: 5,
-  patrolDailyCap: 30,
+  patrolWeeklyCap: 210,
   raidWeekly: 50,
   sectContestJoin: 50,
   sectContestChief: 200,
@@ -129,13 +130,13 @@ export function claimDailyIngot(player: Pick<PlayerDTO, 'daily' | 'goldIngot' | 
   return { ingot: INGOT.daily, ticket }
 }
 
-/** 巡历宝箱顺带的元宝，每日有上限 */
+/** 巡历宝箱顺带的元宝，按周封顶（与门派演武、结义副本同一周）：隔几天上线一次也不吃亏 */
 export function patrolCacheIngot(player: Pick<PlayerDTO, 'patrolIngot' | 'goldIngot'>, caches: number, now: number) {
-  const day = innVisitDay(now)
-  const got = player.patrolIngot?.day === day ? player.patrolIngot.got : 0
-  const ingot = Math.min(INGOT.patrolCache * caches, INGOT.patrolDailyCap - got)
+  const week = sectContestWeek(now)
+  const got = player.patrolIngot?.week === week ? player.patrolIngot.got : 0
+  const ingot = Math.min(INGOT.patrolCache * caches, INGOT.patrolWeeklyCap - got)
   if (ingot <= 0) return 0
-  player.patrolIngot = { day, got: got + ingot }
+  player.patrolIngot = { week, got: got + ingot }
   player.goldIngot += ingot
   return ingot
 }

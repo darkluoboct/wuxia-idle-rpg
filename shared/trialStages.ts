@@ -1339,6 +1339,9 @@ export function equippedGearSkill(loadout: Pick<LoadoutPresetDTO, 'weaponId' | '
   }
 }
 
+/** 打坐与巡历最多累计 24 小时未领：一天上线一次不吃亏（docs/21） */
+export const IDLE_CAP_MS = 24 * 3_600_000
+
 /** 每 30 分钟一次遭遇，25% 掉件，7 部位等概率 */
 export const PATROL_ENCOUNTER_MINUTES = 30
 export const PATROL_DROP_CHANCE = 0.25
@@ -1352,7 +1355,7 @@ export function patrolEncounterCount(trial: TrialStateDTO, stageId: number) {
 }
 
 export function advancePatrol(trial: TrialStateDTO, now: number, encounterRate: number) {
-  const elapsed = now - Math.max(trial.lastPatrolAt, now - 12 * 3_600_000)
+  const elapsed = now - Math.max(trial.lastPatrolAt, now - IDLE_CAP_MS)
   if (elapsed <= 0) return
   const stageId = trial.selectedStageId
   const key = String(stageId)

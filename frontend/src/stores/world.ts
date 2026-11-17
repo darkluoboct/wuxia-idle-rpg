@@ -7,6 +7,7 @@ import type {
   VoyageResult,
   RaidId,
   RaidLobbyDTO,
+  RaidMirrorBoardDTO,
   RoomPlayerDTO,
   SectContestAction,
   WsServerEvent,
@@ -78,6 +79,9 @@ export function useWorld({ battle, actions, selectTab, cultivation, companions }
   const selectedRaidId = computed(() => raidLobby.value.team?.raidId ?? requestedRaidId.value)
   const selectedRaidClears = computed(() => onlineState.value?.snapshot[COOP_RAIDS[selectedRaidId.value].clearField] ?? 0)
   let lastRaidBattleId: string | null = null
+  const raidMirrors = shallowRef<RaidMirrorBoardDTO | null>(null)
+  /** 停在本图却不在线的押镖、被通缉侠客：劫镖与追捕由他们的镜像应战 */
+  const absentPlayers = ref<RoomPlayerDTO[]>([])
   const duelInvite = shallowRef<DuelInviteDTO | null>(null)
   let lastDuelBattleId: string | null = null
   const pendingDuelReport = shallowRef<BattleReportDTO | null>(null)
@@ -98,6 +102,8 @@ export function useWorld({ battle, actions, selectTab, cultivation, companions }
       roomMapId.value = event.data.mapId
       roomCount.value = event.data.onlineCount
       nearbyPlayers.value = event.data.players.filter((entry) => entry.id !== player.value.id)
+      // 有人上下线，停在本图的离线侠客名单也跟着变
+      void refreshAbsentPlayers()
     } else if (event.event === 'ROOM_CHAT' && event.data.mapId === roomMapId.value) {
       const { id, content, sender, sentAt } = event.data
       worldMessages.value.unshift({
@@ -127,6 +133,7 @@ export function useWorld({ battle, actions, selectTab, cultivation, companions }
 
   function clearRoom() {
     nearbyPlayers.value = []
+    absentPlayers.value = []
     roomCount.value = 0
     duelInvite.value = null
   }
@@ -271,6 +278,40 @@ export function useWorld({ battle, actions, selectTab, cultivation, companions }
     startBattlePlayback(report)
   }
 
+  async function refreshRaidMirrors() {
+    if (IS_MOCK_MODE) return
+    try {
+      raidMirrors.value = await apiClient.request<RaidMirrorBoardDTO>('GET', '/raid/mirrors')
+    } catch {
+      // 读不到时保留上一次的名单，下次进副本页再取
+    }
+  }
+
+  function registerRaidMirror() {
+    return actions.run('raidMirror', undefined, () => {
+      showToast('结义镜像已按当前配装登记', 'gold')
+      void refreshRaidMirrors()
+    })
+  }
+
+  /** 同伴不在线：独自带两位侠客的结义镜像同闯，奖励只发给自己 */
+  function startMirrorRaid(mirrorIds: string[]) {
+    if (isBattlePlaying.value || mirrorIds.length !== 2) return
+    return actions.run('raid', { raidId: selectedRaidId.value, mirrorIds }, (report) => {
+      playRaidReport(report)
+      void refreshRaidMirrors()
+    })
+  }
+
+  async function refreshAbsentPlayers() {
+    if (IS_MOCK_MODE || !online.roomConnected) return
+    try {
+      absentPlayers.value = await apiClient.request<RoomPlayerDTO[]>('GET', '/map/absent')
+    } catch {
+      absentPlayers.value = []
+    }
+  }
+
   function startThreePlayerCoopRaid() {
     if (isBattlePlaying.value) return
     const team = raidLobby.value.team
@@ -352,6 +393,7 @@ export function useWorld({ battle, actions, selectTab, cultivation, companions }
     return actions.run('duel', request, (report) => {
       if (report) playDuelReport(report)
       else showToast(`切磋请帖已送给「${target.nickname}」`, 'gold')
+      if (target.offline) void refreshAbsentPlayers()
     }, () => duelLocally(target, action))
   }
 
@@ -431,9 +473,10 @@ export function useWorld({ battle, actions, selectTab, cultivation, companions }
   }
 
   function pursueBounty(entry: BountyEntryDTO) {
-    if (!online.roomConnected || isBattlePlaying.value) return
+    if (IS_MOCK_MODE || isBattlePlaying.value) return
     return actions.run('duel', { action: 'pursue', targetPlayerId: entry.targetId, expiresAt: entry.expiresAt }, (report) => {
       if (report) playDuelReport(report)
+      void refreshAbsentPlayers()
     })
   }
 
@@ -506,6 +549,7 @@ export function useWorld({ battle, actions, selectTab, cultivation, companions }
     pendingDuelReport.value = null
     lastDuelBattleId = null
     raidLobby.value = { team: null, invitation: null }
+    raidMirrors.value = null
     raidLobbyBusy.value = false
     requestedRaidId.value = 'shaoshi'
     lastRaidBattleId = null
@@ -515,6 +559,8 @@ export function useWorld({ battle, actions, selectTab, cultivation, companions }
     playPendingDuel,
     worldMessages,
     nearbyPlayers,
+    absentPlayers,
+    refreshAbsentPlayers,
     handleRoomEvent,
     roomMapId,
     raidLobby,
@@ -529,6 +575,10 @@ export function useWorld({ battle, actions, selectTab, cultivation, companions }
     onlineHuashan,
     onlineSectContest,
     startThreePlayerCoopRaid,
+    raidMirrors,
+    refreshRaidMirrors,
+    registerRaidMirror,
+    startMirrorRaid,
     openRaidLobby,
     selectRaid,
     raidTeamAction,

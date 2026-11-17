@@ -239,5 +239,5 @@ export function registerRaidLobby(app: FastifyInstance, rooms: ReturnType<typeof
     for (const invite of invitations.values()) clearTimeout(invite.timer)
   })
 
-  return { lineup, reserve }
+  return { lineup, reserve, inTeam: (playerId: string) => memberships.has(playerId) }
 }

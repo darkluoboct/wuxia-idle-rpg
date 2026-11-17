@@ -11,8 +11,6 @@ const loading = ref(false)
 const error = ref('')
 const entries = computed(() => [...(board.value?.entries ?? [])].sort((a, b) =>
   Number(b.accepted) - Number(a.accepted) || Number(b.targetId === store.bountyTargetId) - Number(a.targetId === store.bountyTargetId)))
-const nearbyTargetWanted = computed(() => store.nearbyPlayers.some((player) =>
-  player.id === store.player.bountyAccepted?.targetId && player.isBetrayerBounty) && store.roomMapId === store.player.currentMapId)
 const date = new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 let request = 0
 
@@ -30,7 +28,7 @@ async function reload() {
   }
 }
 
-watch(() => [store.onlineRevision, store.roomConnected, store.bountyTargetId, nearbyTargetWanted.value], reload, { immediate: true })
+watch(() => [store.onlineRevision, store.roomConnected, store.bountyTargetId, store.nearbyPlayers.length], reload, { immediate: true })
 onScopeDispose(() => { request++ })
 </script>
 
@@ -40,7 +38,7 @@ onScopeDispose(() => { request++ })
       <p v-if="store.player.bountyUntil && store.player.bountyUntil > store.worldTime" class="text-sm text-cinnabar">
         你正被通缉，至 {{ date.format(store.player.bountyUntil) }}（北京时间）
       </p>
-      <p v-else class="hint">接令后可查到目标所在地图。双方同图在线时可追捕。</p>
+      <p v-else class="hint">接令后可查到目标停留的地图，赶到同一张地图就能追捕；目标不在线时由他的镜像应战。</p>
       <button class="btn btn-sm" :disabled="loading" @click="reload">刷新悬赏</button>
     </header>
     <p v-if="error" class="well p-3 text-sm text-cinnabar" role="status">{{ error }}</p>
@@ -56,13 +54,13 @@ onScopeDispose(() => { request++ })
       <p class="hint">至 {{ date.format(entry.expiresAt) }}（北京时间）</p>
       <p class="text-sm text-gold">赏金 {{ entry.silver.toLocaleString() }} 两<span v-if="entry.sectContrib"> · 门派贡献 +{{ entry.sectContrib.toLocaleString() }}</span></p>
       <div class="flex flex-wrap items-center gap-2">
-        <span v-if="entry.accepted" class="hint">
-          {{ entry.mapId ? MAPS.find((map) => map.id === entry.mapId)?.name ?? entry.mapId : '目标暂未在线' }}
+        <span v-if="entry.accepted && entry.mapId" class="hint">
+          {{ MAPS.find((map) => map.id === entry.mapId)?.name ?? entry.mapId }} · {{ entry.online ? '在线' : '不在线，镜像应战' }}
         </span>
         <span v-if="entry.expiresAt <= store.worldTime" class="hint">通缉令已过期</span>
         <button v-else-if="!entry.accepted" class="btn btn-sm btn-gold" :disabled="store.onlineActionBusy"
           @click="store.acceptBounty(entry)">接令</button>
-        <button v-else class="btn btn-sm btn-danger" :disabled="store.onlineActionBusy || store.isBattlePlaying || !store.roomConnected || !nearbyTargetWanted ||
+        <button v-else class="btn btn-sm btn-danger" :disabled="store.onlineActionBusy || store.isBattlePlaying ||
           !!store.player.mapJourney || entry.mapId !== store.player.currentMapId" @click="store.pursueBounty(entry)">追捕</button>
       </div>
     </article>

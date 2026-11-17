@@ -24,6 +24,7 @@ import type {
   MapMoveResult,
   ReunionResult,
   SectContestAction,
+  RaidStartInput,
   SectContestResult,
   SectResult,
   SkillUpgradeResult,
@@ -102,7 +103,8 @@ interface Actions {
   huashan: [HuashanAction, HuashanResult]
   xiangyang: [XiangyangAction, XiangyangResult]
   sectContest: [SectContestAction, SectContestResult]
-  raid: [{ teamId: string; revision: number } | undefined, BattleReportDTO]
+  raid: [RaidStartInput | undefined, BattleReportDTO]
+  raidMirror: [undefined, { mirrorAt: number }]
   coCultivate: [CoCultivationAction, IdleGain]
   duel: [DuelAction | undefined, BattleReportDTO | null]
   escort: [{ action: 'start' | 'claim' }, { silver: number }]
@@ -162,6 +164,7 @@ const requests: { [K in keyof Actions]: (input: Actions[K][0]) => Request | unde
   xiangyang: (body) => ['POST', '/xiangyang', body],
   sectContest: (body) => ['POST', '/sect/contest', body],
   raid: (body) => body && ['POST', '/raid/start', body],
+  raidMirror: () => ['POST', '/raid/mirror'],
   coCultivate: (body) => ['POST', '/map/co-cultivate', body],
   duel: (body) => body && ['POST', '/duel', body],
   escort: (body) => ['POST', '/escort', body],
@@ -179,7 +182,7 @@ const ACTION_FEATURES: Partial<Record<keyof Actions, FeatureId>> = {
   appraise: 'GHOST', buy: 'GHOST', auction: 'GHOST', stall: 'GHOST',
   sect: 'SECT', sectContest: 'SECT', library: 'SECT',
   huashan: 'HUASHAN', artifact: 'HUASHAN', duel: 'HUASHAN', escort: 'HUASHAN', acceptBounty: 'HUASHAN',
-  raid: 'RAID',
+  raid: 'RAID', raidMirror: 'RAID',
   xiangyang: 'XIANGYANG',
   feast: 'FEAST',
 }

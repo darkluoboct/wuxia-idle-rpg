@@ -2,6 +2,7 @@ import type { CultivationResult, IdleGain, LoadoutPresetDTO, TrialDropDTO } from
 import { ACUPOINTS, MEDICINES, getMapHerbs, COMPANIONS } from '@/config/gameData'
 import { gaibangSilverGain } from '../../../shared/gaibang.ts'
 import { cultivatePlayer, cultivationRate, cultivationRates, idleQiNumerator, karmaAfterEvent } from '../../../shared/player.ts'
+import { IDLE_CAP_MS } from '../../../shared/trialStages.ts'
 import { usePlayerStore } from './playerStore'
 import { storeToRefs } from 'pinia'
 import type { GameActions } from '@/network/gameActions'
@@ -55,10 +56,22 @@ export function useCultivation({
       }
     }
     const elapsedSec = Math.max(60, Math.floor((now - player.value.lastSettleAt) / 1000))
-    const cappedHours = Math.min(12, elapsedSec / 3600)
+    const cappedHours = Math.min(IDLE_CAP_MS / 3_600_000, elapsedSec / 3600)
     const gainedQi = Math.max(480, Math.round(effectiveQiPerHour.value * cappedHours))
     const gainedSilver = gaibangSilverGain(player.value, Math.max(150, Math.round(Math.round(mockIdleRates.value.silverBasis * cappedHours) * 0.28)))
     return { gainedQi, gainedSilver }
+  }
+
+  /** 下线期间镜像替你应战的劫镖与追捕（docs/21） */
+  function logDefenseNotice({ kind, attacker, held, silver }: NonNullable<IdleGain['defenseNotices']>[number]) {
+    const what = kind === 'ESCORT' ? '劫你的镖车' : '按通缉令追捕你'
+    const outcome = held ? '你的镜像把人打退了' : kind === 'ESCORT' ? `镖银被劫走 ${(silver ?? 0).toLocaleString()} 两` : '你的镜像落败，通缉令就此了结'
+    appendLog('JIANGHU', [
+      { type: 'tag', text: kind === 'ESCORT' ? '镖车遇劫' : '离线遭追捕', tone: held ? 'jade' : 'red' },
+      { type: 'text', text: ` 你不在时，` },
+      { type: 'actor', name: attacker, isAlly: false, isPlayer: true },
+      { type: 'text', text: ` 来${what}，${outcome}。` },
+    ])
   }
 
   // 1. 惰性离线挂机收益结算（对应后端 POST /api/v1/cultivate/settle）
@@ -80,6 +93,7 @@ export function useCultivation({
         appendLog('JIANGHU', [{ type: 'tag', text: '门派演武', tone: 'gold' }, { type: 'text', text: ` 上周演武论功，领得 ${result.contestIngot} 元宝。` }])
       }
       for (const award of result.xiangyang ?? []) announceXiangyangAward(award)
+      for (const notice of result.defenseNotices ?? []) logDefenseNotice(notice)
     }, () => {
       const now = Date.now()
       settleMockIdle(now, true)
@@ -91,7 +105,7 @@ export function useCultivation({
 
   function settleMockIdle(now: number, claim = false) {
     const elapsedSec = Math.max(0, Math.floor((now - player.value.lastSettleAt) / 1000))
-    const hours = Math.min(12, elapsedSec / 3600)
+    const hours = Math.min(IDLE_CAP_MS / 3_600_000, elapsedSec / 3600)
     const { gainedQi, gainedSilver } = claim ? getIdleRewards(now) : {
       gainedQi: Math.round(mockIdleRates.value.qi * hours),
       gainedSilver: gaibangSilverGain(player.value, Math.round(Math.round(mockIdleRates.value.silverBasis * hours) * 0.28)),

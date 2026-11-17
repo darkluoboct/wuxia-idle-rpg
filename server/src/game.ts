@@ -6,7 +6,7 @@ import { creditBattleEffectLoot, spendBattleMedicines } from '../../shared/battl
 import { battleEnvironmentAt, EQUIP_SLOT_META, shichenIdxFromDate, STANCE_META } from '../../shared/combatMeta.ts'
 import { extractFurnaceResidue, FORAGE_QI_COST, gatherHerbs, pillDoubleRate, pillSuccessRate } from '../../shared/alchemy.ts'
 import { forgeEquipment, forgeMaterials } from '../../shared/equipmentForge.ts'
-import { activeJianghuTitle, activeSetBonuses, canEquipCompanionItem, companionView, COMPANIONS, COOP_RAIDS, GHOST_MARKET_LISTINGS, hiddenWeaponCapacity, INN_GIFT_COST, INN_TEA_COST, ITEMS, JIANGHU_TITLES, marketListingPrice, MEDICINES, meetsItemStatRequirement, ONLINE_MAPS, PILL_RECIPES, SECTS, SKILLS, totalCompanionSetBonuses, trialRewardItems, unlockedHiddenWeapons } from '../../shared/gameData.ts'
+import { activeJianghuTitle, activeSetBonuses, canEquipCompanionItem, companionView, COMPANIONS, COOP_RAIDS, GHOST_MARKET_LISTINGS, hiddenWeaponCapacity, INN_GIFT_COST, INN_TEA_COST, ITEMS, JIANGHU_TITLES, marketListingPrice, MEDICINES, meetsItemStatRequirement, ONLINE_MAPS, PILL_RECIPES, REALMS, SECTS, SKILLS, totalCompanionSetBonuses, trialRewardItems, unlockedHiddenWeapons } from '../../shared/gameData.ts'
 import {
   advancePatrol, announceChapterOneTitle, CHAPTER_ONE_FINAL_STAGE, collectTrialDrop, equippedGearSkill, hasTrialPart, patrolEncounterCount, patrolEncounterRate, recruitTrialCompanions, rollTrialDrop,
   switchPatrolStage, TRIAL_PATROL_HOURS, TRIAL_REPLAY_HOURS, TRIAL_STAGES, trialFirstClearKarma, trialItemOf, trialPartId, trialPuzzleOutcome,
@@ -41,7 +41,7 @@ import { gainReunionClues, newReunion, reunionCluesToday, reunionEncounter, reun
 import type {
   ArtifactBoardDTO, ArtifactResult, AuctionBoardDTO, AuctionLotDTO, AuctionResult, AwakenResult, BattleReportDTO, BountyBoardDTO, BountyEntryDTO, ChapterOneStatueDTO, CoCultivationDTO, CoCultivationInviteDTO, CompanionState, CompanionWear, CultivationResult, DuelInviteDTO, FeastResult, ForgeInput, ForgeResult, FtueClaimResult, GachaResult, GameAction, HuashanBoardDTO, HuashanEntryDTO, HuashanResult, IdleGain, InnGiftResult, LibraryResult, LibraryStatusDTO, LoadoutPresetDTO, MapMoveResult, PersonalEquipSlot, PlayerDTO, PlayerSnapshot, StallBoardDTO, StallListingDTO, StallResult,
   MirrorRankEntryDTO, ReunionResult, RichSegment, SectChiefDTO, SectContestBoardDTO, SectContestResult, SectResult, SkillSlotType, SkillUpgradeResult, StoryAdventureResult, StoryChallengeResult, StorySnakeChoiceResult, TrialChallengeResult, TrialDropDTO, TrialPatrolStatusDTO, TrialReplayResult,
-  WsServerEvent, XiangyangAwardDTO, XiangyangBoardDTO, XiangyangGateDTO, XiangyangGateId, XiangyangResult,
+  RaidId, RaidMirrorBoardDTO, RoomPlayerDTO, WsServerEvent, XiangyangAwardDTO, XiangyangBoardDTO, XiangyangGateDTO, XiangyangGateId, XiangyangResult,
 } from '../../shared/protocol.ts'
 import { requireSession } from './auth.ts'
 import { serverTime, transaction } from './db.ts'
@@ -1471,6 +1471,11 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
     if (feastIngredient) changed = true
     const contestIngot = await claimSectContestIngots(client, character, now)
     const xiangyang = await claimXiangyangAwards(client, character, now)
+    const { defenseNotices } = character.player
+    if (defenseNotices?.length) {
+      delete character.player.defenseNotices
+      changed = true
+    }
     if (elapsed >= 3_600_000) {
       for (const quest of Object.values(REUNION_QUESTS)) {
         if (!reunionAvailable(character, quest)) continue
@@ -1486,6 +1491,7 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
       result: {
         ...gain, drops: character.patrolDrops, forgeMaterials: character.patrolForgeMaterials, patrolCache: character.patrolCache, reunionClues,
         ...(feastIngredient ? { feastIngredient } : {}), ...(contestIngot ? { contestIngot } : {}), ...(xiangyang.length ? { xiangyang } : {}),
+        ...(defenseNotices?.length ? { defenseNotices } : {}),
       },
       changed,
     }
@@ -2629,6 +2635,29 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
     return { result, changed: true, related: [partner] }
   }))
 
+  /** 停在本图却不在线、可以劫镖或追捕的侠客：押着镖车，或身负通缉。对他们出手由镜像应战（docs/21） */
+  app.get('/api/v1/map/absent', async (request): Promise<RoomPlayerDTO[]> => {
+    const { accountId } = await requireSession(request)
+    return transaction(async (client) => {
+      const { player } = await readCharacter(client, accountId)
+      const now = await serverTime(client)
+      const mapId = player.currentMapId
+      // ponytail: 单服内测每图最多列二十位，人多了再分页
+      const { rows } = await client.query<CharacterRow>(`
+        SELECT * FROM players WHERE id <> $1 AND profile->>'currentMapId' = $2 AND NOT (profile ? 'mapJourney') AND (
+          (profile->'escortDart'->>'mapId' = $2 AND (profile->'escortDart'->>'endsAt')::bigint > $3
+            AND NOT COALESCE((profile->'escortDart'->>'robbed')::boolean, false))
+          OR (profile->>'bountyUntil')::bigint > $3)
+        ORDER BY id LIMIT 20`, [player.id, mapId, now])
+      const absent = []
+      for (const row of rows) {
+        if (rooms.isOnlineInMap(row.id, mapId)) continue
+        absent.push({ ...rooms.publicPlayer(snapshot(await hydrateCharacter(client, row), now)), offline: true as const })
+      }
+      return absent
+    }, true)
+  })
+
   app.post('/api/v1/escort', (request) => respond(request, async (character, now) => {
     requireFeature(character.player, 'HUASHAN')
     const { action } = objectBody(request.body)
@@ -2656,17 +2685,17 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
     return transaction(async (client) => {
       const { player } = await readCharacter(client, accountId)
       const now = await serverTime(client)
-      const { rows } = await client.query<{ id: string; nickname: string; expiresAt: string; sectId: string | null }>(`
-        SELECT id, nickname, profile->>'bountyUntil' AS "expiresAt", profile->'betrayedSectIds'->>-1 AS "sectId"
+      const { rows } = await client.query<{ id: string; nickname: string; expiresAt: string; sectId: string | null; mapId: string }>(`
+        SELECT id, nickname, profile->>'bountyUntil' AS "expiresAt", profile->'betrayedSectIds'->>-1 AS "sectId", profile->>'currentMapId' AS "mapId"
         FROM players WHERE id <> $1 AND (profile->>'bountyUntil')::bigint > $2
         ORDER BY (profile->>'bountyUntil')::bigint, id`, [player.id, now])
-      return { entries: rows.map(({ id, nickname, expiresAt, sectId }) => {
+      return { entries: rows.map(({ id, nickname, expiresAt, sectId, mapId }) => {
         const expires = Number(expiresAt)
         const accepted = player.bountyAccepted?.targetId === id && player.bountyAccepted.expiresAt === expires
         const issuer = sectId ?? ''
         return {
           targetId: id, nickname, sectId: issuer, expiresAt: expires, accepted,
-          ...bountyReward(player, issuer), mapId: accepted ? rooms.onlineMap(id) ?? undefined : undefined,
+          ...bountyReward(player, issuer), ...(accepted ? { mapId, online: rooms.onlineMap(id) !== null } : {}),
         }
       }) }
     }, true)
@@ -2685,7 +2714,7 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
     const sectId = betrayedSectIds?.at(-1) ?? ''
     return {
       result: { targetId: id, nickname, sectId, expiresAt: bountyUntil, accepted: true,
-        ...bountyReward(player, sectId), mapId: rooms.onlineMap(id) ?? undefined },
+        ...bountyReward(player, sectId), mapId: target.player.currentMapId, online: rooms.onlineMap(id) !== null },
       changed,
     }
   }))
@@ -2742,8 +2771,11 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
           return { result: { invitation }, changed: false }
         }
         const mapId = player.currentMapId
-        if (mapId !== other.player.currentMapId || !rooms.isOnlineInMap(player.id, mapId) || !rooms.isOnlineInMap(otherId, mapId)) {
-          throw new GameError(409, 'DUEL_NOT_NEARBY', '两位侠客须在同一张地图并保持在线')
+        // 切磋要双方同图在线；劫镖、追捕只要同在一张地图，对方不在就由他的镜像应战（docs/21）
+        const present = rooms.isOnlineInMap(otherId, mapId)
+        if (isAmbush ? mapId !== other.player.currentMapId || !!player.mapJourney
+          : mapId !== other.player.currentMapId || !rooms.isOnlineInMap(player.id, mapId) || !present) {
+          throw new GameError(409, 'DUEL_NOT_NEARBY', isAmbush ? '要与对方在同一张地图' : '两位侠客须在同一张地图并保持在线')
         }
         if (action === 'invite') {
           const otherInvite = duelInvites.get(otherId)
@@ -2762,8 +2794,9 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
           throw new GameError(409, 'ESCORT_NOT_RAIDABLE', '只能在纷争区拦截正在押镖的侠客')
         }
         const report = simulatePlayerDuel({
-          battleId: randomUUID(), sceneTitle: pursuing ? '清理门户 · 追缉逆徒' : isAmbush ? '大漠纷争 · 劫镖' : '点到为止 · 切磋',
-          mode: isAmbush ? 'PVP_AMBUSH' : 'PVP_HUASHAN', lineup: [duelFighter(character), duelFighter(other)],
+          battleId: randomUUID(),
+          sceneTitle: `${pursuing ? '清理门户 · 追缉逆徒' : isAmbush ? '大漠纷争 · 劫镖' : '点到为止 · 切磋'}${present ? '' : ' · 镜像应战'}`,
+          mode: isAmbush ? 'PVP_AMBUSH' : 'PVP_HUASHAN', lineup: [duelFighter(character), present ? duelFighter(other) : mirrorFighter(defenseMirror(other))],
           environment: battleEnvironmentAt(mapId, new Date(now)), escort: action === 'ambush' ? true : undefined,
         })
         let changed = isAmbush && spendBattleMedicines(player, report, 'ALLY_MAIN')
@@ -2797,6 +2830,15 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
             { type: 'text', text: won ? ' 本次通缉已解除，赏金按战报到账。' : ' 通缉令仍有效，备好阵容可再追缉。' },
           ] })
         }
+        if (isAmbush && !present) {
+          // 对方不在线：记下战果，他收功时告知
+          const held = report.winner !== 'ALLY'
+          other.player.defenseNotices = [...other.player.defenseNotices ?? [], {
+            at: now, kind: pursuing ? 'BOUNTY' as const : 'ESCORT' as const, attacker: player.nickname, held,
+            ...(!pursuing && !held && report.rewards?.silver ? { silver: report.rewards.silver } : {}),
+          }].slice(-10)
+          otherChanged = true
+        }
         return { result: { invitation: isAmbush ? undefined : invitation, report }, changed, related: otherChanged ? [other] : [] }
       })
       const { invitation, report } = response.result
@@ -2813,30 +2855,100 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
     }
   })
 
+  // ==================== 结义镜像（docs/21） ====================
+  /** 结义镜像：打过副本或主动登记时按当下配装冻结，供同伴不在线的侠客借去同闯 */
+  async function saveRaidMirror(client: PoolClient, character: Character, now: number) {
+    await client.query(`INSERT INTO raid_mirrors (player_id, mirror, mirror_at) VALUES ($1, $2, $3)
+      ON CONFLICT (player_id) DO UPDATE SET mirror = EXCLUDED.mirror, mirror_at = EXCLUDED.mirror_at`, [character.player.id, defenseMirror(character), now])
+  }
+
+  async function borrowedMirrors(client: PoolClient, leaderId: string, ids: unknown) {
+    if (!Array.isArray(ids) || ids.length !== 2 || ids.some((id) => typeof id !== 'string' || !UUID.test(id))) {
+      throw new GameError(400, 'INVALID_RAID_MIRROR', '请挑两位侠客的结义镜像')
+    }
+    const picked = ids.map((id: string) => id.toLowerCase())
+    if (picked[0] === picked[1] || picked.includes(leaderId)) throw new GameError(400, 'INVALID_RAID_MIRROR', '请挑两位不同的侠客，不含自己')
+    const { rows } = await client.query<{ player_id: string; mirror: DefenseMirror }>(
+      'SELECT player_id, mirror FROM raid_mirrors WHERE player_id = ANY($1::uuid[])', [picked])
+    if (rows.length !== 2) throw new GameError(409, 'RAID_MIRROR_MISSING', '有一位侠客的结义镜像已不在，请重新挑选')
+    return picked.map((id) => rows.find((row) => row.player_id === id)!.mirror)
+  }
+
+  app.get('/api/v1/raid/mirrors', async (request): Promise<RaidMirrorBoardDTO> => {
+    const { accountId } = await requireSession(request)
+    return transaction(async (client) => {
+      const { player } = await readCharacter(client, accountId)
+      requireFeature(player, 'RAID')
+      const { rows: [mine] } = await client.query<{ mirror_at: string }>('SELECT mirror_at FROM raid_mirrors WHERE player_id = $1', [player.id])
+      // ponytail: 单服内测同门在前、等级相近在前取十二位，侠客多了再按战力分档
+      const { rows } = await client.query<{ player_id: string; nickname: string; mirror: DefenseMirror }>(`
+        SELECT m.player_id, p.nickname, m.mirror FROM raid_mirrors m JOIN players p ON p.id = m.player_id
+        WHERE m.player_id <> $1
+        ORDER BY ($2::text IS NOT NULL AND m.mirror->'identity'->>'sectId' = $2) DESC,
+          abs((m.mirror->'fighter'->'player'->>'level')::integer - $3), m.mirror_at DESC
+        LIMIT 12`, [player.id, player.currentSectId ?? null, player.level])
+      return {
+        mine: mine ? { mirrorAt: Number(mine.mirror_at) } : null,
+        candidates: rows.map(({ player_id: id, nickname, mirror }) => {
+          const { level, realmTier } = mirror.fighter.player
+          const { sectId, stance, weaponName, companions } = mirror.identity
+          return {
+            id, nickname, level, stance, weaponName, companions, sameSect: !!sectId && sectId === player.currentSectId,
+            realmName: REALMS.find((realm) => realm.tier === realmTier)?.name ?? REALMS[0].name,
+            sectName: SECTS.find((sect) => sect.id === sectId)?.name ?? '逍遥散人',
+          }
+        }),
+      }
+    }, true)
+  })
+
+  app.post('/api/v1/raid/mirror', (request) => respond<{ mirrorAt: number }>(request, async (character, now, client) => {
+    requireFeature(character.player, 'RAID')
+    await saveRaidMirror(client, character, now)
+    return { result: { mirrorAt: now }, changed: false }
+  }))
+
   app.post('/api/v1/raid/start', async (request) => {
-    const { teamId, revision } = objectBody(request.body)
+    const { teamId, revision, raidId: wanted, mirrorIds } = objectBody(request.body)
+    const borrowing = mirrorIds !== undefined
     let finish: (() => void) | undefined
     const reports = new Map<string, BattleReportDTO>()
     try {
       const { response, updates } = await writeAction<BattleReportDTO>(request, async (leader, now, client, readRelated) => {
-        const { raidId, playerIds: [, leftId, rightId] } = raid.lineup(leader.player.id, teamId, revision)
+        requireFeature(leader.player, 'RAID')
+        const fighter = (member: Character) => ({ player: member.player, loadout: activeLoadout(member), learnedSkills: member.learnedSkills, bonus: collectionBonus(member) })
+        let raidId: RaidId
+        let party: Character[]
+        let lineup: Parameters<typeof simulateCoopRaid>[2]
+        if (borrowing) {
+          // 独自带两位侠客的结义镜像：奖励只发给自己，不必与谁同图
+          if (typeof wanted !== 'string' || !Object.hasOwn(COOP_RAIDS, wanted)) throw new GameError(400, 'INVALID_RAID', '请选择有效的三人副本')
+          if (raid.inTeam(leader.player.id)) throw new GameError(409, 'RAID_IN_TEAM', '已在队伍里：先离开队伍，再借镜像同闯')
+          raidId = wanted as RaidId
+          const [first, second] = (await borrowedMirrors(client, leader.player.id, mirrorIds)).map(mirrorFighter)
+          party = [leader]
+          lineup = [fighter(leader), first, second]
+        } else {
+          const team = raid.lineup(leader.player.id, teamId, revision)
+          raidId = team.raidId
+          const [left, right] = await readRelated([team.playerIds[1], team.playerIds[2]])
+          for (const { player } of [left, right]) requireTargetFeature(player, 'RAID')
+          if ([left, right].some(({ player }) => player.currentMapId !== leader.player.currentMapId)) {
+            throw new GameError(409, 'RAID_NOT_NEARBY', '三位侠客要在同一处才能入阵')
+          }
+          finish = raid.reserve(leader.player.id, teamId, revision)
+          party = [leader, left, right]
+          lineup = [fighter(leader), fighter(left), fighter(right)]
+        }
         const config = COOP_RAIDS[raidId]
         const clears = config.clearField
-        requireFeature(leader.player, 'RAID')
-        const [left, right] = await readRelated([leftId, rightId])
-        const party = [leader, left, right] as const
-        for (const { player } of [left, right]) requireTargetFeature(player, 'RAID')
-        if (party.some(({ player }) => player.currentMapId !== leader.player.currentMapId)) {
-          throw new GameError(409, 'RAID_NOT_NEARBY', '三位侠客要在同一处才能入阵')
-        }
-        finish = raid.reserve(leader.player.id, teamId, revision)
-        const fighter = (member: Character) => ({ player: member.player, loadout: activeLoadout(member), learnedSkills: member.learnedSkills, bonus: collectionBonus(member) })
-        const battle = simulateCoopRaid(raidId, randomUUID(), [fighter(leader), fighter(left), fighter(right)], undefined,
-          battleEnvironmentAt(config.mapId, new Date(now)))
+        const battle = simulateCoopRaid(raidId, randomUUID(), lineup, undefined, battleEnvironmentAt(config.mapId, new Date(now)))
         const won = battle.winner === 'ALLY'
         const lootRecipients = new Set<string>()
         for (const member of party) {
           const { player } = member
+          // 打过副本即登记（或刷新）自己的结义镜像
+          await saveRaidMirror(client, member, now)
           const unit = battle.units.find((entry) => entry.id === player.id && entry.isPlayer)
           if (unit) {
             const gainedLoot = creditBattleEffectLoot(player, battle, unit.slot)
@@ -2862,11 +2974,12 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
         return {
           result: reports.get(leader.player.id)!,
           changed: won || lootRecipients.has(leader.player.id),
-          related: [left, right].filter(({ player }) => won || lootRecipients.has(player.id)),
+          related: party.slice(1).filter(({ player }) => won || lootRecipients.has(player.id)),
         }
       })
       for (const updated of updates) rooms.publish(updated)
-      for (const [playerId, report] of reports) rooms.sendToPlayer(playerId, { event: 'RAID_REPORT', data: report })
+      // 借镜像时只有自己，战报随回执返回
+      if (!borrowing) for (const [playerId, report] of reports) rooms.sendToPlayer(playerId, { event: 'RAID_REPORT', data: report })
       return response
     } finally {
       finish?.()

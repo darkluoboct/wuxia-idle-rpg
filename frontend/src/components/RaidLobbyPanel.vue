@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useGameStore } from '@/stores/gameStore'
 import { COOP_RAIDS } from '@/config/gameData'
 
@@ -11,6 +11,17 @@ const readyCount = computed(() => team.value?.members.filter((member) => member.
 const busy = computed(() => !store.roomConnected || store.raidLobbyBusy || store.onlineActionBusy || !!team.value?.starting)
 const raid = computed(() => COOP_RAIDS[store.selectedRaidId])
 const nextRelic = computed(() => raid.value.relics[store.selectedRaidClears])
+
+// 结义镜像：同伴不在线时，挑两位侠客的镜像同闯（docs/21）
+const picked = ref<string[]>([])
+const date = new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+function togglePick(id: string) {
+  picked.value = picked.value.includes(id) ? picked.value.filter((entry) => entry !== id) : [...picked.value, id].slice(-2)
+}
+watch(() => store.raidMirrors?.candidates, (candidates) => {
+  picked.value = picked.value.filter((id) => candidates?.some((entry) => entry.id === id))
+})
+void store.refreshRaidMirrors()
 </script>
 
 <template>
@@ -59,9 +70,45 @@ const nextRelic = computed(() => raid.value.relics[store.selectedRaidClears])
       </div>
     </template>
 
-    <div v-else class="space-y-2 border-t border-line pt-3">
-      <p class="hint">在右侧「附近」邀请两位同图侠客，或回应收到的组队邀请。</p>
-      <button class="btn btn-sm xl:hidden" @click="store.mobileDrawer = 'WORLD'">查看附近侠客</button>
-    </div>
+    <template v-else>
+      <div class="space-y-2 border-t border-line pt-3">
+        <p class="hint">在右侧「附近」邀请两位同图侠客，或回应收到的组队邀请。</p>
+        <button class="btn btn-sm xl:hidden" @click="store.mobileDrawer = 'WORLD'">查看附近侠客</button>
+      </div>
+
+      <section class="space-y-2 border-t border-line pt-3" aria-label="借镜像结义">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <h5 class="font-brush text-lg">借镜像结义</h5>
+          <button class="btn btn-sm" :disabled="busy" @click="store.registerRaidMirror()">
+            {{ store.raidMirrors?.mine ? '按当前配装更新我的镜像' : '登记我的结义镜像' }}
+          </button>
+        </div>
+        <p class="hint">
+          同伴不在线也能闯：挑两位侠客的结义镜像与你同行，奖励只发给你。镜像冻结登记时的境界与配装，不带丹药；打过副本会自动登记。
+          <template v-if="store.raidMirrors?.mine">你的镜像按 {{ date.format(store.raidMirrors.mine.mirrorAt) }} 的配装，别人也能借。</template>
+        </p>
+        <p v-if="store.raidMirrors && !store.raidMirrors.candidates.length" class="text-sm text-ink3">还没有别的侠客登记结义镜像。</p>
+        <ul v-else class="grid gap-2 sm:grid-cols-2" aria-label="可借的结义镜像">
+          <li v-for="mirror in store.raidMirrors?.candidates ?? []" :key="mirror.id">
+            <button
+              class="well flex w-full min-w-0 flex-col items-start gap-0.5 p-2.5 text-left" :class="picked.includes(mirror.id) ? '!border-gold' : ''"
+              :aria-pressed="picked.includes(mirror.id)" @click="togglePick(mirror.id)"
+            >
+              <span class="flex w-full items-center justify-between gap-2">
+                <b class="truncate text-sm">{{ mirror.nickname }}</b>
+                <span class="shrink-0 text-xs tabular-nums text-ink3">Lv.{{ mirror.level }}</span>
+              </span>
+              <span class="truncate text-xs text-ink2">{{ mirror.sectName }} · {{ mirror.realmName }}<template v-if="mirror.sameSect"> · 同门</template></span>
+              <span v-if="mirror.weaponName || mirror.companions.length" class="truncate text-xs text-ink3">
+                {{ [mirror.weaponName, ...mirror.companions].filter(Boolean).join('、') }}
+              </span>
+            </button>
+          </li>
+        </ul>
+        <button class="btn btn-seal" :disabled="busy || store.isBattlePlaying || picked.length !== 2" @click="store.startMirrorRaid(picked)">
+          与镜像同闯（已挑 {{ picked.length }} / 2）
+        </button>
+      </section>
+    </template>
   </article>
 </template>

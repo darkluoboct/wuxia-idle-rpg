@@ -7,7 +7,7 @@ import cookie from '@fastify/cookie'
 import websocket from '@fastify/websocket'
 import Fastify from 'fastify'
 import pg from 'pg'
-import { COMPANIONS, COOP_RAIDS, INN_GIFT_COST, ITEMS, SKILLS } from '../../shared/gameData.ts'
+import { COMPANIONS, COOP_RAIDS, INN_GIFT_COST, ITEMS, ONLINE_MAPS, SKILLS } from '../../shared/gameData.ts'
 import { GAIBANG_FINAL_DISHES, gaibangDishFlag } from '../../shared/gaibang.ts'
 import { DAILY_TASKS, INGOT } from '../../shared/economy.ts'
 import { DISHES, FEAST_TARGET_FLAG } from '../../shared/feast.ts'
@@ -19,7 +19,7 @@ import { AUCTION_BID_STEP, AUCTION_SOFT_CLOSE_MS, auctionDay, auctionDividendAt,
 import { computeDerivedStats } from '../../shared/battle.ts'
 import { huashanSeason } from '../../shared/huashan.ts'
 import { createStarterCharacter, innVisitDay, legacyAcupoints } from '../../shared/player.ts'
-import type { ArtifactBoardDTO, ArtifactResult, AuctionBoardDTO, AuctionResult, AwakenResult, BattleReportDTO, BountyBoardDTO, BountyEntryDTO, FeastResult, FtueClaimResult, GachaResult, GameAction, HuashanBoardDTO, HuashanResult, IdleGain, LibraryResult, LibraryStatusDTO, OriginId, PlayerSnapshot, RaidId, ReunionResult, SectContestBoardDTO, SectContestResult, SectResult, StallBoardDTO, StallResult, StoryAdventureResult, StoryChallengeResult, WsServerEvent, XiangyangBoardDTO, XiangyangResult } from '../../shared/protocol.ts'
+import type { ArtifactBoardDTO, ArtifactResult, AuctionBoardDTO, AuctionResult, AwakenResult, BattleReportDTO, BountyBoardDTO, BountyEntryDTO, FeastResult, FtueClaimResult, GachaResult, GameAction, HuashanBoardDTO, HuashanResult, IdleGain, LibraryResult, LibraryStatusDTO, OriginId, PlayerSnapshot, RaidId, RaidMirrorBoardDTO, ReunionResult, RoomPlayerDTO, SectContestBoardDTO, SectContestResult, SectResult, StallBoardDTO, StallResult, StoryAdventureResult, StoryChallengeResult, WsServerEvent, XiangyangBoardDTO, XiangyangResult } from '../../shared/protocol.ts'
 import { QUANZHEN_LIBRARY } from '../../shared/quanzhen.ts'
 import { BETRAYAL_BOUNTY, SECT_CHIEF_SALUTE_QI, SECT_SALUTE_QI, sectContestEndsAt, sectContestWeek } from '../../shared/sectProgress.ts'
 import { ONLINE_STORY_CHAPTERS, ONLINE_STORY_PROGRESS_VERSION } from '../../shared/storyData.ts'
@@ -528,21 +528,29 @@ describe('联机战斗', { skip: connection ? false : '请设置 GAME_TEST_DATAB
     assert.equal((await first.post('/duel', pursuit)).json().code, 'BOUNTY_NOT_ACCEPTED')
     assert.equal((await first.post('/bounties/accept', { ...ticket, expiresAt: expiresAt - 1 })).json().code, 'BOUNTY_UNAVAILABLE')
     const accept = await weak.act<BountyEntryDTO>('/bounties/accept', ticket)
-    assert.equal(accept.result.mapId, undefined)
-    assert.equal((await weak.post('/duel', pursuit)).json().code, 'DUEL_NOT_NEARBY')
+    assert.deepEqual([accept.result.mapId, accept.result.online], ['jiaxing_suburb', false])
+    // 目标不在线照样能追：打的是他的镜像，他收功时得知
+    const absent = (await weak.read<RoomPlayerDTO[]>('/map/absent')).filter(({ id }) => id === target.id)
+    assert.deepEqual(absent.map(({ isBetrayerBounty, offline }) => [isBetrayerBounty, offline]), [[true, true]])
+    const weakBefore = await weak.read()
+    const failure = await weak.act<BattleReportDTO>('/duel', pursuit)
+    assert.equal(failure.result.winner, 'ENEMY')
+    assert.match(failure.result.sceneTitle, /镜像应战$/)
+    assert.equal(failure.result.rewards, undefined)
+    assert.equal(failure.snapshot.player.silver, weakBefore.player.silver)
+    assert.equal((await target.read()).player.bountyUntil, expiresAt)
+    assert.deepEqual((await weak.read()).player.bountyAccepted, { targetId: target.id, expiresAt })
+    const told = await target.act<IdleGain>('/cultivate/settle')
+    assert.deepEqual(told.result.defenseNotices?.map(({ kind, attacker, held }) => [kind, attacker, held]), [['BOUNTY', weak.snapshot.player.nickname, true]])
+    assert.equal(told.snapshot.player.defenseNotices, undefined)
 
     const sockets = await Promise.all([target, first, second, weak].map((actor) => actor.connect()))
     try {
       const located = (await weak.read<BountyBoardDTO>('/bounties')).entries.find((entry) => entry.targetId === target.id)
       assert.equal(located?.mapId, 'jiaxing_suburb')
+      assert.equal(located?.online, true)
       assert.equal((await weak.post('/duel', { action: 'ambush', targetPlayerId: target.id })).json().code, 'BOUNTY_NOT_ACCEPTED')
-      const weakBefore = await weak.read()
-      const failure = await weak.act<BattleReportDTO>('/duel', pursuit)
-      assert.equal(failure.result.winner, 'ENEMY')
-      assert.equal(failure.result.rewards, undefined)
-      assert.equal(failure.snapshot.player.silver, weakBefore.player.silver)
-      assert.equal((await target.read()).player.bountyUntil, expiresAt)
-      assert.deepEqual((await weak.read()).player.bountyAccepted, { targetId: target.id, expiresAt })
+      assert.ok(!(await weak.read<RoomPlayerDTO[]>('/map/absent')).some(({ id }) => id === target.id))
 
       await Promise.all([first, second].map((hunter) => strength(hunter.id, 3500, 900, 40, 4, 180)))
       await Promise.all([first, second].map((hunter) => hunter.act('/bounties/accept', ticket)))
@@ -572,6 +580,58 @@ describe('联机战斗', { skip: connection ? false : '请设置 GAME_TEST_DATAB
         await closed
       }))
     }
+  })
+
+  it('劫镖不必镖主在线：同图即可，不在线由镜像应战，镖主收功时得知', async () => {
+    const owner = await createPlayer('cart_own')
+    const robber = await createPlayer('cart_rob')
+    const contested = ONLINE_MAPS.find((map) => map.safety === 'CONTESTED')!.id
+    await Promise.all([owner, robber].map(({ id }) => profile(id, { currentMapId: contested })))
+    await owner.act('/escort', { action: 'start' })
+    await strength(robber.id, 3500, 900, 40, 4, 180)
+    const listed = (await robber.read<RoomPlayerDTO[]>('/map/absent')).filter(({ id }) => id === owner.id)
+    assert.deepEqual(listed.map(({ isEscortingDart, offline }) => [isEscortingDart, offline]), [[true, true]])
+    const robbed = await robber.act<BattleReportDTO>('/duel', { action: 'ambush', targetPlayerId: owner.id })
+    assert.match(robbed.result.sceneTitle, /镜像应战$/)
+    assert.equal(robbed.result.winner, 'ALLY')
+    const silver = Math.floor(4800 * 0.3)
+    assert.equal(robbed.result.rewards?.silver, silver)
+    assert.ok(!(await robber.read<RoomPlayerDTO[]>('/map/absent')).some(({ id }) => id === owner.id))
+    assert.equal((await robber.post('/duel', { action: 'ambush', targetPlayerId: owner.id })).json().code, 'ESCORT_NOT_RAIDABLE')
+    const told = await owner.act<IdleGain>('/cultivate/settle')
+    assert.deepEqual(told.result.defenseNotices?.map(({ kind, attacker, held, silver: lost }) => [kind, attacker, held, lost]),
+      [['ESCORT', robber.snapshot.player.nickname, false, silver]])
+    assert.equal(told.snapshot.player.escortDart?.silver, 4800 - silver)
+    assert.equal((await owner.act<IdleGain>('/cultivate/settle')).result.defenseNotices, undefined)
+  })
+
+  it('结义镜像：登记后可被借去同闯三人副本，奖励只归借的人；挑人须是两位不同的他人', async () => {
+    const [lender, other, solo] = await Promise.all(['mir_a', 'mir_b', 'mir_solo'].map((name) => createPlayer(name)))
+    await lender.act('/raid/mirror')
+    await other.act('/raid/mirror')
+    const board = await solo.read<RaidMirrorBoardDTO>('/raid/mirrors')
+    assert.equal(board.mine, null)
+    const lent = board.candidates.find(({ id }) => id === lender.id)
+    assert.deepEqual([lent?.nickname, lent?.level, lent?.sameSect], [lender.snapshot.player.nickname, lender.snapshot.player.level, false])
+    assert.ok(board.candidates.some(({ id }) => id === other.id))
+    const start = (mirrorIds: string[], raidId = 'shaoshi') => solo.post('/raid/start', { raidId, mirrorIds })
+    assert.equal((await start([lender.id, lender.id])).json().code, 'INVALID_RAID_MIRROR')
+    assert.equal((await start([solo.id, lender.id])).json().code, 'INVALID_RAID_MIRROR')
+    assert.equal((await start([lender.id, randomUUID()])).json().code, 'RAID_MIRROR_MISSING')
+    assert.equal((await start([lender.id, other.id], 'nowhere')).json().code, 'INVALID_RAID')
+
+    const lenderBefore = await lender.read()
+    const fought = await solo.act<BattleReportDTO>('/raid/start', { raidId: 'shaoshi', mirrorIds: [lender.id, other.id] })
+    const allies = fought.result.units.filter(({ slot }) => slot.startsWith('ALLY')).map(({ name }) => name).sort()
+    assert.deepEqual(allies, [solo, lender, other].map(({ snapshot }) => snapshot.player.nickname).sort())
+    if (fought.result.winner === 'ALLY') {
+      assert.equal(fought.snapshot.shaoshiClears, 1)
+      assert.equal(fought.result.rewards?.ingot, INGOT.raidWeekly)
+    }
+    const lenderAfter = await lender.read()
+    assert.deepEqual([lenderAfter.player.qiExp, lenderAfter.player.silver, lenderAfter.shaoshiClears],
+      [lenderBefore.player.qiExp, lenderBefore.player.silver, lenderBefore.shaoshiClears])
+    assert.notEqual((await solo.read<RaidMirrorBoardDTO>('/raid/mirrors')).mine, null)
   })
 
   it('过期通缉不会显示或触发战斗，旧接令也无法追捕同一人新的通缉', async () => {

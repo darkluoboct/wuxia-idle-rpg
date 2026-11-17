@@ -7,7 +7,7 @@ import { gaibangAttributeBonus, gaibangSilverGain } from './gaibang.ts'
 import { huashanDay } from './huashan.ts'
 import { clampKarma, effectiveMartialStats, hasMartialFreedom, martialEffectiveness } from './martialSchools.ts'
 import { ORIGINS, originPerk } from './origins.ts'
-import { trialPartId } from './trialStages.ts'
+import { IDLE_CAP_MS, trialPartId } from './trialStages.ts'
 import { activeSectEquipmentSets } from './sectEquipment.ts'
 
 export function createStarterCharacter(identity: Pick<PlayerDTO, 'id' | 'nickname' | 'avatarId'>, now: number) {
@@ -564,7 +564,7 @@ export function coCultivationRate(soloQiPerHour: number) {
 export function idleQiNumerator(
   lastSettleAt: number, now: number, soloRate: number, pair: Pick<CoCultivationDTO, 'startsAt' | 'endsAt'> | null,
 ) {
-  const since = Math.max(lastSettleAt, now - 43_200_000)
+  const since = Math.max(lastSettleAt, now - IDLE_CAP_MS)
   const elapsed = Math.max(0, now - since)
   const together = pair ? Math.max(0, Math.min(now, pair.endsAt) - Math.max(since, pair.startsAt)) : 0
   return BigInt(elapsed - together) * BigInt(soloRate) + BigInt(together) * BigInt(coCultivationRate(soloRate))
