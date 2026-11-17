@@ -4,7 +4,8 @@ import { innVisitDay } from './player.ts'
 
 /**
  * 子时鬼市压轴暗拍（08 册 §二、09 册 §六、11 册 §2.5）：全服每天竞拍同一件拍品。
- * 子时（23:00）开拍，次日 21:00 落槌；领先者的元宝先冻结，被超过时原数退还。
+ * 子时（23:00）开拍，次日 21:00 落槌。出价填心理价，元宝按心理价冻结，有人来压由鬼市替你逐口跟价，不必守在落槌前；
+ * 被超过时原数退还，落槌按成交价结算、多冻的退还。
  */
 export const AUCTION_BID_STEP = 50
 /** 落槌前 5 分钟内有人出价，落槌顺延 5 分钟 */
@@ -57,12 +58,63 @@ export function nextAuctionBid(lot: { price: number; bids: number }) {
   return lot.bids ? lot.price + AUCTION_BID_STEP : lot.price
 }
 
+/** 一场暗拍的竞价状态：当前价、出价次数、领先者与他的心理价 */
+export interface AuctionBidState {
+  price: number
+  bids: number
+  leader: string | null
+  leaderMax: number
+}
+
+export interface AuctionBidEntry {
+  bidder: string
+  amount: number
+  /** 鬼市按心理价替他跟的一口 */
+  proxy: boolean
+}
+
+/**
+ * 代出价：出价时填心理价，按心理价全数冻结。有人来压，鬼市按每口 AUCTION_BID_STEP 替领先者跟到心理价为止：
+ * 当前价 = 次高心理价再加一口，不超过最高心理价；心理价相同先到者领先。领先者可以加码心理价，当前价不变。
+ * charge 是出价人这回要冻结的元宝；refund 是被压过的前一位领先者原数退还的元宝。
+ */
+export function placeAuctionBid(lot: AuctionBidState, bidder: string, maxPrice: number):
+  | { error: string }
+  | { lot: AuctionBidState; charge: number; refund?: { to: string; ingot: number }; entries: AuctionBidEntry[] } {
+  if (!Number.isInteger(maxPrice)) return { error: '心理价要填整数元宝' }
+  if (lot.leader === bidder) {
+    const least = lot.leaderMax + AUCTION_BID_STEP
+    if (maxPrice < least) return { error: `加码至少要到 ${least} 元宝` }
+    return { lot: { ...lot, leaderMax: maxPrice }, charge: maxPrice - lot.leaderMax, entries: [] }
+  }
+  const least = nextAuctionBid(lot)
+  if (maxPrice < least) return { error: `心理价至少 ${least} 元宝` }
+  if (!lot.leader) {
+    return { lot: { price: least, bids: lot.bids + 1, leader: bidder, leaderMax: maxPrice }, charge: maxPrice, entries: [{ bidder, amount: least, proxy: false }] }
+  }
+  if (maxPrice > lot.leaderMax) {
+    const price = Math.min(maxPrice, lot.leaderMax + AUCTION_BID_STEP)
+    const entries = [...lot.leaderMax > lot.price ? [{ bidder: lot.leader, amount: lot.leaderMax, proxy: true }] : [], { bidder, amount: price, proxy: false }]
+    return {
+      lot: { price, bids: lot.bids + entries.length, leader: bidder, leaderMax: maxPrice },
+      charge: maxPrice, refund: { to: lot.leader, ingot: lot.leaderMax }, entries,
+    }
+  }
+  // 没压过：领先者的心理价替他跟上一口
+  const price = Math.min(lot.leaderMax, maxPrice + AUCTION_BID_STEP)
+  return {
+    lot: { ...lot, price, bids: lot.bids + 2 }, charge: 0,
+    entries: [{ bidder, amount: maxPrice, proxy: false }, { bidder: lot.leader, amount: price, proxy: true }],
+  }
+}
+
 export function softCloseAt(closesAt: number, now: number) {
   return closesAt - now < AUCTION_SOFT_CLOSE_MS ? now + AUCTION_SOFT_CLOSE_MS : closesAt
 }
 
 /**
- * 落槌红封（09 册 §六）：成交价三成分给当日 21:00 前领过每日江湖事的侠客，其余七成回收。
+ * 落槌红封（09 册 §六）：成交价三成分给当日领过每日江湖事的侠客，其余七成回收。
+ * 当日什么时辰领都算，所以等鬼市日过完（子时）才数人头开签。
  * 人头平分，每人至多 30 元宝；人多到每份不足 10 元宝时改为抽签，中签者每人至少 10。
  */
 export const AUCTION_DIVIDEND = { percent: 30, minShare: 10, maxShare: 30 } as const
@@ -73,10 +125,8 @@ export function auctionDividend(price: number, eligible: number) {
   return { pool, winners, share: winners ? Math.min(AUCTION_DIVIDEND.maxShare, Math.floor(pool / winners)) : 0 }
 }
 
-/** 领每日江湖事时是否还赶得上当晚的红封：以 21:00 为准，不随顺延变化，落槌后人数即定 */
-export function earnsAuctionTicket(day: number, now: number) {
-  return now < auctionWindow(day).closesAt
-}
+/** 红封开签：这一鬼市日过完的子时（落槌顺延过了子时就等落槌） */
+export const auctionDividendAt = (day: number) => auctionWindow(day + 1).opensAt
 
 export interface AuctionTicketLot {
   price: number
@@ -89,7 +139,7 @@ export interface AuctionTicketLot {
 }
 
 /**
- * 兑付到期的红封签：流拍的作废，仍在顺延的留到落槌后。返回本次兑付的场次与到手元宝（未中签为 0）。
+ * 兑付到期的红封签：子时开签，流拍的作废，仍在顺延的留到落槌后。返回本次兑付的场次与到手元宝（未中签为 0）。
  * 元宝直接记到 player 上，调用方负责写流水。
  */
 export function settleAuctionTickets(
@@ -99,7 +149,7 @@ export function settleAuctionTickets(
   const settled: { day: number; ingot: number }[] = []
   const keep: number[] = []
   for (const day of player.auctionTickets ?? []) {
-    const due = now >= auctionWindow(day).closesAt
+    const due = now >= auctionDividendAt(day)
     const lot = due ? lotOf(day) : undefined
     if (!due || (lot && now < lot.closesAt)) {
       keep.push(day)

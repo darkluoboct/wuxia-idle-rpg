@@ -2,7 +2,6 @@ import type { CompanionState, PlayerDTO } from './protocol.ts'
 import { COMPANION_SETS, SECTS } from './gameData.ts'
 import { featureUnlocked, type FeatureState } from './features.ts'
 import { ftueVolumeDone } from './ftueQuests.ts'
-import { earnsAuctionTicket } from './ghostAuction.ts'
 import { innVisitDay } from './player.ts'
 import { STORY_CHAPTERS } from './storyData.ts'
 import { STORY_SNAKE_ADVENTURE } from './storySnake.ts'
@@ -29,7 +28,7 @@ export const INGOT = {
   raidWeekly: 50,
   sectContestJoin: 50,
   sectContestChief: 200,
-  xiangyang: 20,
+  xiangyang: 40,
 } as const
 
 const lastIdOfChapter = <T extends { id: number; chapter: number }>(nodes: readonly T[]) =>
@@ -124,8 +123,8 @@ export function claimDailyIngot(player: Pick<PlayerDTO, 'daily' | 'goldIngot' | 
   if (DAILY_TASKS.some(({ id }) => !state.done.includes(id))) return { error: '今日的江湖事还没做完' }
   player.daily = { ...state, claimed: true }
   player.goldIngot += INGOT.daily
-  // 21:00 前领赏，顺带拿到当晚鬼市暗拍的红封签（鬼市开放之后才有）
-  const ticket = earnsAuctionTicket(state.day, now) && featureUnlocked(player, 'GHOST')
+  // 顺带拿到当日鬼市暗拍的红封签，什么时辰领都算（鬼市开放之后才有）
+  const ticket = featureUnlocked(player, 'GHOST')
   if (ticket) player.auctionTickets = [...(player.auctionTickets ?? []).filter((day) => day !== state.day), state.day]
   return { ingot: INGOT.daily, ticket }
 }

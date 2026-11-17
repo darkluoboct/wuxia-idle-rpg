@@ -9,13 +9,18 @@ import { useGameUiStore } from './gameUiStore'
 import type { useCompanions } from './companions'
 import { type MainTab, type ToastTone } from './gameUiStore'
 
-export function useCultivation({ actions, selectTab, logTrialDrop, logForgeMaterials, logPatrolCache, mockSettlePatrol, companions }: {
+export function useCultivation({
+  actions, selectTab, logTrialDrop, logForgeMaterials, logPatrolCache, mockSettlePatrol, announceXiangyangAward, claimLocalXiangyang, companions,
+}: {
   actions: GameActions
   selectTab: (tab: MainTab) => void
   logTrialDrop: (drop: TrialDropDTO) => void
   logForgeMaterials: (count: number) => void
   logPatrolCache: (reward: NonNullable<IdleGain['patrolCache']>) => void
   mockSettlePatrol: (now?: number) => void
+  /** 收功顺带领到的襄阳封赏 */
+  announceXiangyangAward: (award: NonNullable<IdleGain['xiangyang']>[number]) => void
+  claimLocalXiangyang: (now: number) => void
   companions: Pick<ReturnType<typeof useCompanions>, 'onOfflineSettled' | 'logFeastIngredient'>
 }) {
   const playerStore = usePlayerStore()
@@ -74,10 +79,12 @@ export function useCultivation({ actions, selectTab, logTrialDrop, logForgeMater
       if (result.contestIngot) {
         appendLog('JIANGHU', [{ type: 'tag', text: '门派演武', tone: 'gold' }, { type: 'text', text: ` 上周演武论功，领得 ${result.contestIngot} 元宝。` }])
       }
+      for (const award of result.xiangyang ?? []) announceXiangyangAward(award)
     }, () => {
       const now = Date.now()
       settleMockIdle(now, true)
       mockSettlePatrol(now)
+      claimLocalXiangyang(now)
       markDaily('settle')
     })
   }

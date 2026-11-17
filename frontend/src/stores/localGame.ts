@@ -35,7 +35,7 @@ export function useLocalGame({ battle, companions, world, market, artifacts, sta
   market: Pick<ReturnType<typeof useMarket>, 'localAuctions'>
   artifacts: Pick<ReturnType<typeof useArtifacts>, 'localArtifact' | 'onLocalReturn' | 'resetLocalArtifact'>
   stalls: Pick<ReturnType<typeof useStalls>, 'localStalls' | 'stallBoard'>
-  xiangyang: Pick<ReturnType<typeof useXiangyang>, 'localXiangyang' | 'xiangyangBoard'>
+  xiangyang: Pick<ReturnType<typeof useXiangyang>, 'localXiangyang' | 'localXiangyangPost' | 'xiangyangBoard'>
 }) {
   const playerStore = usePlayerStore()
   const {
@@ -73,7 +73,7 @@ export function useLocalGame({ battle, companions, world, market, artifacts, sta
   const { localAuctions } = market
   const { localArtifact, onLocalReturn, resetLocalArtifact } = artifacts
   const { localStalls, stallBoard } = stalls
-  const { localXiangyang, xiangyangBoard } = xiangyang
+  const { localXiangyang, localXiangyangPost, xiangyangBoard } = xiangyang
 
   // 角色列表保留本次会话中各角色的进度，浏览器存档继续保存最近游玩的角色。
   type LocalCharacter = { player: PlayerDTO; progress?: SaveData }
@@ -158,6 +158,7 @@ export function useLocalGame({ battle, companions, world, market, artifacts, sta
       artifact: localArtifact.value,
       stalls: localStalls.value,
       xiangyang: localXiangyang.value,
+      xiangyangPost: localXiangyangPost.value,
       mapArrivedAt: mapArrivedAt.value,
       logs: logs.value.slice(0, 30),
     }
@@ -239,7 +240,9 @@ export function useLocalGame({ battle, companions, world, market, artifacts, sta
     localAuctions.value = data.ghostAuctions ?? {}
     localStalls.value = data.stalls ?? []
     stallBoard.value = null
-    localXiangyang.value = data.xiangyang ?? {}
+    // 襄阳改为每周一场之前的出战记录（没有军令）按场次对不上，丢掉
+    localXiangyang.value = Object.fromEntries(Object.entries(data.xiangyang ?? {}).filter(([, entry]) => 'orders' in entry))
+    localXiangyangPost.value = data.xiangyangPost ?? null
     xiangyangBoard.value = null
     resetLocalArtifact()
     if (data.artifact) localArtifact.value = data.artifact
@@ -353,6 +356,7 @@ export function useLocalGame({ battle, companions, world, market, artifacts, sta
       localAuctions.value = {}
       localStalls.value = []
       localXiangyang.value = {}
+      localXiangyangPost.value = null
       xiangyangBoard.value = null
       stallBoard.value = null
       resetLocalArtifact()

@@ -4,52 +4,54 @@ import { useGameStore } from '@/stores/gameStore'
 import { SKILLS } from '@/config/gameData'
 import { STANCE_META } from '@/config/uiMeta'
 import type { XiangyangGateId } from '@/network/protocol'
-import { XIANGYANG_GATE_BY_ID, XIANGYANG_GATES, XIANGYANG_ORDERS, XIANGYANG_WAVES, xiangyangRewardText } from '../../../shared/xiangyang.ts'
+import {
+  XIANGYANG_DRUM_BONUS, XIANGYANG_GATE_BY_ID, XIANGYANG_GATES, XIANGYANG_ORDER_CAP, XIANGYANG_ORDER_MS, XIANGYANG_WAVES, xiangyangRewardText,
+} from '../../../shared/xiangyang.ts'
 
-/** 襄阳守卫战（docs/20）：三门战况、出战与演练、城头战报、战后领赏 */
+/** 襄阳守卫战（docs/20）：本周战况、军令与值守、出战与演练、城头战报、收兵后领赏 */
 const store = useGameStore()
 const board = computed(() => store.xiangyangBoard)
 const now = ref(Date.now())
+const drillGate = ref<XiangyangGateId>('EAST')
 const drillWave = ref(1)
 const busy = computed(() => store.isBattlePlaying || store.onlineActionBusy)
 const time = new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', month: 'numeric', day: 'numeric', weekday: 'short', hour: '2-digit', minute: '2-digit' })
 const clock = new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit' })
 const gateName = (id: XiangyangGateId) => XIANGYANG_GATE_BY_ID[id].name.split(' · ')[0]
+const drumPercent = XIANGYANG_DRUM_BONUS * 100
+const orderHours = XIANGYANG_ORDER_MS / 3_600_000
 
-const war = computed(() => board.value?.war)
-const self = computed(() => board.value?.self)
-const ordersLeft = computed(() => XIANGYANG_ORDERS - (self.value?.sorties ?? 0))
-/** 倒计时：开战中显示剩余，未开战显示距离开战 */
-const countdown = computed(() => {
-  if (!war.value) return ''
-  const ms = Math.max(0, (war.value.active ? war.value.closesAt : war.value.opensAt) - now.value)
-  const minutes = Math.floor(ms / 60_000)
+function span(until: number) {
+  const minutes = Math.floor(Math.max(0, until - now.value) / 60_000)
   if (minutes >= 24 * 60) return `${Math.floor(minutes / 1440)} 天 ${Math.floor(minutes % 1440 / 60)} 小时`
   if (minutes >= 60) return `${Math.floor(minutes / 60)} 小时 ${minutes % 60} 分`
-  return `${minutes} 分 ${Math.floor(ms % 60_000 / 1000)} 秒`
-})
+  return `${minutes} 分`
+}
+
+const war = computed(() => board.value?.war)
+const drum = computed(() => board.value?.drum)
+const self = computed(() => board.value?.self)
+const orders = computed(() => board.value?.orders)
+const post = computed(() => board.value?.post)
 
 function sortieBlock(id: XiangyangGateId) {
-  if (!war.value?.active) return '未开战'
   if (self.value && self.value.gate !== id) return `本场守${gateName(self.value.gate)}`
-  if (ordersLeft.value <= 0) return '军令已用完'
+  if (!orders.value?.count) return '军令未到'
 }
 const outerSkill = computed(() => SKILLS[store.currentLoadout.outerSkillId ?? '']?.name)
 
-// 开战中每 15 秒、平日每分钟刷新一次战况；开战或收兵那一刻也刷新
-let poll: ReturnType<typeof setInterval> | undefined
+// 每半分钟刷新一次战况；擂鼓起落、军令送到、值守出战的时刻也刷新
+const poll = setInterval(() => void store.refreshXiangyang(), 30_000)
 const tick = setInterval(() => { now.value = Date.now() }, 1000)
-watch(() => war.value?.active, (active) => {
-  if (poll) clearInterval(poll)
-  poll = setInterval(() => void store.refreshXiangyang(), active ? 15_000 : 60_000)
-}, { immediate: true })
-watch(() => war.value && now.value >= (war.value.active ? war.value.closesAt : war.value.opensAt), (flipped) => {
+const nextFlip = computed(() => Math.min(...[drum.value?.active ? drum.value.closesAt : drum.value?.opensAt, orders.value?.nextAt, post.value?.nextAutoAt, war.value?.closesAt]
+  .filter((at): at is number => typeof at === 'number')))
+watch(() => now.value >= nextFlip.value, (flipped) => {
   if (flipped) void store.refreshXiangyang()
 })
 void store.refreshXiangyang()
 onScopeDispose(() => {
   clearInterval(tick)
-  if (poll) clearInterval(poll)
+  clearInterval(poll)
 })
 </script>
 
@@ -57,24 +59,40 @@ onScopeDispose(() => {
   <section class="view-scroll -mr-1 space-y-3 pr-1" aria-label="襄阳守卫战">
     <p v-if="store.xiangyangError" class="well p-3 text-sm text-cinnabar" role="alert">{{ store.xiangyangError }}</p>
 
-    <header v-if="war" class="well flex flex-wrap items-center justify-between gap-3 p-3">
-      <div class="space-y-1">
-        <div class="flex items-center gap-2">
-          <h3 class="font-brush text-2xl leading-none">襄阳守卫战</h3>
-          <span class="chip" :class="war.active ? 'chip-red' : 'chip-gold'">{{ war.active ? '鏖战中' : '城头未擂鼓' }}</span>
-        </div>
-        <p class="hint">
-          <template v-if="war.active">{{ clock.format(war.closesAt) }} 收兵，还剩 <b class="tabular-nums text-ink">{{ countdown }}</b></template>
-          <template v-else>下一场 {{ time.format(war.opensAt) }} 开战（北京时间），还有 <b class="tabular-nums text-ink">{{ countdown }}</b></template>
-        </p>
+    <header v-if="war && drum && orders" class="well space-y-1 p-3">
+      <div class="flex items-center gap-2">
+        <h3 class="font-brush text-2xl leading-none">襄阳守卫战</h3>
+        <span class="chip" :class="drum.active ? 'chip-red' : 'chip-gold'">{{ drum.active ? '城头擂鼓' : '鏖战中' }}</span>
       </div>
-      <div class="text-right text-sm">
-        <p v-if="self">本场守<b class="text-gold">{{ gateName(self.gate) }}</b> · 战功 <b class="tabular-nums">{{ self.merit }}</b></p>
-        <p class="hint">军令 <b class="tabular-nums text-ink">{{ ordersLeft }}</b> / {{ XIANGYANG_ORDERS }} · 每周三、周日 20:00 起半个时辰</p>
-      </div>
+      <p class="hint">本周之围 {{ time.format(war.closesAt) }} 收兵，还剩 <b class="tabular-nums text-ink">{{ span(war.closesAt) }}</b></p>
+      <p class="hint">
+        <template v-if="drum.active">正在擂鼓：亲自出战战功加 {{ drumPercent }}%，还剩 <b class="tabular-nums text-ink">{{ span(drum.closesAt) }}</b></template>
+        <template v-else>下次擂鼓 {{ time.format(drum.opensAt) }}，一个时辰内亲自出战战功加 {{ drumPercent }}%</template>
+      </p>
+      <p class="text-sm">
+        军令 <b class="tabular-nums" :class="orders.count ? 'text-gold' : ''">{{ orders.count }}</b> / {{ XIANGYANG_ORDER_CAP }}
+        <span class="text-ink3">· {{ orders.nextAt ? `下一道 ${clock.format(orders.nextAt)}` : '已攒满' }}</span>
+        <template v-if="self">
+          <span class="text-ink3"> ｜ </span>本场守<b class="text-gold">{{ gateName(self.gate) }}</b> · 出战 <b class="tabular-nums">{{ self.sorties }}</b> 次<template v-if="self.autoSorties">（值守 {{ self.autoSorties }}）</template>
+          · 战功 <b class="tabular-nums">{{ self.merit }}</b>
+        </template>
+      </p>
     </header>
 
-    <!-- 战后领赏 -->
+    <!-- 值守 -->
+    <article v-if="board" class="well flex flex-wrap items-center justify-between gap-3 p-3" aria-label="值守">
+      <div class="min-w-0 space-y-1 text-sm">
+        <template v-if="post">
+          <p>值守<b class="text-gold">{{ gateName(post.gate) }}</b><span v-if="self && self.gate !== post.gate" class="hint">（本场仍守{{ gateName(self.gate) }}，下一场起改守）</span></p>
+          <p class="hint">镜像按 {{ time.format(post.mirrorAt) }} 的配装 · 下一次替你出战 {{ time.format(post.nextAutoAt) }}</p>
+        </template>
+        <p v-else>还没值守：在下面选一门「值守此门」，下线时由你的镜像替你出战。</p>
+        <p class="hint">军令每 {{ orderHours }} 小时回一道、最多攒 {{ XIANGYANG_ORDER_CAP }} 道。攒满还没用时，每回一道就由镜像替你出战一次；收兵时把余下的打完。挂机不吃亏，在线可以自己挑时机、换配装出战。</p>
+      </div>
+      <button v-if="post" class="btn btn-sm shrink-0" :disabled="busy" @click="store.xiangyangAction({ action: 'post', gate: post.gate })">按当前配装更新镜像</button>
+    </article>
+
+    <!-- 收兵后领赏（收功时也会顺带领） -->
     <article v-for="award in board?.awards ?? []" :key="award.warId" class="well space-y-2 p-3 !border-gold">
       <div class="flex flex-wrap items-center justify-between gap-2">
         <h4 class="font-brush text-xl">襄阳论功 · {{ gateName(award.gate) }}</h4>
@@ -88,10 +106,10 @@ onScopeDispose(() => {
     </article>
 
     <!-- 三门 -->
-    <div v-if="board" class="grid gap-3 lg:grid-cols-3">
+    <div v-if="board && war" class="grid gap-3 lg:grid-cols-3">
       <article
         v-for="gate in board.gates" :key="gate.id" class="well flex flex-col gap-2 p-3"
-        :class="self?.gate === gate.id ? '!border-gold' : ''"
+        :class="(self?.gate ?? post?.gate) === gate.id ? '!border-gold' : ''"
       >
         <div class="flex items-start justify-between gap-2">
           <div>
@@ -113,40 +131,46 @@ onScopeDispose(() => {
           </div>
           <p class="text-right text-[0.7rem] tabular-nums text-ink3">本波 {{ gate.progress }} / {{ gate.need }}</p>
         </div>
-        <div class="mt-auto">
+        <div class="mt-auto flex gap-2">
           <button
-            v-if="war?.active" class="btn btn-sm w-full" :class="sortieBlock(gate.id) ? '' : 'btn-seal'" :disabled="busy || !!sortieBlock(gate.id)"
+            class="btn btn-sm flex-1" :class="sortieBlock(gate.id) ? '' : 'btn-seal'" :disabled="busy || !!sortieBlock(gate.id)"
             @click="store.xiangyangAction({ action: 'sortie', warId: war.id, gate: gate.id })"
           >
-            {{ sortieBlock(gate.id) ?? (self ? '再出战' : '守此门') }}
+            {{ sortieBlock(gate.id) ?? (drum?.active ? '擂鼓出战' : '出战') }}
           </button>
-          <button v-else class="btn btn-sm w-full" :disabled="busy" @click="store.xiangyangAction({ action: 'drill', gate: gate.id, wave: drillWave })">
-            演练第 {{ drillWave }} 波
-          </button>
+          <span v-if="post?.gate === gate.id" class="chip chip-gold shrink-0 self-center">值守中</span>
+          <button v-else class="btn btn-sm shrink-0" :disabled="busy" @click="store.xiangyangAction({ action: 'post', gate: gate.id })">值守此门</button>
         </div>
       </article>
     </div>
 
-    <div v-if="board && !war?.active" class="well flex flex-wrap items-center gap-3 p-3 text-sm">
-      <label class="flex items-center gap-2">演练波次
-        <select v-model.number="drillWave" class="field">
+    <div v-if="board" class="well flex flex-wrap items-center gap-3 p-3 text-sm">
+      <label class="flex items-center gap-2">演练
+        <select v-model="drillGate" class="field" aria-label="演练城门">
+          <option v-for="gate in XIANGYANG_GATES" :key="gate.id" :value="gate.id">{{ gateName(gate.id) }}</option>
+        </select>
+        <select v-model.number="drillWave" class="field" aria-label="演练波次">
           <option v-for="wave in XIANGYANG_WAVES" :key="wave" :value="wave">第 {{ wave }} 波</option>
         </select>
       </label>
-      <span class="hint">平日可上城演练，敌军与开战时相同，不耗军令、不记战功。</span>
+      <button class="btn btn-sm" :disabled="busy" @click="store.xiangyangAction({ action: 'drill', gate: drillGate, wave: drillWave })">上城演练</button>
+      <span class="hint">敌军与实战相同，不耗军令、不记战功。</span>
     </div>
 
     <p v-if="board" class="hint">
-      第一次出战时选定城门，本场不能换。战功按打掉的敌军气血折算（首领三份、兵卒各一份，打赢再加 5）；全门战功攒够一波所需就击退一波，所需随守军人数增加。
-      敌军强弱随你的等级。战后凭战功领元宝、百炼玄铁与淬火石，残页落在出战时装着的外功上<template v-if="outerSkill">（现在是《{{ outerSkill }}》）</template>。
+      第一次出战（或值守出战）时定下本场的城门，本场不能换；改值守从下一场起算。战功按打掉的敌军气血折算（首领三份、兵卒各一份，打赢再加 5）；全门战功攒够一波所需就击退一波，所需随守军人数增加。
+      敌军强弱随出战者的等级。收兵后凭战功领元宝、百炼玄铁与淬火石，残页落在最近一次出战时装着的外功上<template v-if="outerSkill">（现在是《{{ outerSkill }}》）</template>；收功时也会顺带领。
     </p>
 
     <section v-if="board?.feed.length" class="well space-y-1 p-3" aria-label="城头战报">
       <h4 class="font-brush text-lg">城头战报</h4>
       <ul class="space-y-1 text-xs">
-        <li v-for="entry in board.feed" :key="`${entry.at}-${entry.nickname}-${entry.gate}`" class="flex flex-wrap gap-x-2">
-          <span class="tabular-nums text-ink3">{{ clock.format(entry.at) }}</span>
-          <span>【{{ gateName(entry.gate) }}】<b>{{ entry.nickname }}</b> 战第 {{ entry.wave }} 波，战功 +{{ entry.merit }}</span>
+        <li v-for="entry in board.feed" :key="`${entry.at}-${entry.nickname}-${entry.gate}-${entry.merit}`" class="flex flex-wrap gap-x-2">
+          <span class="tabular-nums text-ink3">{{ time.format(entry.at) }}</span>
+          <span>
+            【{{ gateName(entry.gate) }}】<b>{{ entry.nickname }}</b><span v-if="entry.auto" class="text-ink3">（值守）</span>
+            战第 {{ entry.wave }} 波，战功 +{{ entry.merit }}<span v-if="entry.drum" class="text-cinnabar">（擂鼓）</span>
+          </span>
           <span v-if="entry.repelled" class="text-gold">击退第 {{ entry.repelled }} 波！</span>
         </li>
       </ul>

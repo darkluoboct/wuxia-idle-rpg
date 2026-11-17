@@ -15,7 +15,7 @@ import { FTUE_QUESTS } from '../../shared/ftueQuests.ts'
 import { GACHA_DUP_TOKENS, GACHA_HARD_PITY, GACHA_SINGLE_COST, REUNION_TICKET_COST } from '../../shared/gacha.ts'
 import { STALL, stallGoods } from '../../shared/stalls.ts'
 import { arenaDay, arenaWindow, DAGOU_ELDER, DAGOU_STAFF, isArenaDay, nextArenaDay } from '../../shared/artifacts.ts'
-import { AUCTION_BID_STEP, AUCTION_SOFT_CLOSE_MS, auctionDay, auctionLot, auctionWindow } from '../../shared/ghostAuction.ts'
+import { AUCTION_BID_STEP, AUCTION_SOFT_CLOSE_MS, auctionDay, auctionDividendAt, auctionLot, auctionWindow } from '../../shared/ghostAuction.ts'
 import { computeDerivedStats } from '../../shared/battle.ts'
 import { huashanSeason } from '../../shared/huashan.ts'
 import { createStarterCharacter, innVisitDay, legacyAcupoints } from '../../shared/player.ts'
@@ -23,7 +23,7 @@ import type { ArtifactBoardDTO, ArtifactResult, AuctionBoardDTO, AuctionResult, 
 import { QUANZHEN_LIBRARY } from '../../shared/quanzhen.ts'
 import { BETRAYAL_BOUNTY, SECT_CHIEF_SALUTE_QI, SECT_SALUTE_QI, sectContestEndsAt, sectContestWeek } from '../../shared/sectProgress.ts'
 import { ONLINE_STORY_CHAPTERS, ONLINE_STORY_PROGRESS_VERSION } from '../../shared/storyData.ts'
-import { XIANGYANG_ORDERS, xiangyangWar, xiangyangWarOf } from '../../shared/xiangyang.ts'
+import { xiangyangWar, xiangyangWarOf } from '../../shared/xiangyang.ts'
 import { GameError } from '../src/http.ts'
 
 const connection = process.env.GAME_TEST_DATABASE_URL ?? process.env.STORY_TEST_DATABASE_URL
@@ -953,58 +953,89 @@ describe('联机战斗', { skip: connection ? false : '请设置 GAME_TEST_DATAB
     assert.equal(awakened.snapshot.companionAffinity.songyanzi.tokens, 0)
   })
 
-  it('襄阳守卫战：开战才能出战，一场只守一门、五道军令；战功推动波次，收兵后领一次赏', async () => {
+  it('襄阳守卫战：随时出战、一场一门、军令可攒；值守镜像按时刻先后代打，收兵时打完余下的；收功顺带领赏', async () => {
     const war = xiangyangWarOf(xiangyangWar(Date.now()).id + 1)
+    const at = (hours: number) => war.opensAt + hours * 3_600_000
     const guard = await createPlayer('xy_guard')
     const ally = await createPlayer('xy_ally')
     const sortie = (who: typeof guard, gate: string, warId = war.id) => who.post('/xiangyang', { action: 'sortie', warId, gate })
+    const board = (who: typeof guard) => who.read<XiangyangBoardDTO>('/xiangyang')
     try {
-      fixedServerTime = war.opensAt - 3_600_000
-      assert.equal((await sortie(guard, 'EAST')).json().code, 'XIANGYANG_CLOSED')
+      // 周三 02:00
+      fixedServerTime = at(50)
       const drill = await guard.act<XiangyangResult>('/xiangyang', { action: 'drill', gate: 'NORTH', wave: 8 })
-      assert.equal(drill.result.action, 'drill')
       assert.equal(drill.result.action === 'drill' && drill.result.report.sceneTitle, '城头演练 · 北门第 8 波')
       assert.equal((await guard.post('/xiangyang', { action: 'drill', gate: 'NORTH', wave: 9 })).json().code, 'XIANGYANG_INVALID_WAVE')
-      const quiet = await guard.read<XiangyangBoardDTO>('/xiangyang')
-      assert.deepEqual([quiet.war.id, quiet.war.active, quiet.self], [war.id, false, null])
+      const quiet = await board(guard)
+      assert.deepEqual([quiet.war.id, quiet.self, quiet.post, quiet.orders, quiet.drum.active], [war.id, null, null, { count: 3, nextAt: null }, false])
 
-      fixedServerTime = war.opensAt + 60_000
       const first = await guard.act<XiangyangResult>('/xiangyang', { action: 'sortie', warId: war.id, gate: 'EAST' })
-      assert.ok(first.result.action === 'sortie' && first.result.merit > 0)
+      assert.ok(first.result.action === 'sortie' && first.result.merit > 0 && !first.result.drum)
       assert.equal(first.result.action === 'sortie' && first.result.gate.defenders, 1)
       assert.equal((await sortie(guard, 'NORTH')).json().code, 'XIANGYANG_GATE_FIXED')
       assert.equal((await sortie(guard, 'EAST', war.id - 1)).json().code, 'XIANGYANG_WAR_CHANGED')
-      const joined = await ally.act<XiangyangResult>('/xiangyang', { action: 'sortie', warId: war.id, gate: 'EAST' })
-      assert.equal(joined.result.action === 'sortie' && joined.result.gate.need, 60)
-      for (let order = 1; order < XIANGYANG_ORDERS; order++) {
-        assert.equal((await sortie(guard, 'EAST')).statusCode, 200)
-      }
+      assert.equal((await sortie(guard, 'EAST')).statusCode, 200)
+      assert.equal((await sortie(guard, 'EAST')).statusCode, 200)
       assert.equal((await sortie(guard, 'EAST')).json().code, 'XIANGYANG_NO_ORDERS')
-      const board = await guard.read<XiangyangBoardDTO>('/xiangyang')
-      const east = board.gates.find(({ id }) => id === 'EAST')!
-      assert.equal(board.self?.sorties, XIANGYANG_ORDERS)
-      assert.equal(east.defenders, 2)
-      assert.ok(east.wave > 1)
-      assert.equal(board.feed.length, XIANGYANG_ORDERS + 1)
-      assert.equal(board.feed[0].nickname, 'story_xy_guard')
-      assert.equal((await guard.post('/xiangyang', { action: 'claim', warId: war.id })).json().code, 'XIANGYANG_NO_AWARD')
+      const posted = await ally.act<XiangyangResult>('/xiangyang', { action: 'post', gate: 'WATER' })
+      assert.deepEqual(posted.result, { action: 'post', gate: 'WATER', current: true })
+      const moved = await guard.act<XiangyangResult>('/xiangyang', { action: 'post', gate: 'NORTH' })
+      assert.deepEqual(moved.result, { action: 'post', gate: 'NORTH', current: false })
+      const spent = await board(guard)
+      assert.deepEqual([spent.self?.gate, spent.self?.sorties, spent.post?.gate, spent.orders], ['EAST', 3, 'NORTH', { count: 0, nextAt: at(56) }])
+      assert.equal(spent.post?.nextAutoAt, at(80))
+      assert.deepEqual([(await board(ally)).self, (await board(ally)).post?.nextAutoAt], [null, at(56)])
 
-      fixedServerTime = war.closesAt + 1
-      const after = await guard.read<XiangyangBoardDTO>('/xiangyang')
-      assert.equal(after.war.id, war.id + 1)
-      assert.deepEqual(after.last?.gates.find(({ id }) => id === 'EAST'), { id: 'EAST', wavesCleared: east.wave - 1 })
-      const [award] = after.awards
-      const before = await guard.read()
-      const outer = before.loadouts.find(({ presetIdx }) => presetIdx === before.player.activePresetIdx)!.outerSkillId
-      assert.deepEqual([award.warId, award.gate, award.sorties, award.merit, award.skillId], [war.id, 'EAST', XIANGYANG_ORDERS, board.self!.merit, outer])
-      const claimed = await guard.act<XiangyangResult>('/xiangyang', { action: 'claim', warId: war.id })
-      const { player } = claimed.snapshot
-      assert.equal(player.goldIngot, before.player.goldIngot + INGOT.xiangyang)
-      // 收功时巡历也可能掉玄铁，至少多出封赏那一份
-      assert.ok((player.equipmentForge?.iron ?? 0) >= (before.player.equipmentForge?.iron ?? 0) + award.reward.iron)
-      if (outer) assert.equal(player.skillFragments?.[outer], (before.player.skillFragments?.[outer] ?? 0) + award.reward.fragments)
+      // 周三 20:10 擂鼓：先结掉 ally 周三 08:00、16:00 两次满溢的值守，再轮到这一次亲自出战
+      fixedServerTime = at(68) + 600_000
+      const drummed = await ally.act<XiangyangResult>('/xiangyang', { action: 'sortie', warId: war.id, gate: 'WATER' })
+      assert.ok(drummed.result.action === 'sortie' && drummed.result.drum)
+      const loud = await board(ally)
+      assert.deepEqual([loud.drum.active, loud.self?.sorties, loud.self?.autoSorties], [true, 3, 2])
+      assert.deepEqual(loud.feed.slice(0, 3).map(({ auto, drum }) => [auto ?? false, drum ?? false]), [[false, true], [true, false], [true, false]])
+
+      // 周四 09:00：两人周四 08:00 都满溢，各由镜像打一次。
+      // guard 正在别的操作里（角色行已锁）时，看榜不等他，他的代打留给他自己那边接着打
+      fixedServerTime = at(81)
+      const blocker = await db.connect()
+      try {
+        await blocker.query('BEGIN')
+        await blocker.query('SELECT 1 FROM players WHERE id = $1 FOR UPDATE', [guard.id])
+        await board(ally)
+        const { rows: [held] } = await db.query('SELECT sorties FROM xiangyang_entries WHERE war_id = $1 AND player_id = $2', [war.id, guard.id])
+        assert.equal(held.sorties, 3)
+      } finally {
+        await blocker.query('ROLLBACK')
+        blocker.release()
+      }
+      const thursday = await board(guard)
+      assert.deepEqual([thursday.self?.sorties, thursday.self?.autoSorties, thursday.orders.count], [4, 1, 3])
+      assert.deepEqual([(await board(ally)).self?.sorties, (await board(ally)).self?.autoSorties], [4, 3])
+      assert.equal(thursday.awards.length, 0)
+
+      // 收兵后：此后十次满溢加收兵时的三道，两人各 17 次；收功顺带领赏
+      fixedServerTime = war.closesAt + 60_000
+      const settled = await guard.act<IdleGain>('/cultivate/settle')
+      const [award] = settled.result.xiangyang ?? []
+      assert.equal(award?.warId, war.id)
+      assert.equal(award.reward.ingot, INGOT.xiangyang)
       assert.deepEqual((await ledger(guard.id)).filter(({ reason }) => reason === 'xiangyang').map(({ ref }) => ref), [`xiangyang:${war.id}`])
-      assert.equal((await guard.post('/xiangyang', { action: 'claim', warId: war.id })).json().code, 'XIANGYANG_NO_AWARD')
+      const after = await board(guard)
+      assert.equal(after.war.id, war.id + 1)
+      assert.deepEqual([after.awards, after.self, after.post?.gate], [[], null, 'NORTH'])
+      assert.ok((after.last?.gates.find(({ id }) => id === 'EAST')?.wavesCleared ?? 0) >= 1)
+      const allyAfter = await board(ally)
+      assert.deepEqual(allyAfter.awards.map(({ warId, gate, sorties }) => [warId, gate, sorties]), [[war.id, 'WATER', 17]])
+      const { rows: [entry] } = await db.query('SELECT sorties, auto_sorties FROM xiangyang_entries WHERE war_id = $1 AND player_id = $2', [war.id, guard.id])
+      assert.deepEqual(entry, { sorties: 17, auto_sorties: 14 })
+      const claimed = await ally.act<XiangyangResult>('/xiangyang', { action: 'claim', warId: war.id })
+      assert.equal(claimed.result.action === 'claim' && claimed.result.reward.ingot, INGOT.xiangyang)
+      assert.equal((await ally.post('/xiangyang', { action: 'claim', warId: war.id })).json().code, 'XIANGYANG_NO_AWARD')
+
+      // 下一场第一次满溢：guard 的镜像改去北门
+      fixedServerTime = xiangyangWarOf(war.id + 1).opensAt + 9 * 3_600_000
+      const next = await board(guard)
+      assert.deepEqual([next.self?.gate, next.self?.sorties, next.self?.autoSorties], ['NORTH', 1, 1])
     } finally {
       fixedServerTime = undefined
     }
@@ -1067,7 +1098,7 @@ describe('联机战斗', { skip: connection ? false : '请设置 GAME_TEST_DATAB
     const { player } = await newcomer.read()
     await profile(newcomer.id, { maxChapterId: 3, trial: { ...player.trial, rewardedStageIds: [1, 3] } })
     assert.equal(await code('/daily/claim'), 'DAILY_NOT_READY')
-    const morning = Date.UTC(2026, 10, 18, 3) // 北京时间 11:00，暗拍 21:00 才截止领签
+    const morning = Date.UTC(2026, 10, 18, 3) // 北京时间 11:00
     const done = DAILY_TASKS.map(({ id }) => id)
     try {
       fixedServerTime = morning
@@ -1178,7 +1209,7 @@ describe('联机战斗', { skip: connection ? false : '请设置 GAME_TEST_DATAB
     assert.equal((await actor.post('/ftue/claim')).json().code, 'FTUE_NOT_READY') // 下一阶是历练第 3 关
   })
 
-  it('鬼市暗拍：领先冻结元宝，被超过原数退还并推送，临近落槌顺延，落槌后由领先者领取', async () => {
+  it('鬼市暗拍：心理价全数冻结、鬼市代为跟价，被压过原数退还并推送，临近落槌顺延，落槌按成交价结算', async () => {
     const path = '/market/auction'
     const [first, second] = await Promise.all([createRookie('bid_a'), createRookie('bid_b')])
     await Promise.all([first, second].map(({ id }) => profile(id, { goldIngot: 2_000 })))
@@ -1186,16 +1217,27 @@ describe('联机战斗', { skip: connection ? false : '请设置 GAME_TEST_DATAB
     const day = auctionDay(Date.now()) + 2
     const { opensAt, closesAt } = auctionWindow(day)
     const { itemId, startPrice } = auctionLot(day)
+    const step = AUCTION_BID_STEP
     const owns = (snapshot: PlayerSnapshot) => SKILLS[itemId] ? !!snapshot.learnedSkills[itemId] : snapshot.ownedItemIds.includes(itemId)
     fixedServerTime = opensAt + 3_600_000
     try {
       const board = await first.read<AuctionBoardDTO>(path)
       assert.deepEqual([board.lot.day, board.lot.itemId, board.lot.nextBid, board.lot.leaderMasked], [day, itemId, startPrice, null])
 
-      const opening = await first.act<AuctionResult>(path, { action: 'bid', day, expectedPrice: startPrice })
-      assert.equal(opening.snapshot.player.goldIngot, 2_000 - startPrice)
-      assert.equal((await first.post(path, { action: 'bid', day, expectedPrice: startPrice + AUCTION_BID_STEP })).json().code, 'AUCTION_LEADING')
-      assert.equal((await second.post(path, { action: 'bid', day, expectedPrice: startPrice })).json().code, 'AUCTION_PRICE_CHANGED')
+      const opening = await first.act<AuctionResult>(path, { action: 'bid', day, maxPrice: startPrice + 2 * step })
+      assert.deepEqual(opening.result, { action: 'bid', day, price: startPrice, closesAt, leading: true, maxPrice: startPrice + 2 * step })
+      assert.equal(opening.snapshot.player.goldIngot, 2_000 - startPrice - 2 * step)
+      assert.equal((await first.post(path, { action: 'bid', day, maxPrice: startPrice + 2 * step + 10 })).json().code, 'AUCTION_BID_TOO_LOW')
+      const raisedMax = await first.act<AuctionResult>(path, { action: 'bid', day, maxPrice: startPrice + 3 * step })
+      assert.equal(raisedMax.snapshot.player.goldIngot, 2_000 - startPrice - 3 * step)
+      assert.equal((await first.read<AuctionBoardDTO>(path)).lot.myMax, startPrice + 3 * step)
+      assert.equal((await second.post(path, { action: 'bid', day, maxPrice: startPrice })).json().code, 'AUCTION_BID_TOO_LOW')
+
+      // 没压过：first 的心理价替他跟上一口，second 不冻结元宝
+      const beaten = await second.act<AuctionResult>(path, { action: 'bid', day, maxPrice: startPrice + 2 * step })
+      assert.deepEqual([beaten.result.action === 'bid' && beaten.result.leading, beaten.result.action === 'bid' && beaten.result.price], [false, startPrice + 3 * step])
+      assert.equal(beaten.snapshot.player.goldIngot, 2_000)
+      assert.equal((await second.read<AuctionBoardDTO>(path)).lot.myMax, undefined)
 
       const socket = await first.connect()
       const notice = (async () => {
@@ -1204,118 +1246,126 @@ describe('联机战斗', { skip: connection ? false : '请设置 GAME_TEST_DATAB
           if (parsed.event === 'AUCTION_OUTBID') return parsed.data
         }
       })()
-      const raised = startPrice + AUCTION_BID_STEP
-      const overtaken = await second.act<AuctionResult>(path, { action: 'bid', day, expectedPrice: raised })
-      assert.equal(overtaken.snapshot.player.goldIngot, 2_000 - raised)
-      assert.deepEqual(await notice, { day, itemId, refund: startPrice, price: raised })
+      const overtaken = await second.act<AuctionResult>(path, { action: 'bid', day, maxPrice: startPrice + 8 * step })
+      assert.equal(overtaken.result.action === 'bid' && overtaken.result.price, startPrice + 4 * step)
+      assert.equal(overtaken.snapshot.player.goldIngot, 2_000 - startPrice - 8 * step)
+      assert.deepEqual(await notice, { day, itemId, refund: startPrice + 3 * step, price: startPrice + 4 * step })
       socket.close()
       assert.equal((await first.read()).player.goldIngot, 2_000)
       const viewed = await second.read<AuctionBoardDTO>(path)
-      assert.equal(viewed.lot.leading, true)
+      assert.deepEqual([viewed.lot.leading, viewed.lot.myMax], [true, startPrice + 8 * step])
       assert.match(viewed.lot.leaderMasked ?? '', /^蒙面客·/)
-      assert.deepEqual(viewed.history.map(({ amount, self }) => [amount, self]), [[raised, true], [startPrice, false]])
+      assert.deepEqual(viewed.history.map(({ amount, self, proxy }) => [amount, self, proxy ?? false]), [
+        [startPrice + 4 * step, true, false], [startPrice + 3 * step, false, true], [startPrice + 2 * step, true, false], [startPrice, false, false],
+      ])
 
       fixedServerTime = closesAt - 60_000
-      const late = await first.act<AuctionResult>(path, { action: 'bid', day, expectedPrice: raised + AUCTION_BID_STEP })
-      assert.deepEqual(late.result, { action: 'bid', day, price: raised + AUCTION_BID_STEP, closesAt: closesAt - 60_000 + AUCTION_SOFT_CLOSE_MS })
+      const late = await first.act<AuctionResult>(path, { action: 'bid', day, maxPrice: startPrice + 6 * step })
+      assert.deepEqual(late.result, {
+        action: 'bid', day, price: startPrice + 7 * step, closesAt: closesAt - 60_000 + AUCTION_SOFT_CLOSE_MS, leading: false, maxPrice: startPrice + 6 * step,
+      })
 
       fixedServerTime = closesAt + AUCTION_SOFT_CLOSE_MS
-      assert.equal((await second.post(path, { action: 'bid', day, expectedPrice: raised + 2 * AUCTION_BID_STEP })).json().code, 'AUCTION_CLOSED')
-      assert.equal((await second.post(path, { action: 'claim', day })).json().code, 'AUCTION_NOTHING_TO_CLAIM')
-      assert.deepEqual((await first.read<AuctionBoardDTO>(path)).wins, [{ day, itemId, price: raised + AUCTION_BID_STEP }])
-      const claimed = await first.act<AuctionResult>(path, { action: 'claim', day })
-      assert.deepEqual(claimed.result, { action: 'claim', day, itemId, refunded: 0 })
-      assert.ok(owns(claimed.snapshot))
-      assert.equal(claimed.snapshot.player.goldIngot, 2_000 - raised - AUCTION_BID_STEP)
+      assert.equal((await first.post(path, { action: 'bid', day, maxPrice: startPrice + 10 * step })).json().code, 'AUCTION_CLOSED')
       assert.equal((await first.post(path, { action: 'claim', day })).json().code, 'AUCTION_NOTHING_TO_CLAIM')
-      assert.equal((await second.read()).player.goldIngot, 2_000)
+      assert.deepEqual((await second.read<AuctionBoardDTO>(path)).wins, [{ day, itemId, price: startPrice + 7 * step }])
+      const claimed = await second.act<AuctionResult>(path, { action: 'claim', day })
+      assert.deepEqual(claimed.result, { action: 'claim', day, itemId, owned: false, refunded: step })
+      assert.ok(owns(claimed.snapshot))
+      assert.equal(claimed.snapshot.player.goldIngot, 2_000 - startPrice - 7 * step)
+      assert.equal((await second.post(path, { action: 'claim', day })).json().code, 'AUCTION_NOTHING_TO_CLAIM')
+      assert.equal((await first.read()).player.goldIngot, 2_000)
 
-      // 下一场：领先者落槌前已从别处得到拍品，领取时原数退还
+      // 下一场：领先者落槌前已从别处得到拍品，领取时冻结的元宝全数退还
       const next = auctionLot(day + 1)
       fixedServerTime = auctionWindow(day + 1).opensAt + 60_000
-      await second.act(path, { action: 'bid', day: day + 1, expectedPrice: next.startPrice })
-      if (SKILLS[next.itemId]) await db.query('INSERT INTO player_skills VALUES ($1, $2, 1)', [second.id, next.itemId])
-      else await db.query('INSERT INTO player_items (player_id, item_id) VALUES ($1, $2)', [second.id, next.itemId])
+      await first.act(path, { action: 'bid', day: day + 1, maxPrice: next.startPrice + step })
+      if (SKILLS[next.itemId]) await db.query('INSERT INTO player_skills VALUES ($1, $2, 1)', [first.id, next.itemId])
+      else await db.query('INSERT INTO player_items (player_id, item_id) VALUES ($1, $2)', [first.id, next.itemId])
       fixedServerTime = auctionWindow(day + 1).closesAt
-      const refund = await second.act<AuctionResult>(path, { action: 'claim', day: day + 1 })
-      assert.deepEqual(refund.result, { action: 'claim', day: day + 1, itemId: next.itemId, refunded: next.startPrice })
+      const refund = await first.act<AuctionResult>(path, { action: 'claim', day: day + 1 })
+      assert.deepEqual(refund.result, { action: 'claim', day: day + 1, itemId: next.itemId, owned: true, refunded: next.startPrice + step })
       assert.equal(refund.snapshot.player.goldIngot, 2_000)
       const reasons = (await ledger(second.id)).map(({ reason }) => reason)
-      assert.deepEqual(reasons.slice(1), ['auction-bid', 'auction-refund', 'auction-bid', 'auction-refund'])
+      assert.deepEqual(reasons.slice(1), ['auction-bid', 'auction-refund'])
     } finally {
       fixedServerTime = undefined
     }
   })
 
-  it('暗拍红封：21:00 前领过每日江湖事的侠客分成交价三成，人多抽签，流拍作废，顺延到落槌后才兑付', async () => {
+  it('暗拍红封：当日领过每日江湖事（什么时辰都算）的侠客子时分成交价三成，人多抽签，流拍作废', async () => {
     const path = '/market/auction'
     const names = ['hb_a', 'hb_b', 'hb_c', 'hb_d', 'hb_e', 'hb_f', 'hb_late']
     const players = await Promise.all(names.map(createRookie))
-    const holders = players.slice(0, 6)
+    const early = players.slice(0, 6)
     const late = players[6]
     await Promise.all(players.map(({ id }) => profile(id, { goldIngot: 1_000 })))
     const finishDaily = (day: number, who = players) => Promise.all(who.map(({ id }) =>
       profile(id, { daily: { day, done: DAILY_TASKS.map(({ id: task }) => task), claimed: false } })))
-    // 起拍 180 的一场：红封池 54 元宝，每份至少 10，六人持签只能中五人
+    // 起拍 180 的一场：红封池 54 元宝，每份至少 10，七人持签只能中五人
     let day = auctionDay(Date.now()) + 6
     while (auctionLot(day).startPrice !== 180) day++
     const { opensAt, closesAt } = auctionWindow(day)
     try {
       fixedServerTime = opensAt + 3_600_000
       await finishDaily(day)
-      for (const holder of holders) {
+      for (const holder of early) {
         const claim = await holder.act<{ ingot: number; ticket: boolean }>('/daily/claim')
         assert.deepEqual([claim.result.ticket, claim.snapshot.player.auctionTickets], [true, [day]])
       }
-      await holders[0].act<AuctionResult>(path, { action: 'bid', day, expectedPrice: 180 })
-      assert.equal((await holders[1].read<AuctionBoardDTO>(path)).lot.dividend, undefined)
+      await early[0].act<AuctionResult>(path, { action: 'bid', day, maxPrice: 180 })
+      assert.equal((await early[1].read<AuctionBoardDTO>(path)).lot.dividend, undefined)
 
-      fixedServerTime = closesAt
+      // 落槌之后才领每日江湖事，照样持签；子时开签前只公示人数
+      fixedServerTime = closesAt + 30 * 60_000
       const tardy = await late.act<{ ingot: number; ticket: boolean }>('/daily/claim')
-      assert.deepEqual([tardy.result.ticket, tardy.snapshot.player.auctionTickets ?? []], [false, []])
-      const pending = await Promise.all(holders.map(async (holder) => (await holder.read<AuctionBoardDTO>(path)).lot.dividend))
-      assert.deepEqual(pending.map((dividend) => [dividend?.eligible, dividend?.winners, dividend?.share]), holders.map(() => [6, 5, 10]))
-      assert.deepEqual(pending.map((dividend) => dividend?.mine).sort(), ['MISSED', 'PENDING', 'PENDING', 'PENDING', 'PENDING', 'PENDING'])
-      assert.equal((await late.read<AuctionBoardDTO>(path)).lot.dividend?.mine, 'NONE')
+      assert.deepEqual([tardy.result.ticket, tardy.snapshot.player.auctionTickets], [true, [day]])
+      const counting = (await late.read<AuctionBoardDTO>(path)).lot.dividend
+      assert.deepEqual(counting, { eligible: 7, winners: 5, share: 10, paysAt: auctionDividendAt(day), mine: 'HELD' })
+      assert.deepEqual((await late.act<AuctionResult>(path, { action: 'dividend', day })).snapshot.player.auctionTickets, [day])
 
-      for (const [index, holder] of holders.entries()) {
+      fixedServerTime = auctionDividendAt(day)
+      const pending = await Promise.all(players.map(async (holder) => (await holder.read<AuctionBoardDTO>(path)).previous?.dividend))
+      assert.deepEqual(pending.map((dividend) => [dividend?.eligible, dividend?.winners, dividend?.share]), players.map(() => [7, 5, 10]))
+      assert.deepEqual(pending.map((dividend) => dividend?.mine).sort(), ['MISSED', 'MISSED', 'PENDING', 'PENDING', 'PENDING', 'PENDING', 'PENDING'])
+
+      for (const [index, holder] of players.entries()) {
         const before = (await holder.read()).player.goldIngot
         const settled = await holder.act<AuctionResult>(path, { action: 'dividend', day })
         const won = pending[index]?.mine === 'PENDING'
         assert.equal(settled.snapshot.player.goldIngot, before + (won ? 10 : 0))
         assert.deepEqual(settled.snapshot.player.auctionTickets, [])
         assert.deepEqual(settled.snapshot.player.auctionDividend, { day, ingot: won ? 10 : 0 })
-        assert.equal((await holder.read<AuctionBoardDTO>(path)).lot.dividend?.mine, won ? 'PAID' : 'MISSED')
+        assert.equal((await holder.read<AuctionBoardDTO>(path)).previous?.dividend?.mine, won ? 'PAID' : 'MISSED')
         // 再催一次也不会重复入账
         assert.equal((await holder.act<AuctionResult>(path, { action: 'dividend', day })).snapshot.player.goldIngot, before + (won ? 10 : 0))
         assert.equal((await ledger(holder.id)).filter(({ reason, ref }) => reason === 'auction-dividend' && ref === `auction-dividend:${day}`).length, won ? 1 : 0)
       }
 
       // 次日无人出价：流拍，红封签作废
-      const [solo] = holders
+      const [solo] = early
       fixedServerTime = auctionWindow(day + 1).opensAt + 3_600_000
       await finishDaily(day + 1, [solo])
       assert.deepEqual((await solo.act('/daily/claim')).snapshot.player.auctionTickets, [day + 1])
-      fixedServerTime = auctionWindow(day + 1).closesAt
+      fixedServerTime = auctionDividendAt(day + 1)
       const passed = await solo.act<AuctionResult>(path, { action: 'dividend', day: day + 1 })
       assert.deepEqual([passed.snapshot.player.auctionTickets, passed.snapshot.player.auctionDividend], [[], { day, ingot: pending[0]?.mine === 'PENDING' ? 10 : 0 }])
 
-      // 第三日：落槌前一分钟有人出价，顺延期间不兑付；落槌后独得一份，封顶 30
+      // 第三日：落槌前一分钟出价，顺延期间与子时之前都不兑付；子时独得一份，封顶 30
       const third = day + 2
       const closing = auctionWindow(third).closesAt
       fixedServerTime = closing - 60_000
       await finishDaily(third, [solo])
       await solo.act('/daily/claim')
-      const { startPrice } = auctionLot(third)
-      await solo.act<AuctionResult>(path, { action: 'bid', day: third, expectedPrice: startPrice })
-      fixedServerTime = closing + 60_000
+      await solo.act<AuctionResult>(path, { action: 'bid', day: third, maxPrice: auctionLot(third).startPrice })
+      fixedServerTime = closing + 60 * 60_000
       const waiting = await solo.act<AuctionResult>(path, { action: 'dividend', day: third })
       assert.deepEqual(waiting.snapshot.player.auctionTickets, [third])
-      fixedServerTime = closing - 60_000 + AUCTION_SOFT_CLOSE_MS
+      fixedServerTime = auctionDividendAt(third)
       const paid = await solo.act<AuctionResult>(path, { action: 'dividend', day: third })
       assert.equal(paid.snapshot.player.goldIngot, waiting.snapshot.player.goldIngot + 30)
       assert.deepEqual(paid.snapshot.player.auctionDividend, { day: third, ingot: 30 })
-      assert.deepEqual((await solo.read<AuctionBoardDTO>(path)).lot.dividend, { eligible: 1, winners: 1, share: 30, mine: 'PAID' })
+      assert.deepEqual((await solo.read<AuctionBoardDTO>(path)).previous?.dividend, { eligible: 1, winners: 1, share: 30, paysAt: auctionDividendAt(third), mine: 'PAID' })
     } finally {
       fixedServerTime = undefined
     }

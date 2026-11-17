@@ -16,7 +16,7 @@ import type { GameActions } from '@/network/gameActions'
 import type { useCultivation } from './cultivation'
 import { recordFtueForage, recordFtueRefine } from '../../../shared/ftueQuests.ts'
 import { originPerk } from '../../../shared/origins.ts'
-import { auctionDay, auctionDividend, auctionLot, auctionLotInfo, auctionWindow, nextAuctionBid, ownsAuctionLot, settleAuctionTickets, softCloseAt } from '../../../shared/ghostAuction.ts'
+import { auctionDay, auctionDividend, auctionDividendAt, auctionLot, auctionLotInfo, auctionWindow, nextAuctionBid, ownsAuctionLot, placeAuctionBid, settleAuctionTickets, softCloseAt } from '../../../shared/ghostAuction.ts'
 
 export function useMarket({ actions, cultivation }: {
   actions: GameActions
@@ -239,7 +239,8 @@ export function useMarket({ actions, cultivation }: {
   }
 
   // ==================== 子时鬼市压轴暗拍：全服竞拍，服务端结算；本地试玩只有你一位出价人 ====================
-  type LocalLot = { price: number; bids: number; closesAt: number; at: number; claimed: boolean; dividend?: number }
+  /** maxPrice：你的心理价（已冻结），早先的存档没有，按成交价算 */
+  type LocalLot = { price: number; bids: number; maxPrice?: number; closesAt: number; at: number; claimed: boolean; dividend?: number }
   const localAuctions = ref<Record<string, LocalLot>>({})
   const auctionBoard = shallowRef<AuctionBoardDTO | null>(null)
 
@@ -251,13 +252,17 @@ export function useMarket({ actions, cultivation }: {
     const view: AuctionLotDTO = {
       day, itemId: config.itemId, seller: config.seller, startPrice: config.startPrice, price: lot.price, nextBid: nextAuctionBid(lot),
       bids: lot.bids, opensAt: window.opensAt, closesAt: saved?.closesAt ?? window.closesAt,
-      leaderMasked: lot.bids ? '你' : null, leading: lot.bids > 0,
+      leaderMasked: lot.bids ? '你' : null, leading: lot.bids > 0, ...(saved?.bids ? { myMax: saved.maxPrice ?? saved.price } : {}),
     }
     if (saved?.bids && now >= saved.closesAt) {
       // 本地只有你一位侠客：持签就独得一份
-      const pending = !!player.value.auctionTickets?.includes(day)
+      const held = !!player.value.auctionTickets?.includes(day)
       const paid = saved.dividend !== undefined
-      view.dividend = { ...auctionDividend(saved.price, pending || paid ? 1 : 0), eligible: pending || paid ? 1 : 0, mine: paid ? 'PAID' : pending ? 'PENDING' : 'NONE' }
+      const paysAt = Math.max(auctionDividendAt(day), saved.closesAt)
+      view.dividend = {
+        ...auctionDividend(saved.price, held || paid ? 1 : 0), eligible: held || paid ? 1 : 0, paysAt,
+        mine: paid ? 'PAID' : !held ? 'NONE' : now < paysAt ? 'HELD' : 'PENDING',
+      }
     }
     return view
   }
@@ -328,14 +333,19 @@ export function useMarket({ actions, cultivation }: {
   function announceAuction(result: AuctionResult) {
     if (result.action === 'dividend') return
     const name = auctionLotInfo(result.action === 'bid' ? auctionLot(result.day).itemId : result.itemId).name
-    if (result.action === 'bid') {
-      appendLog('JIANGHU', [{ type: 'tag', text: '鬼市暗拍', tone: 'purple' }, { type: 'text', text: ` 你蒙面举牌，为${name}出价 ${result.price} 元宝，暂时领先。元宝已先冻结。` }])
-      showToast(`出价 ${result.price} 元宝，暂时领先`, 'gold')
-    } else if (result.refunded) {
-      appendLog('JIANGHU', [{ type: 'tag', text: '鬼市暗拍', tone: 'purple' }, { type: 'text', text: ` 你已有${name}，拍价 ${result.refunded} 元宝原数退还。` }])
+    if (result.action === 'bid' && !result.leading) {
+      showToast(`有人的心理价更高，当前价已跟到 ${result.price} 元宝`, 'danger')
+    } else if (result.action === 'bid') {
+      appendLog('JIANGHU', [{ type: 'tag', text: '鬼市暗拍', tone: 'purple' }, {
+        type: 'text', text: ` 你蒙面举牌，为${name}定下心理价 ${result.maxPrice} 元宝，当前 ${result.price} 元宝领先。心理价已全数冻结，有人来压鬼市替你跟价。`,
+      }])
+      showToast(`心理价 ${result.maxPrice} 元宝，当前 ${result.price} 元宝领先`, 'gold')
+    } else if (result.owned) {
+      appendLog('JIANGHU', [{ type: 'tag', text: '鬼市暗拍', tone: 'purple' }, { type: 'text', text: ` 你已有${name}，冻结的 ${result.refunded} 元宝原数退还。` }])
       showToast(`已有${name}，退还 ${result.refunded} 元宝`, 'info')
     } else {
-      appendLog('ADVENTURE', [{ type: 'tag', text: '鬼市落槌', tone: 'gold' }, { type: 'text', text: ` 你取走了拍得的${name}。` }])
+      const change = result.refunded ? `心理价多冻的 ${result.refunded} 元宝已退还。` : ''
+      appendLog('ADVENTURE', [{ type: 'tag', text: '鬼市落槌', tone: 'gold' }, { type: 'text', text: ` 你取走了拍得的${name}。${change}` }])
       showToast(`拍得${name}`, 'gold')
     }
   }
@@ -345,25 +355,29 @@ export function useMarket({ actions, cultivation }: {
     return Promise.resolve(actions.run('auction', input, announceAuction, playLocally)).finally(refreshAuction)
   }
 
-  function bidAuction() {
+  /** 出价：maxPrice 是心理价，领先时再出价即加码 */
+  function bidAuction(maxPrice: number) {
     const lot = auctionBoard.value?.lot
     if (!lot) return
-    if (player.value.goldIngot < lot.nextBid) {
-      showToast(`元宝不足：这一口要 ${lot.nextBid} 元宝`, 'danger')
+    const charge = maxPrice - (lot.leading ? lot.myMax ?? lot.price : 0)
+    if (player.value.goldIngot < charge) {
+      showToast(`元宝不足：心理价要先冻结 ${charge} 元宝`, 'danger')
       return
     }
-    return runAuction({ action: 'bid', day: lot.day, expectedPrice: lot.nextBid }, () => {
+    return runAuction({ action: 'bid', day: lot.day, maxPrice }, () => {
       const now = Date.now()
       const day = auctionDay(now)
       const view = localLotView(day)
       if (day !== lot.day) return showToast('暗拍已换场，请刷新', 'info')
       if (now >= view.closesAt) return showToast('今晚的暗拍已经落槌', 'info')
-      if (view.leading) return showToast('你的出价仍然领先', 'info')
       if (ownsAuctionLot(view.itemId, learnedSkills.value, ownedItemIds.value)) return showToast('你已拥有这件拍品', 'info')
-      player.value.goldIngot -= view.nextBid
-      const closesAt = softCloseAt(view.closesAt, now)
-      localAuctions.value[day] = { price: view.nextBid, bids: view.bids + 1, closesAt, at: now, claimed: false }
-      return { action: 'bid', day, price: view.nextBid, closesAt }
+      // 本地只有你一位出价人：第一口按起拍价领先，之后再出价即加码心理价
+      const placed = placeAuctionBid({ price: view.price, bids: view.bids, leader: view.leading ? 'self' : null, leaderMax: view.myMax ?? view.price }, 'self', maxPrice)
+      if ('error' in placed) return showToast(placed.error, 'info')
+      player.value.goldIngot -= placed.charge
+      const closesAt = placed.entries.length ? softCloseAt(view.closesAt, now) : view.closesAt
+      localAuctions.value[day] = { price: placed.lot.price, bids: placed.lot.bids, maxPrice, closesAt, at: localAuctions.value[day]?.at ?? now, claimed: false }
+      return { action: 'bid', day, price: placed.lot.price, closesAt, leading: true, maxPrice }
     })
   }
 
@@ -372,17 +386,14 @@ export function useMarket({ actions, cultivation }: {
       const lot = localAuctions.value[day]
       if (!lot?.bids || lot.claimed || Date.now() < lot.closesAt) return showToast('这一场没有你的拍品可领', 'info')
       const { itemId } = auctionLot(day)
-      let refunded = 0
-      if (ownsAuctionLot(itemId, learnedSkills.value, ownedItemIds.value)) {
-        refunded = lot.price
-        player.value.goldIngot += refunded
-      } else if (SKILLS[itemId]) {
-        learnSkill(itemId)
-      } else {
-        gainItem(itemId)
-      }
+      const frozen = lot.maxPrice ?? lot.price
+      const owned = ownsAuctionLot(itemId, learnedSkills.value, ownedItemIds.value)
+      const refunded = owned ? frozen : frozen - lot.price
+      player.value.goldIngot += refunded
+      if (!owned && SKILLS[itemId]) learnSkill(itemId)
+      else if (!owned) gainItem(itemId)
       lot.claimed = true
-      return { action: 'claim', day, itemId, refunded }
+      return { action: 'claim', day, itemId, owned, refunded }
     })
   }
 

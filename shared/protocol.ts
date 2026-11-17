@@ -115,7 +115,7 @@ export interface PlayerDTO {
   stallOpen?: number                // 自己在鬼市还没收摊的摊位数
   stallSystem?: { day: number; bought: string[] } // 当日已买过的鬼市散客摊
   stallIncome?: { at: number; silver: number; returned: number } // 最近一次收摊结算：入账纹银、退回的货物份数
-  auctionTickets?: number[]         // 鬼市红封签：21:00 前领过每日江湖事的场次，落槌后兑付
+  auctionTickets?: number[]         // 鬼市红封签：领过每日江湖事的鬼市日，当日子时开签兑付
   auctionDividend?: { day: number; ingot: number } // 最近一次兑付的红封（未中签为 0）
   gacha?: { pulls: number; pity: number }
   feast?: { ingredients: string[]; cooked: string[]; lastCookDay: number }
@@ -277,6 +277,8 @@ export interface IdleGain {
   reunionClues?: Record<string, number>
   feastIngredient?: string
   contestIngot?: number
+  /** 收功时顺带领到的襄阳封赏 */
+  xiangyang?: { warId: number; skillId: string | null; reward: XiangyangRewardDTO }[]
 }
 
 export type CultivationResult =
@@ -667,26 +669,31 @@ export interface AuctionLotDTO {
   closesAt: number
   leaderMasked: string | null
   leading: boolean         // 当前领先的是不是自己
-  /** 落槌且有人出价后公示红封：持签人数、中签人数、每份元宝，以及自己的情况 */
-  dividend?: { eligible: number; winners: number; share: number; mine: 'PAID' | 'PENDING' | 'MISSED' | 'NONE' }
+  myMax?: number           // 自己领先时的心理价（已冻结）
+  /**
+   * 落槌且有人出价后公示红封：持签人数、中签人数、每份元宝，以及自己的情况。
+   * 子时（paysAt）开签前人数还会增加，自己持签记为 HELD。
+   */
+  dividend?: { eligible: number; winners: number; share: number; paysAt: number; mine: 'PAID' | 'PENDING' | 'MISSED' | 'HELD' | 'NONE' }
 }
 
 export interface AuctionBoardDTO {
   serverTime: number
   lot: AuctionLotDTO
-  history: { masked: string; amount: number; at: number; self: boolean }[]
+  history: { masked: string; amount: number; at: number; self: boolean; proxy?: true }[]
   previous: AuctionLotDTO | null   // 上一场成交公示
   wins: { day: number; itemId: string; price: number }[] // 已落槌、待领取的拍品
 }
 
 export type AuctionAction =
-  | { action: 'bid'; day: number; expectedPrice: number }
+  | { action: 'bid'; day: number; maxPrice: number } // 心理价；领先时再出价即加码
   | { action: 'claim'; day: number }
   | { action: 'dividend'; day: number } // 只为触发红封兑付，本身不改动任何东西
 
 export type AuctionResult =
-  | { action: 'bid'; day: number; price: number; closesAt: number }
-  | { action: 'claim'; day: number; itemId: string; refunded: number }
+  | { action: 'bid'; day: number; price: number; closesAt: number; leading: boolean; maxPrice: number }
+  /** owned：落槌后已从别处得到同一件，只退元宝；refunded 是这回退还的元宝（心理价多冻的，或已有时全数） */
+  | { action: 'claim'; day: number; itemId: string; owned: boolean; refunded: number }
   | { action: 'dividend'; day: number }
 
 /** 子时鬼市蒙面摊位 */
@@ -759,6 +766,10 @@ export interface XiangyangFeedDTO {
   merit: number
   won: boolean
   repelled?: number
+  /** 值守镜像代打 */
+  auto?: true
+  /** 擂鼓时亲自出战，战功已加五成 */
+  drum?: true
 }
 
 export interface XiangyangRewardDTO {
@@ -783,11 +794,19 @@ export interface XiangyangAwardDTO {
 }
 
 export interface XiangyangBoardDTO {
-  war: { id: number; opensAt: number; closesAt: number; active: boolean }
+  /** 本周这一场，周一 00:00 至下周一 00:00 */
+  war: { id: number; opensAt: number; closesAt: number }
+  /** 正在擂鼓的一个时辰，或下一次 */
+  drum: { opensAt: number; closesAt: number; active: boolean }
   gates: XiangyangGateDTO[]
-  self: { gate: XiangyangGateId; sorties: number; merit: number } | null
+  /** 本场的城门、出战次数（含值守代打）与战功；还没出过战为 null */
+  self: { gate: XiangyangGateId; sorties: number; autoSorties: number; merit: number } | null
+  /** 手上的军令与下一道送到的时刻（攒满时为 null） */
+  orders: { count: number; nextAt: number | null }
+  /** 值守：跨场保留的城门、镜像配装的时刻、镜像下一次替你出战的时刻 */
+  post: { gate: XiangyangGateId; mirrorAt: number; nextAutoAt: number } | null
   feed: XiangyangFeedDTO[]
-  /** 已结束、还没领的封赏 */
+  /** 已收兵、还没领的封赏 */
   awards: XiangyangAwardDTO[]
   /** 上一场各门战果 */
   last: { warId: number; gates: { id: XiangyangGateId; wavesCleared: number }[] } | null
@@ -795,11 +814,14 @@ export interface XiangyangBoardDTO {
 
 export type XiangyangAction =
   | { action: 'sortie'; warId: number; gate: XiangyangGateId }
+  | { action: 'post'; gate: XiangyangGateId }
   | { action: 'drill'; gate: XiangyangGateId; wave: number }
   | { action: 'claim'; warId: number }
 
 export type XiangyangResult =
-  | { action: 'sortie'; report: BattleReportDTO; merit: number; gate: XiangyangGateDTO; repelled: number[] }
+  | { action: 'sortie'; report: BattleReportDTO; merit: number; drum: boolean; gate: XiangyangGateDTO; repelled: number[] }
+  /** current：本场就守这一门；否则本场已在别门出过战，下一场起改守 */
+  | { action: 'post'; gate: XiangyangGateId; current: boolean }
   | { action: 'drill'; report: BattleReportDTO; merit: number }
   | { action: 'claim'; warId: number; skillId: string | null; reward: XiangyangRewardDTO }
 

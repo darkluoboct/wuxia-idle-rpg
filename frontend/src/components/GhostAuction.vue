@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useGameStore } from '@/stores/gameStore'
 import { TIER_META } from '@/config/uiMeta'
 import type { AuctionLotDTO } from '@/network/protocol'
-import { AUCTION_BID_STEP, AUCTION_DIVIDEND, auctionLotInfo, earnsAuctionTicket, ownsAuctionLot } from '../../../shared/ghostAuction.ts'
+import { AUCTION_BID_STEP, AUCTION_DIVIDEND, auctionLotInfo, ownsAuctionLot } from '../../../shared/ghostAuction.ts'
 
 const store = useGameStore()
 const time = new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit' })
@@ -20,25 +20,33 @@ const countdown = computed(() => {
   const minutes = Math.max(0, Math.ceil((lot.value.closesAt - store.worldTime) / 60_000))
   return minutes >= 60 ? `${Math.floor(minutes / 60)} 小时 ${minutes % 60} 分` : `${minutes} 分`
 })
-/** 红封签：21:00 前领过每日江湖事才有 */
+/** 红封签：当日领过每日江湖事就有，什么时辰领都算 */
 const ticket = computed(() => {
   if (!lot.value || closed.value) return ''
-  if (store.player.auctionTickets?.includes(lot.value.day)) return '你已持今晚的红封签'
-  return earnsAuctionTicket(lot.value.day, store.worldTime) ? '21:00 前领完每日江湖事，可得今晚的红封签' : '今晚的红封签已截止'
+  if (store.player.auctionTickets?.includes(lot.value.day)) return '你已持今日的红封签，子时开签'
+  return '领完今日的每日江湖事，可得今日的红封签'
 })
-const MINE = { PAID: '你已领到', PENDING: '你的一份即将到账', MISSED: '这一回没抽中你', NONE: '你没有持签' } as const
+const MINE = { PAID: '你已领到', PENDING: '你的一份即将到账', MISSED: '这一回没抽中你', HELD: '你持签，等子时开签', NONE: '你没有持签' } as const
 function dividendText({ dividend }: AuctionLotDTO) {
   if (!dividend) return ''
-  if (!dividend.eligible) return '红封：无人持签，全数回收'
+  if (!dividend.eligible && store.worldTime >= dividend.paysAt) return '红封：无人持签，全数回收'
   const drawn = dividend.winners < dividend.eligible ? `，抽中 ${dividend.winners} 人` : ''
-  return `红封：${dividend.eligible} 人持签${drawn}，每人 ${dividend.share} 元宝 · ${MINE[dividend.mine]}`
+  const counting = store.worldTime < dividend.paysAt ? `（${time.format(dividend.paysAt)} 开签，人数还会增加）` : ''
+  return `红封：${dividend.eligible} 人持签${drawn}，每人 ${dividend.share} 元宝${counting} · ${MINE[dividend.mine]}`
 }
+
+/** 心理价：没领先时至少下一口，领先时加码至少再高一口 */
+const leastBid = computed(() => !lot.value ? 0 : lot.value.leading ? (lot.value.myMax ?? lot.value.price) + AUCTION_BID_STEP : lot.value.nextBid)
+const maxPrice = ref(0)
+watch(leastBid, (least) => { if (maxPrice.value < least) maxPrice.value = least }, { immediate: true })
+const freeze = computed(() => maxPrice.value - (lot.value?.leading ? lot.value.myMax ?? lot.value.price : 0))
+const bidBlocked = computed(() => store.onlineActionBusy || closed.value || owned.value || !Number.isInteger(maxPrice.value) ||
+  maxPrice.value < leastBid.value || store.player.goldIngot < freeze.value)
 const bidLabel = computed(() => {
   if (!lot.value) return '出价'
   if (closed.value) return '已落槌'
-  if (lot.value.leading) return '你仍领先'
   if (owned.value) return '你已拥有'
-  return `出价 ${lot.value.nextBid} 元宝`
+  return lot.value.leading ? `加码到 ${maxPrice.value}` : `出价，心理价 ${maxPrice.value}`
 })
 
 // 进鬼市先取一次暗拍榜，停留期间每半分钟刷新，看得到别人加价
@@ -61,7 +69,11 @@ onUnmounted(() => clearInterval(timer))
           <span class="seal h-8 w-8 text-lg">拍</span>
           <h4 class="font-brush text-xl leading-none">子时压轴暗拍</h4>
         </div>
-        <p class="hint mt-1.5">子时开拍，次日 21:00 落槌，每口加 {{ AUCTION_BID_STEP }} 元宝。领先时元宝先冻结，被人压过原数退还；落槌前 5 分钟有人出价顺延 5 分钟。成交价的 {{ AUCTION_DIVIDEND.percent }}% 作红封，分给当日 21:00 前领过每日江湖事的侠客，每人至多 {{ AUCTION_DIVIDEND.maxShare }} 元宝。</p>
+        <p class="hint mt-1.5">
+          子时开拍，次日 21:00 落槌，每口加 {{ AUCTION_BID_STEP }} 元宝。出价填心理价，元宝按心理价先冻结；有人来压，鬼市按每口替你跟到心理价为止，不必守在落槌前。
+          被人压过原数退还，落槌按成交价结算、多冻的退还；落槌前 5 分钟有人出价顺延 5 分钟。
+          成交价的 {{ AUCTION_DIVIDEND.percent }}% 作红封，子时分给当日领过每日江湖事的侠客，每人至多 {{ AUCTION_DIVIDEND.maxShare }} 元宝。
+        </p>
       </div>
       <span class="chip shrink-0" :class="closed ? '' : 'chip-gold'">{{ closed ? `已于 ${time.format(lot.closesAt)} 落槌` : `距落槌 ${countdown}` }}</span>
     </div>
@@ -79,19 +91,24 @@ onUnmounted(() => clearInterval(timer))
       <span class="text-sm">
         <span class="text-ink3">当前</span>
         <b class="mx-1 text-lg tabular-nums text-gold">{{ lot.price }}</b><span class="text-xs">元宝</span>
-        <span class="ml-2 text-xs" :class="lot.leading ? 'text-gold' : 'text-ink3'">{{ lot.leading ? '你领先' : lot.leaderMasked ? `领先 ${lot.leaderMasked}` : '尚无人出价' }}</span>
+        <span class="ml-2 text-xs" :class="lot.leading ? 'text-gold' : 'text-ink3'">
+          {{ lot.leading ? `你领先 · 心理价 ${lot.myMax}` : lot.leaderMasked ? `领先 ${lot.leaderMasked}` : '尚无人出价' }}
+        </span>
       </span>
-      <button
-        class="btn btn-seal" :disabled="store.onlineActionBusy || closed || lot.leading || owned || store.player.goldIngot < lot.nextBid"
-        @click="store.bidAuction()"
-      >{{ bidLabel }}</button>
+      <div v-if="!closed && !owned" class="flex flex-wrap items-center gap-2">
+        <label class="flex items-center gap-1.5 text-xs text-ink3">心理价
+          <input v-model.number="maxPrice" class="field w-24 tabular-nums" type="number" :min="leastBid" :step="AUCTION_BID_STEP" aria-label="心理价（元宝）">
+        </label>
+        <button class="btn btn-seal" :disabled="bidBlocked" @click="store.bidAuction(maxPrice)">{{ bidLabel }}</button>
+      </div>
+      <span v-else class="chip">{{ bidLabel }}</span>
     </div>
 
     <p v-if="ticket || lot.dividend" class="text-xs" :class="lot.dividend?.mine === 'PAID' || store.player.auctionTickets?.includes(lot.day) ? 'text-gold' : 'text-ink3'">{{ lot.dividend ? dividendText(lot) : ticket }}</p>
 
     <ol v-if="store.auctionBoard?.history.length" class="space-y-0.5 text-xs" aria-label="出价记录">
       <li v-for="entry in store.auctionBoard.history" :key="entry.at + entry.masked" class="flex justify-between gap-2" :class="entry.self ? 'text-gold' : 'text-ink3'">
-        <span>{{ entry.self ? '你' : entry.masked }}</span>
+        <span>{{ entry.self ? '你' : entry.masked }}<template v-if="entry.proxy"> · 代跟</template></span>
         <span class="tabular-nums">{{ entry.amount }} 元宝 · {{ time.format(entry.at) }}</span>
       </li>
     </ol>

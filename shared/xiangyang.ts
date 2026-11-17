@@ -4,9 +4,11 @@ import type { BattleReportDTO, CombatUnitDTO, StanceType, XiangyangGateId, Xiang
 import { trialBossAtk, trialBossHp } from './trialStages.ts'
 
 /**
- * 襄阳守卫战（docs/20）：每周三、周日 20:00 起半个时辰，蒙古大军分攻襄阳东门、北门与水路粮道。
- * 每人每场五道军令，首次出战选定一门；按打掉的敌方气血记战功，全门战功攒够一波即击退一波，共八波。
- * 敌军按出战者的等级缩放，强弱不同的侠客都能出力。战后凭战功领赏。联机为准，本地试玩以同一份规则模拟守军。
+ * 襄阳守卫战（docs/20）：每周一场「襄阳之围」，周一 00:00 至下周一 00:00（北京时间），蒙古大军分攻东门、北门与水路粮道。
+ * 挂机为本：军令每 8 小时回一道、最多攒三道；选定一门值守后，军令攒满还没用时由你的镜像替你出战，收兵时把余下的打完。
+ * 在线只影响打法：自己挑时机、换配装出战；周三、周日 20:00 起擂鼓一个时辰，亲自出战战功加五成。
+ * 按打掉的敌方气血记战功，全门战功攒够一波即击退一波，共八波；敌军按出战者的等级缩放。收兵后凭战功封赏。
+ * 联机为准，本地试玩以同一份规则模拟守军。
  */
 const MINUTE = 60_000
 const HOUR = 60 * MINUTE
@@ -14,33 +16,89 @@ const DAY = 24 * HOUR
 const WEEK = 7 * DAY
 const UTC8 = 8 * HOUR
 const FIRST_MONDAY = Date.UTC(2024, 0, 1) - UTC8
-/** 周三、周日 20:00（北京时间） */
-const WAR_OFFSETS = [2 * DAY + 20 * HOUR, 6 * DAY + 20 * HOUR]
+/** 擂鼓：周三、周日 20:00（北京时间） */
+const DRUM_OFFSETS = [2 * DAY + 20 * HOUR, 6 * DAY + 20 * HOUR]
 
-export const XIANGYANG_WAR_MS = 30 * MINUTE
-export const XIANGYANG_ORDERS = 5
+export const XIANGYANG_DRUM_MS = HOUR
+/** 擂鼓时亲自出战，战功 ×1.5 */
+export const XIANGYANG_DRUM_BONUS = 0.5
+export const XIANGYANG_ORDER_CAP = 3
+export const XIANGYANG_ORDER_MS = 8 * HOUR
+/** 一场里军令回复的次数：开场就有三道，此后每 8 小时一道，收兵那一刻不再回 */
+const ORDER_TICKS = WEEK / XIANGYANG_ORDER_MS - 1
+/** 一场最多能打出的军令 */
+export const XIANGYANG_ORDERS = XIANGYANG_ORDER_CAP + ORDER_TICKS
 export const XIANGYANG_WAVES = 8
-/** 每波所需战功 = 本门守军人数 × 30；人人五道军令都打满约可击退八波 */
-export const XIANGYANG_WAVE_MERIT = 30
+/** 每波所需战功 = 本门守军人数 × 140；人人军令都打满约可击退八波，约一天一波 */
+export const XIANGYANG_WAVE_MERIT = 140
 
 export interface XiangyangWar {
   id: number
   opensAt: number
   closesAt: number
-  active: boolean
 }
 
 export function xiangyangWarOf(id: number): XiangyangWar {
-  const opensAt = FIRST_MONDAY + Math.floor(id / 2) * WEEK + WAR_OFFSETS[id % 2]
-  return { id, opensAt, closesAt: opensAt + XIANGYANG_WAR_MS, active: false }
+  const opensAt = FIRST_MONDAY + id * WEEK
+  return { id, opensAt, closesAt: opensAt + WEEK }
 }
 
-/** 正在打的一场，或下一场 */
-export function xiangyangWar(now: number): XiangyangWar {
-  for (let id = Math.floor((now - FIRST_MONDAY) / WEEK) * 2; ; id++) {
-    const war = xiangyangWarOf(id)
-    if (now < war.closesAt) return { ...war, active: now >= war.opensAt }
-  }
+/** 本周这一场：一场接一场，没有空档 */
+export const xiangyangWar = (now: number) => xiangyangWarOf(Math.floor((now - FIRST_MONDAY) / WEEK))
+
+/** 正在擂鼓的一个时辰，或下一次 */
+export function xiangyangDrum(now: number) {
+  const monday = FIRST_MONDAY + Math.floor((now - FIRST_MONDAY) / WEEK) * WEEK
+  const opensAt = [...DRUM_OFFSETS, DRUM_OFFSETS[0] + WEEK].map((offset) => monday + offset).find((at) => now < at + XIANGYANG_DRUM_MS)!
+  return { opensAt, closesAt: opensAt + XIANGYANG_DRUM_MS, active: now >= opensAt }
+}
+
+export const xiangyangDrumMerit = (merit: number) => Math.round(merit * (1 + XIANGYANG_DRUM_BONUS))
+
+// ==================== 军令 ====================
+
+/** 某一刻手上的军令：stored 道，记于 asOf；此后每到回复时刻加一道，最多三道 */
+export interface XiangyangOrders {
+  stored: number
+  asOf: number
+}
+
+/** 本场还没动过军令：手上三道 */
+export const xiangyangFullOrders = (asOf: number): XiangyangOrders => ({ stored: XIANGYANG_ORDER_CAP, asOf })
+
+/** t 时刻之前（含）已回复了几次 */
+const ticksBy = (war: XiangyangWar, t: number) => Math.min(ORDER_TICKS, Math.max(0, Math.floor((t - war.opensAt) / XIANGYANG_ORDER_MS)))
+
+export function xiangyangOrdersAt(war: XiangyangWar, orders: XiangyangOrders, t: number) {
+  return Math.min(XIANGYANG_ORDER_CAP, orders.stored + ticksBy(war, t) - ticksBy(war, orders.asOf))
+}
+
+/** 下一道军令送到的时刻；已攒满或本场不再回复时为 null */
+export function xiangyangNextOrderAt(war: XiangyangWar, orders: XiangyangOrders, t: number) {
+  const tick = ticksBy(war, t) + 1
+  return xiangyangOrdersAt(war, orders, t) < XIANGYANG_ORDER_CAP && tick <= ORDER_TICKS ? war.opensAt + tick * XIANGYANG_ORDER_MS : null
+}
+
+/** 亲自出战用掉一道（调用方先确认手上有军令） */
+export const xiangyangSpendOrder = (war: XiangyangWar, orders: XiangyangOrders, t: number): XiangyangOrders =>
+  ({ stored: xiangyangOrdersAt(war, orders, t) - 1, asOf: t })
+
+/**
+ * 值守镜像的下一次出战：攒满三道后再回一道的那一刻；回复停了而手上还有军令，就在收兵时打完。
+ * 本场没有了就排到下一场的第一次满溢。
+ */
+export function xiangyangNextAuto(war: XiangyangWar, orders: XiangyangOrders): { at: number; warId: number } {
+  const tick = ticksBy(war, orders.asOf) + (XIANGYANG_ORDER_CAP - orders.stored) + 1
+  if (tick <= ORDER_TICKS) return { at: war.opensAt + tick * XIANGYANG_ORDER_MS, warId: war.id }
+  if (xiangyangOrdersAt(war, orders, war.closesAt) > 0) return { at: war.closesAt, warId: war.id }
+  const next = xiangyangWarOf(war.id + 1)
+  return { at: next.opensAt + XIANGYANG_ORDER_MS, warId: next.id }
+}
+
+/** 到了值守出战的时刻：满溢时打一次、仍留三道；收兵时把手上的全打完 */
+export function xiangyangAutoTurn(war: XiangyangWar, orders: XiangyangOrders, at: number) {
+  if (at >= war.closesAt) return { count: xiangyangOrdersAt(war, orders, war.closesAt), orders: { stored: 0, asOf: war.closesAt } }
+  return { count: 1, orders: xiangyangFullOrders(at) }
 }
 
 type Foe = Pick<BattleEnemyGuard, 'name' | 'title' | 'portrait'> & { weapon: NonNullable<NonNullable<BattleEnemyGuard['combat']>['weapon']>['form'] }
@@ -163,16 +221,16 @@ export function advanceXiangyangGate(state: XiangyangGateState, merit: number, d
 
 export const xiangyangWavesCleared = (state: Pick<XiangyangGateState, 'wave'>) => Math.min(XIANGYANG_WAVES, state.wave - 1)
 
-/** 战后封赏：参战即得元宝与铸造材料，城门击退得越多材料越多；残页落在出战时装着的外功上，本门战功前三加赏 */
+/** 收兵后封赏：参战即得元宝与铸造材料，城门击退得越多材料越多；残页落在最近一次出战时装着的外功上，本门战功前三加赏 */
 export function xiangyangReward(entry: { merit: number; sorties: number }, wavesCleared: number, level: number, topThree: boolean): XiangyangRewardDTO | undefined {
   if (entry.sorties <= 0) return
   return {
     ingot: INGOT.xiangyang,
-    iron: 1 + Math.floor(wavesCleared / 2) + (topThree ? 1 : 0),
-    stones: 1 + Math.floor(wavesCleared / 4),
-    fragments: Math.min(4, 1 + Math.floor(entry.merit / 100)) + (topThree ? 2 : 0),
-    qiExp: Math.round(entry.merit * level * 0.5),
-    silver: entry.merit * 4,
+    iron: 2 + wavesCleared + (topThree ? 2 : 0),
+    stones: 2 + Math.floor(wavesCleared / 2),
+    fragments: Math.min(8, 2 + Math.floor(entry.merit / 200)) + (topThree ? 4 : 0),
+    qiExp: Math.round(entry.merit * level * 0.2),
+    silver: entry.merit * 2,
   }
 }
 
@@ -205,9 +263,13 @@ export interface XiangyangSortieLog {
   gate: XiangyangGateId
   merit: number
   won: boolean
+  /** 值守镜像代打 */
+  auto?: true
+  /** 擂鼓时亲自出战 */
+  drum?: true
 }
 
-/** 本地试玩的同门守军：每门二到五人，各打五次，战功与出战时刻由场次与城门定死 */
+/** 本地试玩的同门守军：每门二到五人，一周里各把军令打满，战功、出战时刻与是否值守由场次与城门定死 */
 export function xiangyangBotSorties(warId: number, gateId: XiangyangGateId): XiangyangSortieLog[] {
   const gateIndex = XIANGYANG_GATES.findIndex(({ id }) => id === gateId)
   const rng = seeded(warId * 97 + gateIndex * 13 + 7)
@@ -216,14 +278,15 @@ export function xiangyangBotSorties(warId: number, gateId: XiangyangGateId): Xia
   const names = [...DEFENDER_NAMES].sort(() => rng() - 0.5).slice(0, count)
   return names.flatMap((nickname) => Array.from({ length: XIANGYANG_ORDERS }, (_, order) => {
     const merit = 20 + Math.floor(rng() * 36)
-    return { at: opensAt + Math.floor(XIANGYANG_WAR_MS * 0.95 * (order + rng()) / XIANGYANG_ORDERS), nickname, gate: gateId, merit, won: merit >= 45 }
+    const at = opensAt + Math.floor(WEEK * 0.99 * (order + rng()) / XIANGYANG_ORDERS)
+    return { at, nickname, gate: gateId, merit, won: merit >= 45, ...(rng() < 0.7 ? { auto: true as const } : {}) }
   }))
 }
 
-/** 把本地守军与自己的出战按时间先后记入城门，得出当下的波次；守军人数与联机一样按出过战的人累计 */
+/** 把本地守军与自己的出战按时间先后记入城门，得出 now 时的波次（不含 now 那一刻之后的）；守军人数与联机一样按出过战的人累计 */
 export function localXiangyangGate(warId: number, gateId: XiangyangGateId, now: number, own: readonly XiangyangSortieLog[]) {
-  const log = [...xiangyangBotSorties(warId, gateId).filter(({ at }) => at <= now), ...own.filter((sortie) => sortie.gate === gateId)]
-    .sort((a, b) => a.at - b.at)
+  const log = [...xiangyangBotSorties(warId, gateId), ...own.filter((sortie) => sortie.gate === gateId)]
+    .filter(({ at }) => at <= now).sort((a, b) => a.at - b.at)
   const joined = new Set<string>()
   let state: XiangyangGateState = { wave: 1, progress: 0 }
   const feed: (XiangyangSortieLog & { wave: number; repelled?: number })[] = []

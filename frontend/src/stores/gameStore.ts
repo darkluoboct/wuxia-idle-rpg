@@ -68,6 +68,8 @@ export const useGameStore = defineStore('wuxiaGame', () => {
     logForgeMaterials: (count) => trial.logForgeMaterials(count),
     logPatrolCache: (reward) => trial.logPatrolCache(reward),
     mockSettlePatrol: (now) => trial.mockSettlePatrol(now),
+    announceXiangyangAward: (award) => xiangyang.announceAward(award),
+    claimLocalXiangyang: (now) => xiangyang.claimLocalXiangyang(now),
   })
 
   const story = useStory({ cultivation, battle, actions })
