@@ -114,6 +114,7 @@ describe('开局家世 · 家事与觉醒', () => {
       }
       expect(affairs.length * 10).toBe(kin.awakenTokens)
       expect(kin.awakened?.tier).toBe('purple')
+      expect(kin.awakenAffinity).toBe(300)
     }
   })
 
@@ -140,7 +141,11 @@ describe('开局家世 · 家事与觉醒', () => {
     expect(other.resolvedAdventureIds).not.toContain('family_jiangmen_1')
     expect(other.companionAffinity.leizheng.tokens).toBe(0)
 
-    Object.assign(s.companionAffinity.leizheng, { affinity: 600, tokens: 30 })
+    // 家人好感 300 即可觉醒（别的伙伴要生死之交 600）
+    Object.assign(s.companionAffinity.leizheng, { affinity: 299, tokens: 30 })
+    s.awakenCompanion('leizheng')
+    expect(s.companionAffinity.leizheng.form).toBe('base')
+    s.companionAffinity.leizheng.affinity = 300
     s.awakenCompanion('leizheng')
     expect(s.companionAffinity.leizheng).toMatchObject({ form: 'awakened', tokens: 0 })
     expect(s.companionOf('leizheng')?.tier).toBe('purple')

@@ -2538,9 +2538,11 @@ export interface CompanionConfig extends CompanionForm {
   origin?: OriginId
   /** 好感线橙品的资质（下/中/上），影响属性系数；其余为 undefined */
   grade?: '下' | '中' | '上'
-  /** 觉醒形态（需好感 ≥600 + 伙伴信物）；基础形态由本配置的顶层字段给出 */
+  /** 觉醒形态（需好感 ≥ awakenAffinity + 伙伴信物）；基础形态由本配置的顶层字段给出 */
   awakened?: CompanionForm
   awakenTokens?: number
+  /** 觉醒所需好感，默认 600（生死之交）；家人 300，第二章打完即可觉醒 */
+  awakenAffinity?: number
   /** 入队除好感 ≥100 外还需此剧情标记（如洪七公须先呈齐「十道绝味」）；付费获得不受限 */
   recruitFlag?: string
   portraitStyle: PortraitStyle
@@ -3182,12 +3184,13 @@ export const COMPANIONS: Record<string, CompanionConfig> = {
     baseHp: 3000,
     baseAtk: 330,
     awakenTokens: 30,
+    awakenAffinity: 300,
     awakened: {
       tier: 'purple',
       title: '背嵬破阵·雷铮',
       assistSkillName: '背嵬破阵',
-      assistDesc: '每回合以背嵬枪法追击敌方前排，命中尚未出手的目标使其跳过本回合行动；对骑兵伤害提高 30%，敌人蓄力时命中可将其打断。',
-      battleAttack: { skillId: 'beiwei_qiang', stance: 'FIERCE', target: 'FRONT', everyRound: true, hitStatus: { status: 'KNOCKBACK', rounds: 1 } },
+      assistDesc: '每回合以背嵬枪法追击敌方前排，命中尚未出手的目标有 30% 概率使其跳过本回合行动；对骑兵伤害提高 30%，敌人蓄力时命中可将其打断。',
+      battleAttack: { skillId: 'beiwei_qiang', stance: 'FIERCE', target: 'FRONT', everyRound: true, hitStatus: { status: 'KNOCKBACK', rounds: 1, chancePercent: 30 } },
       battleSupport: [{ kind: 'TARGET_TRAIT_DAMAGE', traits: ['MOUNTED'], percent: 30 }],
       baseHp: 4800,
       baseAtk: 470,
@@ -3214,6 +3217,7 @@ export const COMPANIONS: Record<string, CompanionConfig> = {
     baseHp: 2700,
     baseAtk: 340,
     awakenTokens: 30,
+    awakenAffinity: 300,
     awakened: {
       tier: 'purple',
       title: '南湖踏浪·阮青篙',
@@ -3248,6 +3252,7 @@ export const COMPANIONS: Record<string, CompanionConfig> = {
     baseHp: 2600,
     baseAtk: 280,
     awakenTokens: 30,
+    awakenAffinity: 300,
     awakened: {
       tier: 'purple',
       title: '杏林圣手·沈青黛',
@@ -3283,6 +3288,7 @@ export const COMPANIONS: Record<string, CompanionConfig> = {
     baseHp: 3200,
     baseAtk: 290,
     awakenTokens: 30,
+    awakenAffinity: 300,
     awakened: {
       tier: 'purple',
       title: '云水真人·松岩子',

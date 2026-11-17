@@ -946,7 +946,7 @@ describe('联机战斗', { skip: connection ? false : '请设置 GAME_TEST_DATAB
     assert.equal((await taoist.read()).companionAffinity.songyanzi.tokens, 20)
 
     assert.equal((await taoist.post('/companions/awaken', { companionId: 'songyanzi' })).statusCode, 409)
-    await companionState(taoist.id, 'songyanzi', { affinity: 600, tokens: 30 })
+    await companionState(taoist.id, 'songyanzi', { affinity: 300, tokens: 30 })
     const awakened = await taoist.act<AwakenResult>('/companions/awaken', { companionId: 'songyanzi' })
     assert.equal(awakened.snapshot.companionAffinity.songyanzi.form, 'awakened')
     assert.equal(awakened.snapshot.companionAffinity.songyanzi.tokens, 0)

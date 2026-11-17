@@ -4,12 +4,13 @@ import type { PlayerDTO } from '@/network/protocol'
 import { INGOT, ingotMilestones, patrolCacheIngot } from '../../shared/economy.ts'
 import { FTUE_QUESTS } from '../../shared/ftueQuests.ts'
 import { createNewGameCharacter } from '../../shared/player.ts'
+import { openToOrigin } from '../../shared/origins.ts'
 import { TRIAL_STAGES } from '../../shared/trialStages.ts'
 import { boost, newStore, playNode } from './helpers'
 
 describe('元宝产出规则（docs/19）', () => {
   it('第一卷一次性奖励约 3,000：章末节点与章末复战关按高档发放', () => {
-    const { player, companionAffinity } = createNewGameCharacter({ id: 'ledger', nickname: '算账', avatarId: 'hero_sword' }, 0)
+    const { player, companionAffinity } = createNewGameCharacter({ id: 'ledger', nickname: '算账', avatarId: 'hero_sword' }, 0, 'jiangmen')
     const all = ingotMilestones({
       player: {
         ...player, realmTier: 3, sectRank: 5, currentSectId: 'gaibang',
@@ -17,7 +18,8 @@ describe('元宝产出规则（docs/19）', () => {
         trial: { ...player.trial, rewardedStageIds: TRIAL_STAGES.map(({ id }) => id) },
       },
       rewardedChapters: STORY_CHAPTERS.map(({ id }) => id),
-      adventureIds: ADVENTURES.map(({ id }) => id),
+      // 公共支线 13 段 + 本家家事 3 段
+      adventureIds: ADVENTURES.filter((adventure) => openToOrigin(adventure, player)).map(({ id }) => id),
       companionAffinity: Object.fromEntries(Object.keys(companionAffinity).map((id) => [id, { recruited: true }])),
     })
     const amount = Object.fromEntries(all.map(({ key, amount }) => [key, amount]))
@@ -25,6 +27,7 @@ describe('元宝产出规则（docs/19）', () => {
     expect(amount['story:1']).toBe(INGOT.storyNode)
     expect([7, 13, 21, 26, 30].map((id) => amount[`trial:${id}`])).toEqual(Array(5).fill(INGOT.trialChapterEnd))
     expect(amount['trial:1']).toBe(INGOT.trialStage)
+    expect(all.filter(({ key }) => key.startsWith('adventure:'))).toHaveLength(16)
     expect(new Set(all.map(({ key }) => key)).size).toBe(all.length)
     const total = INGOT.start + all.reduce((sum, { amount }) => sum + amount, 0)
     expect(total).toBeGreaterThan(2_800)

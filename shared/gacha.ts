@@ -349,12 +349,18 @@ export function pullGacha(t: GachaTarget, count: 1 | 10, rng = Math.random): { e
   return { cost, draws, changes }
 }
 
-/** 觉醒进阶：好感 ≥600（生死之交）+ 消耗伙伴信物，基础形态 → 觉醒形态（伙伴专题 §四） */
+/** 觉醒所需好感：默认 600（生死之交），家人 300 */
+export const awakenAffinityOf = (companion: { awakenAffinity?: number }) => companion.awakenAffinity ?? 600
+
+/** 觉醒进阶：好感达标（一般是生死之交）+ 消耗伙伴信物，基础形态 → 觉醒形态（伙伴专题 §四） */
 export function awakenCompanion(id: string, st: CompanionState | undefined): { error: string } | { title: string; spent: number } {
   const c = COMPANIONS[id]
   if (!c?.awakened || !st) return { error: '这位伙伴没有觉醒形态' }
   if (st.form === 'awakened') return { error: `【${c.name}】已是觉醒形态` }
-  if (!st.recruited || st.affinity < 600) return { error: `觉醒需与【${c.name}】结为生死之交（好感 ≥ 600）` }
+  const affinity = awakenAffinityOf(c)
+  if (!st.recruited || st.affinity < affinity) {
+    return { error: affinity === 600 ? `觉醒需与【${c.name}】结为生死之交（好感 ≥ 600）` : `觉醒需【${c.name}】好感 ≥ ${affinity}` }
+  }
   const need = c.awakenTokens ?? 30
   const have = st.tokens ?? 0
   if (have < need) return { error: `伙伴信物不足：需 ${need}，现有 ${have}` }

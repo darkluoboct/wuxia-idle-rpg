@@ -23,6 +23,7 @@ import {
 } from '@/config/gameData'
 import { STANCE_META, TIER_META } from '@/config/uiMeta'
 import {
+  awakenAffinityOf,
   GACHA_BASE_RATES,
   GACHA_DUP_TOKENS,
   GACHA_HARD_PITY,
@@ -101,7 +102,7 @@ const leftLabel = (n: number) => (Number.isFinite(n) ? `今日余 ${n}` : '')
 function canAwaken(id: string) {
   const st = store.companionAffinity[id]
   const need = COMPANIONS[id].awakenTokens ?? 30
-  return !!st && st.form === 'base' && st.recruited && st.affinity >= 600 && st.tokens >= need
+  return !!st && st.form === 'base' && st.recruited && st.affinity >= awakenAffinityOf(COMPANIONS[id]) && st.tokens >= need
 }
 /** 这一杯酒喝完好感是否会跨过 600（生死之交）门槛 */
 function willTrigger(id: string) {
@@ -396,10 +397,10 @@ const FLAME_META = {
               <button
                 v-if="c.awakened && store.companionAffinity[c.id]?.form === 'base'"
                 class="btn btn-sm w-full flex-col !gap-0" :class="canAwaken(c.id) ? 'btn-seal anim-pulse-glow' : ''"
-                :disabled="!canAwaken(c.id)" :title="`觉醒为「${c.awakened.title}」：好感 ≥600，消耗${tokenName(c)} ${c.awakenTokens ?? 30}${c.route === 'FAMILY' ? '（家事所得）' : ''}`" @click="store.awakenCompanion(c.id)"
+                :disabled="!canAwaken(c.id)" :title="`觉醒为「${c.awakened.title}」：好感 ≥${awakenAffinityOf(c)}，消耗${tokenName(c)} ${c.awakenTokens ?? 30}${c.route === 'FAMILY' ? '（家事所得）' : ''}`" @click="store.awakenCompanion(c.id)"
               >
                 <span>觉醒 · {{ c.awakened.title }}</span>
-                <span class="text-[0.7rem] opacity-80">{{ tokenName(c) }} {{ store.companionAffinity[c.id]?.tokens ?? 0 }} / {{ c.awakenTokens ?? 30 }} · 需好感 600</span>
+                <span class="text-[0.7rem] opacity-80">{{ tokenName(c) }} {{ store.companionAffinity[c.id]?.tokens ?? 0 }} / {{ c.awakenTokens ?? 30 }} · 需好感 {{ awakenAffinityOf(c) }}</span>
               </button>
             </div>
           </article>
