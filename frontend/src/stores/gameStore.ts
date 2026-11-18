@@ -17,6 +17,7 @@ import { useStory } from './story'
 import { useTrial } from './trial'
 import { useLoadout } from './loadout'
 import { useWorld } from './world'
+import { useChat } from './chat'
 import { useSect } from './sect'
 import { useMarket } from './market'
 import { useArtifacts } from './artifacts'
@@ -78,11 +79,13 @@ export const useGameStore = defineStore('wuxiaGame', () => {
 
   const loadout = useLoadout({ actions, revision: session.revision, trial, cultivation })
 
-  const world = useWorld({ battle, actions, selectTab, cultivation, companions })
+  const world = useWorld({ battle, actions, selectTab, cultivation, companions, latestRumor: () => chat.latestRumor.value })
 
-  const artifacts = useArtifacts({ actions, battle, world })
+  const chat = useChat({ roomMapId: world.roomMapId })
 
-  const sect = useSect({ actions, cultivation, battle, story, world, companions, artifacts })
+  const artifacts = useArtifacts({ actions, battle, chat })
+
+  const sect = useSect({ actions, cultivation, battle, story, chat, companions, artifacts })
 
   const market = useMarket({ actions, cultivation })
 
@@ -121,11 +124,13 @@ export const useGameStore = defineStore('wuxiaGame', () => {
       else if (event.event === 'UNIQUE_ARTIFACT_CHANGED') artifacts.onArtifactChanged(event.data)
       else if (event.event === 'STALL_SOLD') stalls.onStallSold(event.data)
       else if (event.event === 'RATE_BOOSTS') playerStore.applyRateBoosts(event.data)
+      else if (event.event === 'CHAT_MESSAGE' || event.event === 'CHAT_REMOVED' || event.event === 'CHAT_REJECTED') chat.handleChatEvent(event)
       else world.handleRoomEvent(event)
     },
     disconnected: world.clearRoom,
     reset: () => {
       world.resetWorld()
+      chat.resetChat()
       logs.value = []
       toasts.value = []
       onlineState.value = null
@@ -280,7 +285,7 @@ export const useGameStore = defineStore('wuxiaGame', () => {
     absentPlayers: world.absentPlayers,
     ghostListings: market.ghostListings,
     ghostListingPrice: market.ghostListingPrice,
-    worldMessages: world.worldMessages,
+    ...chat,
     marqueeBulletin: world.marqueeBulletin,
     logs: uiRefs.logs,
     pendingAdventure: story.pendingAdventure,
@@ -401,7 +406,6 @@ export const useGameStore = defineStore('wuxiaGame', () => {
     artifactAttempts: artifacts.artifactAttempts,
     refreshArtifacts: artifacts.refreshArtifacts,
     challengeArtifact: artifacts.challengeArtifact,
-    sendChatMessage: world.sendChatMessage,
     featureOpen: features.featureOpen,
     mainTabOpen: features.mainTabOpen,
     jianghuTabOpen: features.jianghuTabOpen,

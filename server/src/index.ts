@@ -4,6 +4,8 @@ import rateLimit from '@fastify/rate-limit'
 import websocket from '@fastify/websocket'
 import { registerAdmin } from './admin.ts'
 import { registerAuth } from './auth.ts'
+import { registerChat } from './chat.ts'
+import { CHAT_RULES } from '../../shared/chat.ts'
 import { db } from './db.ts'
 import { registerGame } from './game.ts'
 import { GameError, TRUST_PROXY } from './http.ts'
@@ -38,6 +40,7 @@ const rooms = registerRooms(app)
 const raid = registerRaidLobby(app, rooms)
 registerAuth(app, origin.protocol === 'https:', rooms.closeSession)
 registerGame(app, rooms, raid)
+registerChat(app, rooms)
 registerAdmin(app, rooms, origin.protocol === 'https:')
 db.on('error', (error) => app.log.error(error))
 
@@ -49,8 +52,15 @@ const onlineSampler = setInterval(() => {
     .catch((error) => app.log.error(error))
 }, 5 * 60_000)
 onlineSampler.unref()
+// 聊天留档 180 天，每 6 小时清一次过期的
+const chatPruner = setInterval(() => {
+  db.query('DELETE FROM chat_messages WHERE created_at < $1', [Date.now() - CHAT_RULES.retentionDays * 86_400_000])
+    .catch((error) => app.log.error(error))
+}, 6 * 3_600_000)
+chatPruner.unref()
 app.addHook('onClose', async () => {
   clearInterval(onlineSampler)
+  clearInterval(chatPruner)
   await db.end()
 })
 
@@ -60,6 +70,7 @@ try {
   await db.query('SELECT 1 FROM sect_contest_entries, sect_contest_results LIMIT 0')
   await db.query('SELECT 1 FROM admin_accounts, mails, mail_claims, announcements LIMIT 0')
   await db.query('SELECT 1 FROM rate_boosts, shop_goods, shop_purchases, player_activity_days, online_samples LIMIT 0')
+  await db.query('SELECT 1 FROM chat_messages, chat_blocks, chat_banned_words LIMIT 0')
   await freshRateBoosts()
   await app.listen({ host: '127.0.0.1', port: Number(process.env.PORT || 8080) })
 } catch (error) {

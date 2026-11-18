@@ -1,11 +1,8 @@
-import { randomUUID } from 'node:crypto'
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import type { WebSocket } from 'ws'
 import { ITEMS, REALMS, SECTS } from '../../shared/gameData.ts'
 import type { PlayerSnapshot, RoomPlayerDTO, WsServerEvent } from '../../shared/protocol.ts'
-import { FOREVER } from '../../shared/admin.ts'
 import { requireSession, type Session } from './auth.ts'
-import { db } from './db.ts'
 import { getSnapshot } from './game.ts'
 
 interface Connection {
@@ -17,9 +14,21 @@ interface Connection {
 interface Member {
   info: RoomPlayerDTO
   mapId: string
+  /** 门派频道按它投递 */
+  sectId: string | null
   revision: number
   connections: Set<Connection>
-  lastChatAt: number
+}
+
+/** 发言人：聊天模块据此校验与投递（docs/23） */
+export interface ChatSpeaker {
+  playerId: string
+  nickname: string
+  sectName: string
+  sectId: string | null
+  level: number
+  mapId: string
+  reply: (event: WsServerEvent) => void
 }
 
 /** 同图在线的侠客；members 按进图先后，shown 与 count 是上次推送出去的名单与人数 */
@@ -40,8 +49,6 @@ export function roomWindow(players: RoomPlayerDTO[], limit = ROOM_LIST_LIMIT) {
   const target = (player: RoomPlayerDTO) => player.isBetrayerBounty || player.isEscortingDart || !!player.holdingUniqueArtifact
   return [...players.filter(target), ...players.filter((player) => !target(player))].slice(0, limit)
 }
-
-const muteTime = new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 
 function publicPlayer(snapshot: PlayerSnapshot): RoomPlayerDTO {
   const { player, loadouts, derivedStats } = snapshot
@@ -66,6 +73,7 @@ export function registerRooms(app: FastifyInstance) {
   const joining = new WeakMap<FastifyRequest, { session: Session; snapshot: PlayerSnapshot }>()
   let onPresence: ((playerId: string, resetReady: boolean) => void) | undefined
   let onJoin: ((playerId: string) => WsServerEvent | undefined) | undefined
+  let onChat: ((speaker: ChatSpeaker, message: unknown) => void) | undefined
 
   function roomOf(mapId: string) {
     let room = rooms.get(mapId)
@@ -127,6 +135,7 @@ export function registerRooms(app: FastifyInstance) {
     const profileChanged = JSON.stringify(info) !== JSON.stringify(member.info)
     member.info = info
     member.mapId = snapshot.player.currentMapId
+    member.sectId = snapshot.player.currentSectId ?? null
     member.revision = snapshot.revision
     if (oldMap !== member.mapId) {
       rooms.get(oldMap)?.members.delete(info.id)
@@ -165,9 +174,9 @@ export function registerRooms(app: FastifyInstance) {
     const member: Member = existing ?? {
       info: publicPlayer(snapshot),
       mapId: snapshot.player.currentMapId,
+      sectId: snapshot.player.currentSectId ?? null,
       revision: snapshot.revision,
       connections: new Set(),
-      lastChatAt: 0,
     }
     const connection = { socket, session, alive: true }
     member.connections.add(connection)
@@ -178,43 +187,25 @@ export function registerRooms(app: FastifyInstance) {
     socket.on('pong', () => { connection.alive = true })
     socket.on('message', (data, binary) => {
       if (!member.connections.has(connection)) return
-      const now = Date.now()
-      if (session.expiresAt <= now) {
+      if (connection.session.expiresAt <= Date.now()) {
         leave(member, connection)
         socket.close(1008, 'Session expired')
         return
       }
-      let content = ''
+      let message: { event?: unknown; data?: unknown } | undefined
       if (!binary) {
         try {
-          const message = JSON.parse(data.toString())
-          if (message?.event === 'CHAT_SEND' && typeof message.data?.content === 'string') {
-            content = message.data.content.trim().replace(/\s+/g, ' ')
-          }
-        } catch { /* 格式错误通过 CHAT_REJECTED 告知 */ }
+          message = JSON.parse(data.toString())
+        } catch { /* 格式错误按发言不合规处理 */ }
       }
-      if (!content || [...content].length > 80) {
+      if (message?.event !== 'CHAT_SEND') {
         send(connection, { event: 'CHAT_REJECTED', data: { code: 'INVALID_CHAT', message: '请输入 1 至 80 字的消息' } })
         return
       }
-      if (now - member.lastChatAt < 2_000) {
-        send(connection, { event: 'CHAT_REJECTED', data: { code: 'CHAT_RATE_LIMIT', message: '歇一歇再发' } })
-        return
-      }
-      member.lastChatAt = now
-      // 禁言由运营后台设置（docs/22），每次发言查一次
-      void db.query<{ muted_until: string | null }>('SELECT muted_until FROM players WHERE id = $1', [id]).then(({ rows: [row] }) => {
-        const until = Number(row?.muted_until ?? 0)
-        if (until > Date.now()) {
-          const message = until >= FOREVER ? '你已被禁言' : `你已被禁言至 ${muteTime.format(until)}（北京时间）`
-          send(connection, { event: 'CHAT_REJECTED', data: { code: 'CHAT_MUTED', message } })
-          return
-        }
-        broadcast(member.mapId, {
-          event: 'ROOM_CHAT',
-          data: { id: randomUUID(), mapId: member.mapId, sender: { id, nickname: member.info.nickname }, content, sentAt: now },
-        })
-      }).catch((error) => request.log.error(error))
+      onChat?.({
+        playerId: id, nickname: member.info.nickname, sectName: member.info.sectName, sectId: member.sectId, level: member.info.level,
+        mapId: member.mapId, reply: (event) => send(connection, event),
+      }, message.data)
     })
 
     if (existing) publish(snapshot)
@@ -267,6 +258,14 @@ export function registerRooms(app: FastifyInstance) {
     sendToPlayer: (playerId: string, event: WsServerEvent) => {
       for (const connection of online.get(playerId)?.connections ?? []) send(connection, event)
     },
+    /** 向某张地图上的在线侠客推送 */
+    sendToMap: broadcast,
+    /** 向某门派的在线弟子推送 */
+    sendToSect: (sectId: string, event: WsServerEvent) => {
+      const message = JSON.stringify(event)
+      for (const member of online.values()) if (member.sectId === sectId) for (const connection of member.connections) send(connection, message)
+    },
+    onChat: (listener: NonNullable<typeof onChat>) => { onChat = listener },
     /** 向全服在线侠客推送 */
     announce: (event: WsServerEvent) => {
       const message = JSON.stringify(event)

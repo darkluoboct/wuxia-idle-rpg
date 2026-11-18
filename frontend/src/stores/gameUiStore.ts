@@ -28,7 +28,7 @@ export const useGameUiStore = defineStore('wuxiaUi', () => {
   const bountyTargetId = ref<string>()
   const arsenalTab = ref<'SKILLS' | 'SQUAD' | 'EQUIP' | 'MERIDIAN'>('SKILLS')
   // 窄屏下左 / 右侧栏以抽屉形式呈现
-  const mobileDrawer = ref<'NONE' | 'CHAR' | 'WORLD'>('NONE')
+  const mobileDrawer = ref<'NONE' | 'CHAR' | 'WORLD' | 'CHAT'>('NONE')
   // 时辰随真实时间流转（驱动场景昼夜与日志时间标签）
   const shichenIdx = ref(shichenIdxFromDate())
   const shichenClock = setInterval(() => {

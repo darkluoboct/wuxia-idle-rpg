@@ -2,19 +2,20 @@ import { randomUUID } from 'node:crypto'
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import type { PoolClient } from 'pg'
 import {
-  beijingDay, checkShopGoods, MAIL_LIMITS, RATE_KIND_LABEL, RATE_LIMITS, type AdminMeDTO, type AdminPermission, type AdminRateBoostDTO,
-  type AdminReportDTO, type AdminShopGoodsDTO, type MailAttachments, type RateBoostKind,
+  beijingDay, checkShopGoods, MAIL_LIMITS, RATE_KIND_LABEL, RATE_LIMITS, type AdminChatMessageDTO, type AdminMeDTO, type AdminPermission,
+  type AdminRateBoostDTO, type AdminReportDTO, type AdminShopGoodsDTO, type MailAttachments, type RateBoostKind,
 } from '../../shared/admin.ts'
 import { MAPS, REALMS, SECTS } from '../../shared/gameData.ts'
-import type { ShopCurrency, ShopLimitKind } from '../../shared/protocol.ts'
+import type { ChatChannel, ShopCurrency, ShopLimitKind } from '../../shared/protocol.ts'
 import { db, serverTime, transaction } from './db.ts'
+import { chatBannedWords, chatMessageOf, MESSAGE_COLUMNS, reloadChatBannedWords } from './chat.ts'
 import { adjustPlayerAssets } from './game.ts'
 import { GameError, objectBody } from './http.ts'
 import { boostOf, reloadRateBoosts } from './rates.ts'
 import type { registerRooms } from './rooms.ts'
 
 /**
- * 运营后台二期（docs/22）：报表、倍率活动、运营商店、调整玩家资产。
+ * 运营后台二期（docs/22）：报表、倍率活动、运营商店、调整玩家资产；聊天监控与屏蔽词（docs/23）。
  * 权限、审计与文字校验沿用 admin.ts 的那一套，由它传进来。
  */
 const HOUR = 3_600_000
@@ -273,5 +274,70 @@ export function registerAdminOps(app: FastifyInstance, rooms: ReturnType<typeof 
     // 在线的话推一下，他的页面会补读档案
     rooms.publish(snapshot)
     return { ok: true, after }
+  })
+
+  // ==================== 聊天监控与屏蔽词（docs/23） ====================
+  /** 最近的聊天；私聊只在按侠客查时列出（处理举报用） */
+  app.get<{ Querystring: { channel?: string; playerId?: string; before?: string } }>('/api/admin/chat', async (request): Promise<AdminChatMessageDTO[]> => {
+    await requireAdmin(request, 'view')
+    const { channel, playerId, before } = request.query
+    const conditions: string[] = []
+    const params: unknown[] = []
+    if (channel) {
+      if (!['WORLD', 'SECT', 'MAP', 'PRIVATE'].includes(channel)) throw new GameError(400, 'INVALID_CHANNEL', '没有这个频道')
+      params.push(channel as ChatChannel)
+      conditions.push(`m.channel = $${params.length}`)
+    }
+    if (playerId) {
+      if (!UUID.test(playerId)) throw new GameError(404, 'PLAYER_NOT_FOUND', '找不到这位侠客')
+      params.push(playerId.toLowerCase())
+      conditions.push(`(m.sender_id = $${params.length} OR m.recipient_id = $${params.length})`)
+    } else conditions.push("m.channel <> 'PRIVATE'")
+    if (before) {
+      params.push(integer(Number(before), '翻页位置', 1, Number.MAX_SAFE_INTEGER))
+      conditions.push(`m.id < $${params.length}`)
+    }
+    const { rows } = await db.query<Parameters<typeof chatMessageOf>[0] & { scope: string | null; hidden: boolean }>(`
+      SELECT ${MESSAGE_COLUMNS}, m.scope, m.hidden FROM chat_messages m LEFT JOIN players r ON r.id = m.recipient_id
+      WHERE ${conditions.join(' AND ')} ORDER BY m.id DESC LIMIT 100`, params)
+    return rows.map((row) => ({ ...chatMessageOf(row), scope: row.scope, hidden: row.hidden }))
+  })
+
+  /** 删除一句话：各频道里撤掉，留档标记为已删 */
+  app.post<{ Params: { id: string } }>('/api/admin/chat/:id/hide', async (request) => {
+    const admin = await requireAdmin(request, 'mute')
+    if (!/^\d{1,18}$/.test(request.params.id)) throw new GameError(404, 'CHAT_NOT_FOUND', '找不到这句话')
+    await transaction(async (client) => {
+      const now = await serverTime(client)
+      const { rows: [row] } = await client.query<{ sender_name: string; sender_id: string; channel: ChatChannel; content: string }>(
+        'UPDATE chat_messages SET hidden = true WHERE id = $1 AND NOT hidden RETURNING sender_name, sender_id, channel, content', [request.params.id])
+      if (!row) throw new GameError(404, 'CHAT_NOT_FOUND', '找不到这句话，或已经删过')
+      await audit(client, admin, 'hideChat', `${row.sender_name}（${row.sender_id}）`, { chatId: request.params.id, channel: row.channel, content: row.content }, now)
+    })
+    rooms.announce({ event: 'CHAT_REMOVED', data: { id: request.params.id } })
+    return { ok: true }
+  })
+
+  app.get('/api/admin/chat/words', async (request): Promise<string[]> => {
+    await requireAdmin(request, 'view')
+    return chatBannedWords()
+  })
+
+  /** 整份替换屏蔽词：每行一个，1~20 字，最多 2000 个 */
+  app.post('/api/admin/chat/words', async (request) => {
+    const admin = await requireAdmin(request, 'chatWords')
+    const { words } = objectBody(request.body)
+    if (!Array.isArray(words) || words.length > 2000) throw new GameError(400, 'INVALID_INPUT', '屏蔽词最多 2000 个')
+    const list = [...new Set(words.map((word) => typeof word === 'string' ? word.trim() : ''))].filter(Boolean)
+    const bad = list.find((word) => [...word].length > 20)
+    if (bad) throw new GameError(400, 'INVALID_INPUT', `屏蔽词每个最多 20 字：${bad.slice(0, 20)}…`)
+    await transaction(async (client) => {
+      const now = await serverTime(client)
+      await client.query('DELETE FROM chat_banned_words')
+      if (list.length) await client.query('INSERT INTO chat_banned_words (word) SELECT unnest($1::text[])', [list])
+      await audit(client, admin, 'chatWords', null, { count: list.length }, now)
+    })
+    reloadChatBannedWords()
+    return { ok: true, count: list.length }
   })
 }

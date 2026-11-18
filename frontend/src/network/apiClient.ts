@@ -1,4 +1,4 @@
-import type { WsServerEvent } from './protocol'
+import type { ChatSendDTO, WsServerEvent } from './protocol'
 
 const entryMode = typeof window === 'undefined' ? null : new URLSearchParams(window.location.search).get('mode')
 export const IS_GUEST_ENTRY = entryMode === 'guest'
@@ -57,9 +57,9 @@ class WuxiaApiClient {
     socket?.close()
   }
 
-  sendChat(content: string) {
+  sendChat(data: ChatSendDTO) {
     if (this.ws?.readyState !== WebSocket.OPEN) return false
-    this.ws.send(JSON.stringify({ event: 'CHAT_SEND', data: { content } }))
+    this.ws.send(JSON.stringify({ event: 'CHAT_SEND', data }))
     return true
   }
 }

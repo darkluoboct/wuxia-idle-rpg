@@ -24,16 +24,16 @@ import type { GameActions } from '@/network/gameActions'
 import type { useCultivation } from './cultivation'
 import type { useBattlePlayback } from './battlePlayback'
 import type { useStory } from './story'
-import type { useWorld } from './world'
+import type { useChat } from './chat'
 import type { useCompanions } from './companions'
 import type { useArtifacts } from './artifacts'
 
-export function useSect({ actions, cultivation, battle, story, world, companions, artifacts }: {
+export function useSect({ actions, cultivation, battle, story, chat, companions, artifacts }: {
   actions: GameActions
   cultivation: Pick<ReturnType<typeof useCultivation>, 'settleMockIdle' | 'changeMockKarma'>
   battle: Pick<ReturnType<typeof useBattlePlayback>, 'isBattlePlaying' | 'startBattlePlayback' | 'startLocalBattle' | 'activeBattle'>
   story: Pick<ReturnType<typeof useStory>, 'applyReward'>
-  world: Pick<ReturnType<typeof useWorld>, 'worldMessages'>
+  chat: Pick<ReturnType<typeof useChat>, 'postRumor'>
   companions: Pick<ReturnType<typeof useCompanions>, 'feast'>
   artifacts: Pick<ReturnType<typeof useArtifacts>, 'holdLocally' | 'loseLocally'>
 }) {
@@ -59,7 +59,7 @@ export function useSect({ actions, cultivation, battle, story, world, companions
   const { settleMockIdle, changeMockKarma } = cultivation
   const { isBattlePlaying, startBattlePlayback, startLocalBattle, activeBattle } = battle
   const { applyReward } = story
-  const { worldMessages } = world
+  const { postRumor } = chat
   const { feast } = companions
 
   const promotion = computed(() => currentSect.value ? sectPromotion(currentSect.value, player.value, sectFlags.value) : undefined)
@@ -371,14 +371,7 @@ export function useSect({ actions, cultivation, battle, story, world, companions
       const lostKarma = Math.abs(changeMockKarma(-120))
       if (oldSect.id === DAGOU_STAFF.sectId) artifacts.loseLocally('BETRAY', Date.now())
 
-      worldMessages.value.unshift({
-        id: `bounty_${Date.now()}`,
-        channel: 'RUMOR',
-        sender: '清理门户悬赏令',
-        sect: oldSect.name,
-        content: `⚠️逆徒【${player.value.nickname}】私携秘籍叛出${oldSect.name}！全服侠士可在任意地图将其截杀，赏纹银十万两！`,
-        time: '刚刚',
-      })
+      postRumor('清理门户悬赏令', `逆徒【${player.value.nickname}】私携秘籍叛出${oldSect.name}！全服侠士可在任意地图将其截杀，赏纹银十万两！`)
 
       appendLog('JIANGHU', [
         { type: 'tag', text: '破门叛师', tone: 'red' },

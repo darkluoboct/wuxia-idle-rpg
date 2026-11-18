@@ -20,13 +20,13 @@ import { AUCTION_BID_STEP, AUCTION_SOFT_CLOSE_MS, auctionDay, auctionDividendAt,
 import { computeDerivedStats } from '../../shared/battle.ts'
 import { huashanSeason } from '../../shared/huashan.ts'
 import { createStarterCharacter, innVisitDay, legacyAcupoints } from '../../shared/player.ts'
-import type { AnnouncementDTO, MailDTO, ArtifactBoardDTO, ArtifactResult, AuctionBoardDTO, AuctionResult, AwakenResult, BattleReportDTO, BountyBoardDTO, BountyEntryDTO, FeastResult, FtueClaimResult, GachaResult, GameAction, HuashanBoardDTO, HuashanResult, IdleGain, LibraryResult, LibraryStatusDTO, OriginId, PlayerSnapshot, RaidId, RaidMirrorBoardDTO, ReunionResult, RoomPlayerDTO, ShopGoodsDTO, SectContestBoardDTO, SectContestResult, SectResult, StallBoardDTO, StallResult, StoryAdventureResult, StoryChallengeResult, TrialChallengeResult, TrialPatrolStatusDTO, TrialReplayResult, WsServerEvent, XiangyangBoardDTO, XiangyangResult } from '../../shared/protocol.ts'
+import type { AnnouncementDTO, MailDTO, ArtifactBoardDTO, ArtifactResult, AuctionBoardDTO, AuctionResult, AwakenResult, BattleReportDTO, BountyBoardDTO, BountyEntryDTO, FeastResult, FtueClaimResult, GachaResult, GameAction, HuashanBoardDTO, HuashanResult, IdleGain, LibraryResult, LibraryStatusDTO, OriginId, PlayerSnapshot, RaidId, RaidMirrorBoardDTO, ReunionResult, RoomPlayerDTO, ShopGoodsDTO, ChatMessageDTO, ChatPrivateBoardDTO, ChatSendDTO, SectContestBoardDTO, SectContestResult, SectResult, StallBoardDTO, StallResult, StoryAdventureResult, StoryChallengeResult, TrialChallengeResult, TrialPatrolStatusDTO, TrialReplayResult, WsServerEvent, XiangyangBoardDTO, XiangyangResult } from '../../shared/protocol.ts'
 import { QUANZHEN_LIBRARY } from '../../shared/quanzhen.ts'
 import { BETRAYAL_BOUNTY, SECT_CHIEF_SALUTE_QI, SECT_SALUTE_QI, sectContestEndsAt, sectContestWeek } from '../../shared/sectProgress.ts'
 import { hasTrialPart, trialPartId, trialSetOfStage, trialStageOf } from '../../shared/trialStages.ts'
 import { ONLINE_STORY_CHAPTERS, ONLINE_STORY_PROGRESS_VERSION } from '../../shared/storyData.ts'
 import { xiangyangWar, xiangyangWarOf } from '../../shared/xiangyang.ts'
-import type { AdminAuditDTO, AdminDashboardDTO, AdminMailDTO, AdminPlayerDetailDTO, AdminPlayerRowDTO, AdminReportDTO } from '../../shared/admin.ts'
+import type { AdminAuditDTO, AdminChatMessageDTO, AdminDashboardDTO, AdminMailDTO, AdminPlayerDetailDTO, AdminPlayerRowDTO, AdminReportDTO } from '../../shared/admin.ts'
 import { RAID_LEND, raidLendQi } from '../../shared/mirror.ts'
 import { GameError, TRUST_PROXY } from '../src/http.ts'
 
@@ -72,6 +72,7 @@ describe('联机战斗', { skip: connection ? false : '请设置 GAME_TEST_DATAB
     const rooms = registerRooms(app)
     registerAuth(app, false, rooms.closeSession)
     registerGame(app, rooms, registerRaidLobby(app, rooms))
+    ;(await import('../src/chat.ts')).registerChat(app, rooms)
     registerAdmin(app, rooms, false)
     await app.listen({ host: '127.0.0.1', port: 0 })
     mock.method(Math, 'random', () => 0.99)
@@ -1458,6 +1459,96 @@ describe('联机战斗', { skip: connection ? false : '请设置 GAME_TEST_DATAB
       assert.ok(report.levels.reduce((total, { count }) => total + count, 0) >= 3)
     } finally {
       fixedServerTime = undefined
+    }
+  })
+
+  it('江湖传音：世界、门派、同图、私聊各自投递并留档；世界频道限等级与间隔，屏蔽、屏蔽词、离线私聊与运营删除', async () => {
+    const gm = await opsAdmin('gm_chat', 'OPERATOR')
+    const support = await opsAdmin('gm_chat_view', 'SUPPORT')
+    const [first, second, third, absent] = await Promise.all(['chat_a', 'chat_b', 'chat_c', 'chat_e'].map(createPlayer))
+    const rookie = await createRookie('chat_d')
+    await Promise.all([first, second].map(({ id }) => profile(id, { currentSectId: 'quanzhen', currentMapId: 'guiyun_lake' })))
+    await profile(third.id, { currentSectId: 'gaibang', currentMapId: 'zhongnan_forest' })
+    const heard: Record<string, WsServerEvent[]> = {}
+    const sockets: WebSocket[] = []
+    const join = async (actor: typeof first) => {
+      heard[actor.id] = []
+      sockets.push(await actor.connect((event) => heard[actor.id].push(event)))
+      return sockets.at(-1)!
+    }
+    const say = (socket: WebSocket, data: ChatSendDTO) => socket.send(JSON.stringify({ event: 'CHAT_SEND', data }))
+    async function poll<T>(find: () => T | undefined) {
+      for (let tries = 0; tries < 60; tries++) {
+        const found = find()
+        if (found) return found
+        await new Promise((resolve) => setTimeout(resolve, 50))
+      }
+      throw new Error(`没等到推送：${JSON.stringify(heard)}`)
+    }
+    const message = (id: string, content: string) => poll(() => heard[id].flatMap((event) => event.event === 'CHAT_MESSAGE' && event.data.content === content ? [event.data] : [])[0])
+    const rejection = (id: string, code: string) => poll(() => heard[id].find((event) => event.event === 'CHAT_REJECTED' && event.data.code === code))
+    const got = (id: string, content: string) => heard[id].some((event) => event.event === 'CHAT_MESSAGE' && event.data.content === content)
+    try {
+      const [a, b, c, d] = [await join(first), await join(second), await join(third), await join(rookie)]
+
+      // 世界：全服都收到；十秒内再说被拦；不到 10 级不能说
+      say(a, { channel: 'WORLD', content: '诸位好' })
+      const hello = await message(third.id, '诸位好')
+      assert.deepEqual([hello.channel, hello.sender.nickname], ['WORLD', 'story_chat_a'])
+      say(a, { channel: 'WORLD', content: '再说一句' })
+      await rejection(first.id, 'CHAT_RATE_LIMIT')
+      say(d, { channel: 'WORLD', content: '新人报到' })
+      await rejection(rookie.id, 'CHAT_LEVEL')
+
+      // 门派与同图：只投给同门、同图
+      say(a, { channel: 'SECT', content: '师兄弟们' })
+      say(a, { channel: 'MAP', content: '归云庄见' })
+      await message(second.id, '师兄弟们')
+      await message(second.id, '归云庄见')
+      say(d, { channel: 'SECT', content: '我也要' })
+      await rejection(rookie.id, 'CHAT_NO_SECT')
+
+      // 私聊：对方与自己各收一份；被屏蔽的人发不过去
+      say(a, { channel: 'PRIVATE', to: third.id, content: '借一步说话' })
+      const whisper = await message(third.id, '借一步说话')
+      assert.deepEqual(whisper.to, { id: third.id, nickname: 'story_chat_c' })
+      await message(first.id, '借一步说话')
+      assert.equal((await third.post('/chat/block', { playerId: second.id, blocked: true })).statusCode, 200)
+      say(b, { channel: 'PRIVATE', to: third.id, content: '在吗' })
+      await rejection(second.id, 'CHAT_BLOCKED')
+      assert.ok(!got(third.id, '师兄弟们') && !got(third.id, '归云庄见') && !got(second.id, '借一步说话'))
+
+      // 离线私聊留档：上线后看到未读，读过清零
+      say(d, { channel: 'PRIVATE', to: absent.id, content: '等你回来' })
+      await message(rookie.id, '等你回来')
+      const inbox = await absent.read<ChatPrivateBoardDTO>('/chat/private')
+      assert.deepEqual(inbox.conversations.map(({ peer, unread, last }) => [peer.id, unread, last.content]), [[rookie.id, 1, '等你回来']])
+      assert.equal((await absent.post(`/chat/private/${rookie.id}/read`)).statusCode, 200)
+      assert.equal((await absent.read<ChatPrivateBoardDTO>('/chat/private')).conversations[0].unread, 0)
+      assert.deepEqual((await absent.read<ChatMessageDTO[]>(`/chat/private/${rookie.id}`)).map(({ content }) => content), ['等你回来'])
+      assert.deepEqual((await third.read<ChatPrivateBoardDTO>('/chat/private')).blocked.map(({ id }) => id), [second.id])
+
+      // 历史：各频道按范围取
+      assert.ok((await third.read<ChatMessageDTO[]>('/chat?channel=WORLD')).some(({ content }) => content === '诸位好'))
+      assert.ok((await second.read<ChatMessageDTO[]>('/chat?channel=SECT')).some(({ content }) => content === '师兄弟们'))
+      assert.ok(!(await third.read<ChatMessageDTO[]>('/chat?channel=SECT')).some(({ content }) => content === '师兄弟们'))
+      assert.ok(!(await third.read<ChatMessageDTO[]>('/chat?channel=MAP')).some(({ content }) => content === '归云庄见'))
+
+      // 屏蔽词换成 ＊；客服可删话，各端撤掉，历史里也没有
+      assert.equal((await support.post('/chat/words', { words: ['坏话'] })).statusCode, 403)
+      assert.equal((await gm.post('/chat/words', { words: ['坏话', ' 坏话 ', ''] })).json().count, 1)
+      say(c, { channel: 'WORLD', content: '不许说坏话' })
+      const masked = await message(first.id, '不许说＊＊')
+      assert.ok(!(await support.get('/chat')).json<AdminChatMessageDTO[]>().some(({ channel }) => channel === 'PRIVATE'))
+      assert.ok((await support.get(`/chat?playerId=${third.id}`)).json<AdminChatMessageDTO[]>().some(({ content }) => content === '借一步说话'))
+      assert.equal((await support.post(`/chat/${masked.id}/hide`)).statusCode, 200)
+      await poll(() => heard[second.id].find((event) => event.event === 'CHAT_REMOVED' && event.data.id === masked.id))
+      assert.ok(!(await first.read<ChatMessageDTO[]>('/chat?channel=WORLD')).some(({ id }) => id === masked.id))
+      assert.equal((await support.post(`/chat/${masked.id}/hide`)).statusCode, 404)
+    } finally {
+      for (const socket of sockets) socket.close()
+      await db.query('DELETE FROM chat_banned_words')
+      ;(await import('../src/chat.ts')).reloadChatBannedWords()
     }
   })
 

@@ -40,12 +40,14 @@ type RaidTeamAction =
   | { action: 'ready'; teamId: string; raidId: RaidId; ready: boolean }
   | { action: 'leave'; teamId: string }
 
-export function useWorld({ battle, actions, selectTab, cultivation, companions }: {
+export function useWorld({ battle, actions, selectTab, cultivation, companions, latestRumor }: {
   battle: Pick<ReturnType<typeof useBattlePlayback>, 'isBattlePlaying' | 'startBattlePlayback' | 'startLocalBattle'>
   actions: GameActions
   selectTab: (tab: MainTab) => void
   cultivation: Pick<ReturnType<typeof useCultivation>, 'showIdleGain' | 'settleOfflineQi' | 'changeMockKarma'>
   companions: Pick<ReturnType<typeof useCompanions>, 'accrueReunionWait'>
+  /** 世界频道里最近一条传闻（试玩的江湖快报用） */
+  latestRumor: () => { content: string } | undefined
 }) {
   const online = useOnlineStore()
   const playerStore = usePlayerStore()
@@ -53,7 +55,6 @@ export function useWorld({ battle, actions, selectTab, cultivation, companions }
     onlineState,
     ownedItemIds,
     player,
-    currentSect,
     currentLoadout,
     onlineClock,
     mapArrivedAt,
@@ -95,12 +96,6 @@ export function useWorld({ battle, actions, selectTab, cultivation, companions }
   const nearbyPlayers = ref<RoomPlayerDTO[]>(IS_MOCK_MODE ? generateRoomPlayers('jiaxing_suburb') : [])
   const roomMapId = ref<string | null>(null)
   const roomCount = ref(0)
-  const worldMessages = ref<
-    { id: string; channel: 'WORLD' | 'SECT' | 'RUMOR'; sender: string; sect: string; content: string; time: string }[]
-  >(IS_MOCK_MODE ? [
-    { id: 'm2', channel: 'WORLD', sender: '重阳首座·清风道长', sect: '全真教', content: '松鹤楼结义秘境【少林金刚伏魔圈】2缺1高爆发少侠，来个会降龙掌的兄弟！', time: '辰时' },
-    { id: 'm3', channel: 'WORLD', sender: '桃花小师妹', sect: '桃花岛', content: '哪位散人大哥鬼市淘到了《九阴残页》？诚心高价收！', time: '巳时' },
-  ] : [])
   // ==================== 系统邮件与全服公告（docs/22） ====================
   const mails = shallowRef<MailDTO[]>([])
   const mailboxOpen = ref(false)
@@ -178,7 +173,6 @@ export function useWorld({ battle, actions, selectTab, cultivation, companions }
       announcements.value = [event.data, ...announcements.value.filter(({ id }) => id !== event.data.id)]
       announce(event.data)
     } else if (event.event === 'ROOM_SYNC') {
-      if (roomMapId.value !== event.data.mapId) worldMessages.value = []
       roomMapId.value = event.data.mapId
       roomCount.value = event.data.onlineCount
       nearbyPlayers.value = event.data.players.filter((entry) => entry.id !== player.value.id)
@@ -192,15 +186,6 @@ export function useWorld({ battle, actions, selectTab, cultivation, companions }
       nearbyPlayers.value = [...kept, ...players.filter(({ id }) => !keptIds.has(id) && id !== player.value.id)]
       // 有人移出名单（多半是下线），停在本图的离线侠客名单也跟着变
       if (left.length) refreshAbsentSoon()
-    } else if (event.event === 'ROOM_CHAT' && event.data.mapId === roomMapId.value) {
-      const { id, content, sender, sentAt } = event.data
-      worldMessages.value.unshift({
-        id, channel: 'WORLD', sender: sender.nickname, sect: '同图', content,
-        time: new Date(sentAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }),
-      })
-      if (worldMessages.value.length > 60) worldMessages.value.pop()
-    } else if (event.event === 'CHAT_REJECTED') {
-      showToast(event.data.message, 'danger')
     } else if (event.event === 'TEAM_ROOM_SYNC') {
       const previous = raidLobby.value
       raidLobby.value = event.data
@@ -605,38 +590,19 @@ export function useWorld({ battle, actions, selectTab, cultivation, companions }
     }
   }
 
-  function sendChatMessage(content: string, channel: 'WORLD' | 'SECT' = 'WORLD') {
-    const trimmed = content.trim()
-    if (!trimmed) return false
-    if (!IS_MOCK_MODE) {
-      if (apiClient.sendChat(trimmed)) return true
-      showToast('正在重连，连上后再发', 'info')
-      return false
-    }
-    worldMessages.value.unshift({
-      id: `msg_${Date.now()}`,
-      channel,
-      sender: player.value.nickname,
-      sect: currentSect.value?.name ?? '逍遥散人',
-      content: trimmed,
-      time: '刚刚',
-    })
-    return true
-  }
-
   // 顶部飞鸽江湖邸报走马灯实时拼接文本（无彩色Emoji，纯正武侠邸报文风）
   const marqueeBulletin = computed(() => {
     if (!IS_MOCK_MODE) {
       const live = announcements.value.filter(({ endsAt }) => endsAt > onlineClock.value)
-      return live.length ? live.map(({ content }) => `【公告】${content}`).join('　') : '【江湖在线】在附近可以和同图侠客聊天。'
+      return live.length ? live.map(({ content }) => `【公告】${content}`).join('　') : '【江湖在线】左侧江湖传音可在世界、门派、附近与私聊里说话。'
     }
     const items: string[] = []
     if (player.value.bountyUntil) {
       items.push(`【海捕文书】「${player.value.nickname}」叛出师门，江湖侠客可追捕领赏。`)
     }
-    const latestRumor = worldMessages.value.find((m) => m.channel === 'RUMOR')
-    if (latestRumor) {
-      items.push(`【百晓生传书】${latestRumor.content}`)
+    const rumor = latestRumor()
+    if (rumor) {
+      items.push(`【百晓生传书】${rumor.content}`)
     }
     if (nextRaidRelic.value) {
       items.push(`【松鹤楼结义】打赢少室山副本，可得《${nextRaidRelic.value.name}》。`)
@@ -655,7 +621,6 @@ export function useWorld({ battle, actions, selectTab, cultivation, companions }
   function resetWorld() {
     clearRoom()
     roomMapId.value = null
-    worldMessages.value = []
     pendingDuelReport.value = null
     lastDuelBattleId = null
     raidLobby.value = { team: null, invitation: null }
@@ -671,7 +636,6 @@ export function useWorld({ battle, actions, selectTab, cultivation, companions }
 
   return {
     playPendingDuel,
-    worldMessages,
     nearbyPlayers,
     mails,
     mailboxOpen,
@@ -717,7 +681,6 @@ export function useWorld({ battle, actions, selectTab, cultivation, companions }
     replyCoCultivation,
     cancelCoCultivationInvite,
     endCoCultivation,
-    sendChatMessage,
     clearRoom,
     resetWorld,
   }

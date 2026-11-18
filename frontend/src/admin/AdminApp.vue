@@ -6,6 +6,7 @@ import AdminsView from './AdminsView.vue'
 import AnnouncementsView from './AnnouncementsView.vue'
 import AuditView from './AuditView.vue'
 import BoostsView from './BoostsView.vue'
+import ChatView from './ChatView.vue'
 import DashboardView from './DashboardView.vue'
 import MailsView from './MailsView.vue'
 import PlayersView from './PlayersView.vue'
@@ -13,12 +14,13 @@ import ReportsView from './ReportsView.vue'
 import ShopView from './ShopView.vue'
 
 /** 运营后台外壳（docs/22）：登录、按权限显示的导航 */
-type Tab = 'dashboard' | 'reports' | 'players' | 'mails' | 'announcements' | 'shop' | 'boosts' | 'audit' | 'admins'
+type Tab = 'dashboard' | 'reports' | 'players' | 'chat' | 'mails' | 'announcements' | 'shop' | 'boosts' | 'audit' | 'admins'
 
 const me = ref<AdminMeDTO | null>(null)
 const checking = ref(true)
 const tab = ref<Tab>('dashboard')
 const mailTarget = ref<{ id: string; nickname: string } | null>(null)
+const chatTarget = ref<{ id: string; nickname: string } | null>(null)
 const form = reactive({ loginName: '', password: '' })
 const loginError = ref('')
 const busy = ref(false)
@@ -28,6 +30,7 @@ const tabs = computed(() => [
   { id: 'dashboard' as const, label: '总览' },
   { id: 'reports' as const, label: '报表' },
   { id: 'players' as const, label: '玩家' },
+  { id: 'chat' as const, label: '聊天' },
   { id: 'mails' as const, label: '系统邮件' },
   { id: 'announcements' as const, label: '全服公告' },
   { id: 'shop' as const, label: '商店' },
@@ -58,6 +61,11 @@ async function logout() {
 function writeTo(player: { id: string; nickname: string }) {
   mailTarget.value = player
   tab.value = 'mails'
+}
+
+function chatOf(player: { id: string; nickname: string }) {
+  chatTarget.value = player
+  tab.value = 'chat'
 }
 
 const expired = () => { me.value = null }
@@ -117,7 +125,8 @@ onUnmounted(() => window.removeEventListener('admin-expired', expired))
         <ReportsView v-else-if="tab === 'reports'" />
         <ShopView v-else-if="tab === 'shop'" :can="can" />
         <BoostsView v-else-if="tab === 'boosts'" :can="can" />
-        <PlayersView v-else-if="tab === 'players'" :can="can" @write="writeTo" />
+        <PlayersView v-else-if="tab === 'players'" :can="can" @write="writeTo" @chat="chatOf" />
+        <ChatView v-else-if="tab === 'chat'" :can="can" :target="chatTarget" @clear-target="chatTarget = null" />
         <MailsView v-else-if="tab === 'mails'" :can="can" :target="mailTarget" @clear-target="mailTarget = null" />
         <AnnouncementsView v-else-if="tab === 'announcements'" :can="can" />
         <AuditView v-else-if="tab === 'audit'" />

@@ -7,7 +7,7 @@ import { adminApi, errorText, formatTime, INGOT_REASON_LABEL } from './api'
 
 /** 玩家：按昵称、账号或角色 ID 查侠客，看资产与流水，封号、禁言、踢下线、重置密码、调整资产、给他发信 */
 const props = defineProps<{ can: (permission: AdminPermission) => boolean }>()
-const emit = defineEmits<{ write: [player: { id: string; nickname: string }] }>()
+const emit = defineEmits<{ write: [player: { id: string; nickname: string }]; chat: [player: { id: string; nickname: string }] }>()
 
 const query = ref('')
 const rows = ref<AdminPlayerRowDTO[]>([])
@@ -148,6 +148,7 @@ const gachaName = (kind: string, refId: string | null) => !refId ? kind : (ITEMS
             <h3 class="text-lg font-semibold">{{ detail.nickname }}</h3>
             <span v-if="detail.online" class="tag tag-ok">在线</span>
           </div>
+          <button class="btn btn-sm" @click="emit('chat', { id: detail.id, nickname: detail.nickname })">聊天记录</button>
           <button v-if="props.can('mail')" class="btn btn-sm" @click="emit('write', { id: detail.id, nickname: detail.nickname })">给他发信</button>
         </div>
         <dl class="grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm sm:grid-cols-3">

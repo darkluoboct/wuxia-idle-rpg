@@ -794,7 +794,10 @@ export type WsServerEvent =
   | { event: 'ROOM_SYNC'; data: { mapId: string; onlineCount: number; players: RoomPlayerDTO[] } }
   /** 此后只推变动：players 为新列入或资料变了的，left 为移出名单的；同图的变动攒半秒合成一条 */
   | { event: 'ROOM_UPDATE'; data: { mapId: string; onlineCount: number; players: RoomPlayerDTO[]; left: string[] } }
-  | { event: 'ROOM_CHAT'; data: { id: string; mapId: string; sender: { id: string; nickname: string }; content: string; sentAt: number } }
+  /** 江湖传音（docs/23）：世界、门派、同图、私聊的一句话 */
+  | { event: 'CHAT_MESSAGE'; data: ChatMessageDTO }
+  /** 运营删除了一句话，各频道里撤掉 */
+  | { event: 'CHAT_REMOVED'; data: { id: string } }
   | { event: 'PLAYER_CHANGED'; data: { revision: number } }
   | { event: 'TEAM_ROOM_SYNC'; data: RaidLobbyDTO }
   | { event: 'RAID_REPORT'; data: BattleReportDTO }
@@ -822,6 +825,40 @@ export interface MailAttachments {
   fragments?: Record<string, number>
   /** 冲穴与突破丹药：丹药 ID → 枚数 */
   pills?: Record<string, number>
+}
+
+/** 江湖传音（docs/23）：WORLD 世界、SECT 门派、MAP 同图（附近）、PRIVATE 私聊 */
+export type ChatChannel = 'WORLD' | 'SECT' | 'MAP' | 'PRIVATE'
+
+/** 浏览器经 /ws 发言：{ event: 'CHAT_SEND', data: ChatSendDTO }；不写频道为同图 */
+export interface ChatSendDTO {
+  channel?: ChatChannel
+  content: string
+  /** 私聊对象的角色 ID */
+  to?: string
+}
+
+export interface ChatMessageDTO {
+  id: string
+  channel: ChatChannel
+  sender: { id: string; nickname: string; sectName: string }
+  /** 私聊的收件人 */
+  to?: { id: string; nickname: string }
+  content: string
+  sentAt: number
+}
+
+/** 私聊会话：与某人往来的最后一句与未读数 */
+export interface ChatConversationDTO {
+  peer: { id: string; nickname: string }
+  last: ChatMessageDTO
+  unread: number
+}
+
+export interface ChatPrivateBoardDTO {
+  conversations: ChatConversationDTO[]
+  /** 我屏蔽的人 */
+  blocked: { id: string; nickname: string }[]
 }
 
 /** 倍率活动（docs/22）：QI 挂机真气、SILVER 挂机纹银、DROP 巡历掉落几率；pct 为加成百分比，100 即双倍，同时段同类取最高 */

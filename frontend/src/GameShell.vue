@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch, type Component } from 'vue'
-import { Compass, House, Landmark, LogOut, Mail, Mountain, Settings, Store, Swords, UserRound } from 'lucide-vue-next'
+import { Compass, House, Landmark, LogOut, Mail, MessageCircle, Mountain, Settings, Store, Swords, UserRound } from 'lucide-vue-next'
 import { useGameStore, type MainTab } from '@/stores/gameStore'
 import { IS_MOCK_MODE } from '@/network/apiClient'
 import { TIER_META } from '@/config/uiMeta'
@@ -8,6 +8,7 @@ import LeftCharacterSidebar from '@/components/LeftCharacterSidebar.vue'
 import JianghuQuestScroll from '@/components/JianghuQuestScroll.vue'
 import DailyTasks from '@/components/DailyTasks.vue'
 import RightJianghuSidebar from '@/components/RightJianghuSidebar.vue'
+import ChatPanel from '@/components/ChatPanel.vue'
 import OriginPicker from '@/components/OriginPicker.vue'
 import type { OriginId } from '@/network/protocol'
 import { isOriginId, ORIGIN_IDS } from '../../shared/origins.ts'
@@ -28,6 +29,16 @@ const store = useGameStore()
 const props = defineProps<{ visible: boolean }>()
 const emit = defineEmits<{ back: [] }>()
 const choosingCharacter = ref(true)
+
+/** 江湖传音：768px 起常驻左栏人物卷下，手机从顶栏打开 */
+const desktopQuery = window.matchMedia('(min-width: 768px)')
+const isDesktop = ref(desktopQuery.matches)
+const syncDesktop = () => {
+  isDesktop.value = desktopQuery.matches
+  if (isDesktop.value && store.mobileDrawer === 'CHAT') store.mobileDrawer = 'NONE'
+}
+desktopQuery.addEventListener('change', syncDesktop)
+onUnmounted(() => desktopQuery.removeEventListener('change', syncDesktop))
 const hasEnteredJianghu = ref(false)
 const currentSave = computed(() => store.savedGame?.playerId === store.player.id ? store.savedGame : null)
 
@@ -68,7 +79,7 @@ const currentView = computed(() => navTabs.find((t) => t.key === currentTab.valu
 const openTabs = computed(() => navTabs.filter((t) => store.mainTabOpen(t.key)))
 const stage = ref<HTMLElement>()
 watch([currentTab, inBattle], () => { if (stage.value) stage.value.scrollTop = 0 })
-const toggleDrawer = (d: 'CHAR' | 'WORLD') => (store.mobileDrawer = store.mobileDrawer === d ? 'NONE' : d)
+const toggleDrawer = (d: 'CHAR' | 'WORLD' | 'CHAT') => (store.mobileDrawer = store.mobileDrawer === d ? 'NONE' : d)
 
 /* ---------- 新手序章与玩法开放剧情 ---------- */
 // 序章演到主线 1-1 开打为止；战斗播放时让出舞台，打赢后由忘机客的剧情卡接上
@@ -179,6 +190,14 @@ const TOAST_GLYPH = { gold: '喜', danger: '警', info: '讯' } as const
           <Mail />
           <b v-if="store.unreadMail" class="absolute -right-0.5 -top-0.5 min-w-4 rounded-full bg-[var(--cinnabar)] px-1 text-[0.62rem] leading-4 text-white tabular-nums">{{ store.unreadMail }}</b>
         </button>
+        <button
+          class="wuxia-icon relative md:hidden" :aria-label="store.chatPrivateUnread ? `江湖传音，${store.chatPrivateUnread} 条私聊未读` : '江湖传音'" title="江湖传音"
+          aria-controls="chat-sheet" :aria-expanded="store.mobileDrawer === 'CHAT'" @click="toggleDrawer('CHAT')"
+        >
+          <MessageCircle />
+          <b v-if="store.chatPrivateUnread" class="absolute -right-0.5 -top-0.5 min-w-4 rounded-full bg-[var(--cinnabar)] px-1 text-[0.62rem] leading-4 text-white tabular-nums">{{ store.chatPrivateUnread }}</b>
+          <i v-else-if="store.chatPublicUnread" class="absolute right-0.5 top-0.5 h-2 w-2 rounded-full bg-[var(--cinnabar)]" aria-hidden="true" />
+        </button>
         <button class="wuxia-icon" aria-label="选择角色" title="选择角色" @click="chooseCharacter"><UserRound /></button>
         <button v-if="!IS_MOCK_MODE" class="wuxia-icon" aria-label="退出登录" title="退出登录" :disabled="store.authBusy" @click="store.logout()"><LogOut /></button>
         <button class="wuxia-icon md:hidden" aria-label="查看角色" title="查看角色" aria-controls="character-rail" :aria-expanded="store.mobileDrawer === 'CHAR'" @click="toggleDrawer('CHAR')"><UserRound /></button>
@@ -192,7 +211,10 @@ const TOAST_GLYPH = { gold: '喜', danger: '警', info: '讯' } as const
 
     <main class="wuxia-layout">
       <aside id="character-rail" class="wuxia-rail character-rail" aria-label="人物卷" :data-open="store.mobileDrawer === 'CHAR'">
-        <div class="rail-frame"><LeftCharacterSidebar /></div>
+        <div class="rail-frame character-frame">
+          <LeftCharacterSidebar />
+          <ChatPanel v-if="isDesktop" class="rail-chat" />
+        </div>
       </aside>
 
       <section ref="stage" class="wuxia-stage" :class="{ 'wuxia-interior': currentTab !== 'CULTIVATE' || inBattle }" aria-label="江湖舞台">
@@ -222,9 +244,14 @@ const TOAST_GLYPH = { gold: '喜', danger: '警', info: '讯' } as const
     <Transition enter-active-class="transition-opacity duration-200" enter-from-class="opacity-0" leave-active-class="transition-opacity duration-200" leave-to-class="opacity-0">
       <div
         v-if="store.mobileDrawer !== 'NONE'" class="fixed inset-0 z-30 bg-[var(--scrim)]"
-        :class="store.mobileDrawer === 'CHAR' ? 'md:hidden' : 'xl:hidden'" @click="store.mobileDrawer = 'NONE'"
+        :class="store.mobileDrawer === 'WORLD' ? 'xl:hidden' : 'md:hidden'" @click="store.mobileDrawer = 'NONE'"
       />
     </Transition>
+
+    <!-- ==================== 江湖传音（< 768px，从顶栏打开） ==================== -->
+    <div v-if="!isDesktop && store.mobileDrawer === 'CHAT'" id="chat-sheet" class="chat-sheet rail-frame" role="dialog" aria-label="江湖传音">
+      <ChatPanel closable @close="store.mobileDrawer = 'NONE'" />
+    </div>
 
     <!-- ==================== 底部导航（< 768px） ==================== -->
     <nav class="wuxia-mobile-nav" role="tablist" aria-label="主导航">

@@ -208,6 +208,82 @@
 }
 .wuxia-mobile-nav svg { width: 1.23rem; height: 1.23rem; }
 
+/* ==================== 江湖传音（docs/23） ==================== */
+.character-frame { display: flex; flex-direction: column; }
+.character-frame > .character-sheet { flex: 0 1 auto; height: auto; min-height: 0; }
+.rail-chat { flex: 1 1 0; min-height: 15rem; border-top: 1px solid var(--line); }
+.chat-panel {
+  display: flex;
+  flex-direction: column;
+  gap: .4rem;
+  min-height: 0;
+  padding: .45rem .6rem .6rem;
+}
+.chat-panel > * { min-width: 0; }
+.chat-head { display: flex; align-items: center; gap: .4rem; }
+/* 展开：浮在舞台上的大窗，收起回到左栏 */
+.chat-panel.chat-expanded {
+  position: fixed; z-index: 35; left: .6rem; bottom: .6rem; width: min(30rem, 46vw); height: min(80vh, 46rem);
+  border: 1px solid var(--frame-edge); background: linear-gradient(112deg, var(--bg-2), var(--bg-1) 58%, var(--bg-2));
+  box-shadow: 0 14px 40px #0009;
+}
+.chat-head .rail-heading { flex: 1; }
+.chat-tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 2px; padding: 2px; border: 1px solid var(--line); border-radius: 3px; }
+.chat-tabs > button {
+  display: inline-flex; align-items: center; justify-content: center; gap: .2rem;
+  min-height: 1.85rem; border-radius: 2px; color: var(--ink-3); font-size: .86rem;
+}
+.chat-tabs > button[aria-selected="true"] { background: var(--gold-soft); color: var(--gold); font-weight: 700; }
+.chat-tabs > button:hover:not([aria-selected="true"]) { color: var(--ink); }
+.chat-badge {
+  display: inline-block; min-width: 1rem; padding: 0 .28rem; border-radius: 999px;
+  background: var(--cinnabar); color: #fff; font-size: .62rem; font-weight: 600; line-height: 1rem; text-align: center; font-variant-numeric: tabular-nums;
+}
+.chat-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.chat-empty { padding: 1.4rem .4rem; color: var(--ink-3); font-size: .82rem; text-align: center; }
+.chat-lines { display: flex; flex-direction: column; gap: .32rem; padding-right: .15rem; }
+.chat-line { font-size: .86rem; line-height: 1.5; overflow-wrap: anywhere; color: var(--ink-2); }
+.chat-line time { margin-right: .3rem; color: var(--ink-3); font-size: .7rem; font-variant-numeric: tabular-nums; }
+.chat-tag {
+  display: inline-block; margin-right: .25rem; padding: 0 .3rem; border: 1px solid var(--line); border-radius: 2px;
+  color: var(--ink-3); font-size: .68rem; line-height: 1.2rem; vertical-align: 1px;
+}
+.chat-name { color: var(--gold); font-weight: 700; }
+button.chat-name:hover { text-decoration: underline; text-underline-offset: 2px; }
+.chat-colon { color: var(--ink-3); }
+.chat-system { color: var(--gold); }
+.chat-system .chat-tag { border-color: var(--gold); color: var(--gold); }
+.chat-mine .chat-name { color: var(--ink); }
+.chat-menu { display: flex; gap: .35rem; margin-top: .2rem; }
+.chat-conversations { display: flex; flex-direction: column; gap: .3rem; }
+.chat-conversations button {
+  position: relative; display: grid; gap: .05rem; width: 100%; padding: .4rem 1.9rem .4rem .55rem;
+  border: 1px solid var(--line); border-radius: 3px; text-align: left;
+}
+.chat-conversations button:hover { border-color: var(--gold); }
+.chat-conversations .chat-badge { position: absolute; right: .5rem; top: 50%; transform: translateY(-50%); }
+.chat-conversation-name { display: flex; justify-content: space-between; gap: .4rem; font-size: .86rem; }
+.chat-conversation-name time { color: var(--ink-3); font-size: .7rem; font-variant-numeric: tabular-nums; }
+.chat-conversation-last { overflow: hidden; color: var(--ink-3); font-size: .78rem; text-overflow: ellipsis; white-space: nowrap; }
+.chat-blocked { margin-top: .6rem; }
+.chat-blocked li { display: flex; align-items: center; justify-content: space-between; gap: .4rem; padding: .25rem 0; font-size: .82rem; }
+.chat-thread-head { display: flex; align-items: center; gap: .4rem; font-size: .86rem; }
+.chat-input { display: grid; grid-template-columns: minmax(0, 1fr); gap: .25rem; }
+.chat-hint { overflow: hidden; color: var(--ink-3); font-size: .7rem; text-overflow: ellipsis; white-space: nowrap; }
+.chat-input > div { display: flex; gap: .35rem; }
+.chat-input input {
+  flex: 1; min-width: 0; padding: .38rem .6rem; border: 1px solid var(--line-strong); border-radius: 2px;
+  background: transparent; color: var(--ink); font-size: .86rem;
+}
+.chat-input input:focus { border-color: var(--gold); outline: none; }
+.chat-input input::placeholder { color: var(--ink-3); }
+.chat-sheet {
+  position: fixed; z-index: 45; inset: auto 0 0; height: min(86dvh, 40rem);
+  display: flex; flex-direction: column; border-top: 1px solid var(--frame-edge);
+  box-shadow: 0 -10px 30px #0006;
+}
+.chat-sheet > .chat-panel { flex: 1; padding-bottom: calc(.6rem + env(safe-area-inset-bottom)); }
+
 @media (min-width: 768px) {
   .wuxia-layout { grid-template-columns: clamp(14.75rem, 24.7vw, 21rem) minmax(0, 1fr); }
   .character-rail { position: relative; z-index: 1; visibility: visible; transform: none; width: auto; min-height: 0; }

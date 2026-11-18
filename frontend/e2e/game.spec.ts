@@ -105,23 +105,31 @@ test('联机注册、创角、同图聊天、领取收益和换装读档', async
         await playPrologue(game, family)
         // 序章之后只开修行、江湖、武库
         await expect(game.locator('.wuxia-header').getByRole('tab')).toHaveText(['修行', '江湖', '武库'])
-        await game.getByRole('tab', { name: '附近' }).click()
-        await game.getByRole('tab', { name: '同图聊天' }).click()
+        await game.getByRole('tablist', { name: '江湖卷栏目' }).getByRole('tab', { name: '附近' }).click()
+        // 江湖传音在左栏人物卷下：切到附近（同图）频道
+        await game.getByRole('tablist', { name: '频道' }).getByRole('tab', { name: /^附近/ }).click()
         return { game, page, nickname }
       }),
     )
-    const message = '烟雨楼前见'
+    // 聊天会留档，测试库反复跑时每次换一句
+    const message = `烟雨楼前见 ${randomUUID().slice(0, 4)}`
     await alice.game.getByRole('textbox', { name: '聊天内容' }).fill(message)
     await alice.game.getByRole('button', { name: '发送', exact: true }).click()
     await expect(bob.game.getByText(message, { exact: true })).toBeVisible()
     // 同图名单：连上时拿一份，之后的进出只推变动，两边都要看到对方
+    const nearby = (game: FrameLocator) => game.getByRole('list', { name: '附近侠客' })
     for (const [viewer, other] of [[alice, bob], [bob, alice]]) {
-      await viewer.game.getByRole('tab', { name: /^附近侠客/ }).click()
-      await expect(viewer.game.getByText(other.nickname, { exact: true })).toBeVisible()
+      await expect(nearby(viewer.game).getByText(other.nickname, { exact: true })).toBeVisible()
     }
+    // 私聊：从附近侠客点「私聊」，对方的私聊页签记未读，点开会话读到
+    await alice.game.getByRole('button', { name: `私聊${bob.nickname}` }).click()
+    await alice.game.getByRole('textbox', { name: '聊天内容' }).fill('借一步说话')
+    await alice.game.getByRole('button', { name: '发送', exact: true }).click()
+    await bob.game.getByRole('tablist', { name: '频道' }).getByRole('tab', { name: '私聊，1 条未读' }).click()
+    await bob.game.getByRole('list', { name: '私聊会话' }).getByRole('button', { name: new RegExp(alice.nickname) }).click()
+    await expect(bob.game.getByText('借一步说话', { exact: true })).toBeVisible()
     await contexts[1].close()
-    await expect(alice.game.getByText(bob.nickname, { exact: true })).toHaveCount(0)
-    await alice.game.getByRole('tab', { name: '同图聊天' }).click()
+    await expect(nearby(alice.game).getByText(bob.nickname, { exact: true })).toHaveCount(0)
     const settlement = alice.page.waitForResponse(
       (response) =>
         response.url().endsWith('/api/v1/cultivate/settle') &&

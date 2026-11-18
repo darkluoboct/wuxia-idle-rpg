@@ -1,5 +1,5 @@
 import { ACUPOINT_PILLS, ITEMS, SKILLS } from './gameData.ts'
-import type { MailAttachments, RateBoostDTO, RateBoostKind, ShopGoodsDTO } from './protocol.ts'
+import type { ChatMessageDTO, MailAttachments, RateBoostDTO, RateBoostKind, ShopGoodsDTO } from './protocol.ts'
 
 export type { MailAttachments, RateBoostKind }
 
@@ -15,7 +15,7 @@ export const ADMIN_ROLE_LABEL: Record<AdminRole, string> = { SUPER: '超管', OP
 export const ADMIN_PERMISSIONS = {
   view: 'SUPPORT', kick: 'SUPPORT', mute: 'SUPPORT',
   ban: 'OPERATOR', resetPassword: 'OPERATOR', mail: 'OPERATOR', announce: 'OPERATOR',
-  rates: 'OPERATOR', shop: 'OPERATOR', adjust: 'OPERATOR',
+  rates: 'OPERATOR', shop: 'OPERATOR', adjust: 'OPERATOR', chatWords: 'OPERATOR',
   admins: 'SUPER',
 } as const satisfies Record<string, AdminRole>
 export type AdminPermission = keyof typeof ADMIN_PERMISSIONS
@@ -190,6 +190,9 @@ export interface AdminAccountDTO { id: string; login: string; role: AdminRole; d
 
 export interface AdminRateBoostDTO extends RateBoostDTO { createdBy: string | null; createdAt: number }
 
+/** 聊天监控：scope 为门派或地图 ID；hidden 为已删 */
+export interface AdminChatMessageDTO extends ChatMessageDTO { scope: string | null; hidden: boolean }
+
 export interface AdminShopGoodsDTO extends Omit<ShopGoodsDTO, 'bought' | 'stockLeft'> {
   startsAt: number
   stock: number | null
@@ -228,4 +231,5 @@ export const ADMIN_ACTION_LABEL: Record<string, string> = {
   mail: '发邮件', revokeMail: '撤回邮件', announce: '发公告', revokeAnnouncement: '撤下公告',
   createAdmin: '新建后台账号', updateAdmin: '修改后台账号',
   createBoost: '开倍率活动', endBoost: '结束倍率活动', createGoods: '上架商品', updateGoods: '修改商品', adjust: '调整资产',
+  hideChat: '删除聊天', chatWords: '修改屏蔽词',
 }

@@ -17,16 +17,16 @@ import {
 import { usePlayerStore } from './playerStore'
 import { useGameUiStore } from './gameUiStore'
 import type { useBattlePlayback } from './battlePlayback'
-import type { useWorld } from './world'
+import type { useChat } from './chat'
 
 type ArtifactNews = Extract<WsServerEvent, { event: 'UNIQUE_ARTIFACT_CHANGED' }>['data']
 type ArtifactLoss = NonNullable<PlayerDTO['artifactLoss']>
 
 /** 兵器谱 · 全服唯一真品（docs/09 §四）：联机由服务端裁定，本地试玩按同一份规则，只有你一位侠客 */
-export function useArtifacts({ actions, battle, world }: {
+export function useArtifacts({ actions, battle, chat }: {
   actions: GameActions
   battle: Pick<ReturnType<typeof useBattlePlayback>, 'isBattlePlaying' | 'startBattlePlayback' | 'startLocalBattle'>
-  world: Pick<ReturnType<typeof useWorld>, 'worldMessages'>
+  chat: Pick<ReturnType<typeof useChat>, 'postRumor'>
 }) {
   const playerStore = usePlayerStore()
   const { player, ownedItemIds, learnedSkills, currentLoadout, collectionBonus, currentSect, presets, worldTime } = storeToRefs(playerStore)
@@ -34,7 +34,7 @@ export function useArtifacts({ actions, battle, world }: {
   const uiStore = useGameUiStore()
   const { appendLog, showToast } = uiStore
   const { isBattlePlaying, startBattlePlayback, startLocalBattle } = battle
-  const { worldMessages } = world
+  const { postRumor } = chat
 
   const staffName = ITEMS[DAGOU_STAFF.itemId].name
   const artifactBoard = shallowRef<ArtifactBoardDTO | null>(null)
@@ -90,11 +90,7 @@ export function useArtifacts({ actions, battle, world }: {
 
   /** 真品易主：写进传闻频道；兵器谱开着就顺手刷新 */
   function onArtifactChanged(news: ArtifactNews) {
-    worldMessages.value.unshift({
-      id: `artifact-${Date.now()}`, channel: 'RUMOR', sender: '江湖百晓生', sect: '天机', content: rumorOf(news),
-      time: new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }),
-    })
-    if (worldMessages.value.length > 60) worldMessages.value.pop()
+    postRumor('江湖百晓生', rumorOf(news))
     if (artifactBoard.value) void refreshArtifacts()
   }
 

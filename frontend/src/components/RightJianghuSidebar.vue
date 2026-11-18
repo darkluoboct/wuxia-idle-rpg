@@ -31,10 +31,6 @@ const news = computed(() => {
   return [...groups]
 })
 
-const tab = ref<'NEARBY' | 'CHAT'>('NEARBY')
-const chatInput = ref('')
-const chatFilter = ref<'ALL' | 'RUMOR' | 'WORLD'>('ALL')
-const unread = ref(false)
 
 type Dir = '北' | '西' | '东' | '南' | '西北' | '东北' | '东南'
 const COMPASS: { id: string; dir: Dir; cls: string }[] = [
@@ -57,25 +53,6 @@ const SHORT: Record<string, string> = {
   huashan_peak: '华山绝顶', guiyun_lake: '太湖归云', taohua_isle: '桃花岛',
 }
 
-const channels = [
-  { k: 'ALL', l: '全部' },
-  { k: 'RUMOR', l: '传闻' },
-  { k: 'WORLD', l: '聊天' },
-] as const
-
-const messages = computed(() =>
-  chatFilter.value === 'ALL' ? store.worldMessages : store.worldMessages.filter((m) => m.channel === chatFilter.value)
-)
-
-watch(
-  () => store.worldMessages[0]?.id,
-  () => {
-    if (pane.value !== 'SOCIAL' || tab.value !== 'CHAT') unread.value = true
-  }
-)
-watch([pane, tab], ([p, t]) => {
-  if (p === 'SOCIAL' && t === 'CHAT') unread.value = false
-})
 watch(() => store.activeBattle?.battleId, (id) => { if (id) pane.value = 'TASKS' })
 
 const mapsHint = computed(() => `${featureRequirementText('MAPS')}后开放`)
@@ -83,11 +60,6 @@ const mapsHint = computed(() => `${featureRequirementText('MAPS')}后开放`)
 function openStory() {
   store.selectTab('JIANGHU')
   store.jianghuTab = 'STORY'
-}
-
-function send() {
-  if (!chatInput.value.trim()) return
-  if (store.sendChatMessage(chatInput.value, 'WORLD')) chatInput.value = ''
 }
 
 /** 对方战力 / 我方战力，用于判断切磋、劫掠是否划算 */
@@ -113,7 +85,7 @@ const coCultivationTimeLeft = computed(() => {
     <div class="rail-tabs world-tabs" role="tablist" aria-label="江湖卷栏目">
       <button
         v-for="item in panes" :key="item.key" role="tab" :aria-selected="pane === item.key" @click="pane = item.key"
-      >{{ item.label }}<i v-if="item.key === 'SOCIAL' && unread" class="world-unread" aria-hidden="true" /></button>
+      >{{ item.label }}</button>
     </div>
 
     <section v-if="store.activeCoCultivation || store.coCultivationInvite" class="well shrink-0 space-y-1.5 px-3 py-2.5" aria-label="双人共修">
@@ -268,18 +240,11 @@ const coCultivationTimeLeft = computed(() => {
         </div>
       </div>
 
-      <!-- 页签 -->
-      <div class="tabs shrink-0" role="tablist">
-        <button class="tab" role="tab" :aria-selected="tab === 'NEARBY'" @click="tab = 'NEARBY'">
-          附近侠客 <span class="text-xs opacity-60 tabular-nums">{{ store.nearbyPlayers.length }}</span>
-        </button>
-        <button class="tab" role="tab" :aria-selected="tab === 'CHAT'" @click="tab = 'CHAT'">
-          {{ IS_MOCK_MODE ? '江湖聊天' : '同图聊天' }}<i v-if="unread" class="ml-1 inline-block h-1.5 w-1.5 rounded-full bg-seal align-middle" />
-        </button>
-      </div>
-
-      <!-- 同图侠客 -->
-      <ul v-if="tab === 'NEARBY'" class="min-h-0 flex-1 space-y-2 overflow-y-auto pr-0.5">
+      <!-- 同图侠客；聊天在左栏的江湖传音 -->
+      <h3 class="flex shrink-0 items-center gap-1.5 text-sm font-bold">
+        附近侠客 <span class="text-xs font-normal tabular-nums text-ink3">{{ store.nearbyPlayers.length }}</span>
+      </h3>
+      <ul class="min-h-0 flex-1 space-y-2 overflow-y-auto pr-0.5" aria-label="附近侠客">
         <li v-if="!IS_MOCK_MODE && !store.roomConnected" class="py-8 text-center text-sm text-ink3">正在连接附近侠客…</li>
         <li v-else-if="!store.nearbyPlayers.length" class="py-8 text-center text-sm text-ink3">附近还没有其他侠客。</li>
         <li v-for="pl in store.nearbyPlayers" :key="pl.id" class="well space-y-2 p-2.5">
@@ -334,6 +299,7 @@ const coCultivationTimeLeft = computed(() => {
               class="btn btn-sm flex-1" :aria-label="`邀请${pl.nickname}组队`" :disabled="store.raidLobbyBusy || !store.roomConnected"
               @click="store.raidTeamAction({ action: 'invite', targetPlayerId: pl.id })"
             >邀请组队</button>
+            <button class="btn btn-sm flex-1" :aria-label="`私聊${pl.nickname}`" @click="store.openChatThread({ id: pl.id, nickname: pl.nickname })">私聊</button>
           </div>
         </li>
         <li v-if="!IS_MOCK_MODE && store.roomConnected && store.roomCount - 1 > store.nearbyPlayers.length" class="py-1 text-center text-xs text-ink3">
@@ -373,36 +339,6 @@ const coCultivationTimeLeft = computed(() => {
           </li>
         </template>
       </ul>
-
-      <!-- 飞鸽传书 -->
-      <template v-else>
-        <div v-if="IS_MOCK_MODE" class="flex shrink-0 items-center gap-1.5 text-xs">
-          <button
-            v-for="c in channels" :key="c.k" class="chip" :class="chatFilter === c.k ? 'chip-gold' : 'opacity-75 hover:opacity-100'"
-            @click="chatFilter = c.k"
-          >
-            {{ c.l }}
-          </button>
-        </div>
-        <p v-else class="text-xs text-ink3">{{ store.roomConnected ? '这里的话，同一张地图的侠客都能看见。' : '正在重连聊天…' }}</p>
-        <ul class="min-h-0 flex-1 space-y-2 overflow-y-auto pr-0.5" aria-live="polite">
-          <li v-for="m in messages" :key="m.id" class="border-b border-line pb-2 text-sm leading-relaxed last:border-b-0">
-            <div class="mb-0.5 flex items-center gap-1.5 text-xs">
-              <span class="chip !py-0" :class="m.channel === 'RUMOR' ? 'chip-gold' : ''">{{ m.channel === 'RUMOR' ? '天机' : m.sect }}</span>
-              <b class="truncate text-ink">{{ m.sender }}</b>
-              <span class="ml-auto shrink-0 text-ink3">{{ m.time }}</span>
-            </div>
-            <p class="text-ink2">{{ m.content }}</p>
-          </li>
-        </ul>
-        <form class="flex shrink-0 gap-1.5" @submit.prevent="send">
-          <input
-            v-model="chatInput" type="text" maxlength="80" placeholder="说点什么（回车发送）" aria-label="聊天内容"
-            class="min-w-0 flex-1 rounded-sm border border-linestrong bg-transparent px-2.5 py-1.5 text-sm placeholder:text-ink3 focus:border-gold focus:outline-none"
-          />
-          <button type="submit" class="btn btn-gold shrink-0" :disabled="!IS_MOCK_MODE && !store.roomConnected">发送</button>
-        </form>
-      </template>
     </div>
 
     <template v-if="pane !== 'SOCIAL'">
