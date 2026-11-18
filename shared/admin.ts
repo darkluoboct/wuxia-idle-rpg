@@ -1,7 +1,7 @@
-import { ITEMS, SKILLS } from './gameData.ts'
-import type { MailAttachments } from './protocol.ts'
+import { ACUPOINT_PILLS, ITEMS, SKILLS } from './gameData.ts'
+import type { MailAttachments, RateBoostDTO, RateBoostKind, ShopGoodsDTO } from './protocol.ts'
 
-export type { MailAttachments }
+export type { MailAttachments, RateBoostKind }
 
 /**
  * 运营管理后台（docs/22）：权限、邮件附件规则与后台接口的数据形状。
@@ -15,6 +15,7 @@ export const ADMIN_ROLE_LABEL: Record<AdminRole, string> = { SUPER: '超管', OP
 export const ADMIN_PERMISSIONS = {
   view: 'SUPPORT', kick: 'SUPPORT', mute: 'SUPPORT',
   ban: 'OPERATOR', resetPassword: 'OPERATOR', mail: 'OPERATOR', announce: 'OPERATOR',
+  rates: 'OPERATOR', shop: 'OPERATOR', adjust: 'OPERATOR',
   admins: 'SUPER',
 } as const satisfies Record<string, AdminRole>
 export type AdminPermission = keyof typeof ADMIN_PERMISSIONS
@@ -23,13 +24,16 @@ const RANK: Record<AdminRole, number> = { SUPPORT: 1, OPERATOR: 2, SUPER: 3 }
 export const adminCan = (role: AdminRole, permission: AdminPermission) => RANK[role] >= RANK[ADMIN_PERMISSIONS[permission]]
 export const isAdminRole = (value: unknown): value is AdminRole => typeof value === 'string' && Object.hasOwn(RANK, value)
 
+/** 北京时间的日序号：活跃日留档与报表按它分日 */
+export const beijingDay = (now: number) => Math.floor((now + 8 * 3_600_000) / 86_400_000)
+
 /** 封号、禁言的「永久」 */
 export const FOREVER = 253_402_300_799_000
 
 // ==================== 系统邮件附件 ====================
 
 /** 单封邮件的附件上限，防手滑 */
-export const MAIL_LIMITS = { ingot: 10_000, silver: 10_000_000, qiExp: 100_000_000, items: 10, fragments: 100 } as const
+export const MAIL_LIMITS = { ingot: 10_000, silver: 10_000_000, qiExp: 100_000_000, items: 10, fragments: 100, pills: 100 } as const
 
 /** 校验后台填的附件；返回整理好的附件，或一句错误 */
 export function checkMailAttachments(value: unknown): MailAttachments | { error: string } {
@@ -64,7 +68,28 @@ export function checkMailAttachments(value: unknown): MailAttachments | { error:
     }
     if (entries.length) result.fragments = Object.fromEntries(entries) as Record<string, number>
   }
+  if (input.pills !== undefined) {
+    const pills = input.pills
+    if (!pills || typeof pills !== 'object' || Array.isArray(pills)) return { error: '丹药格式有误' }
+    const entries = Object.entries(pills as Record<string, unknown>)
+    for (const [id, count] of entries) {
+      if (!ACUPOINT_PILLS[id]) return { error: `没有这种丹药：${id}` }
+      if (typeof count !== 'number' || !Number.isInteger(count) || count < 1 || count > MAIL_LIMITS.pills) {
+        return { error: `丹药每种要填 1 至 ${MAIL_LIMITS.pills} 枚` }
+      }
+    }
+    if (entries.length) result.pills = Object.fromEntries(entries) as Record<string, number>
+  }
   return result
+}
+
+/** 商店商品的内容：与邮件附件同形，不能卖元宝，也不能空 */
+export function checkShopGoods(value: unknown): MailAttachments | { error: string } {
+  const goods = checkMailAttachments(value)
+  if ('error' in goods) return goods
+  if (goods.ingot) return { error: '商店不卖元宝' }
+  if (!mailAttachmentText(goods)) return { error: '商品至少要有一样东西' }
+  return goods
 }
 
 const MAIL_LABEL = { ingot: '元宝', silver: '纹银', qiExp: '真气' } as const
@@ -76,8 +101,18 @@ export function mailAttachmentText(attachments: MailAttachments) {
   }
   for (const id of attachments.items ?? []) parts.push(`【${ITEMS[id]?.name ?? id}】`)
   for (const [id, count] of Object.entries(attachments.fragments ?? {})) parts.push(`《${SKILLS[id]?.name ?? id}》残页 ${count}`)
+  for (const [id, count] of Object.entries(attachments.pills ?? {})) parts.push(`${ACUPOINT_PILLS[id]?.name ?? id} ×${count}`)
   return parts.join('、')
 }
+
+// ==================== 倍率活动 ====================
+
+export const RATE_KIND_LABEL: Record<RateBoostKind, string> = { QI: '挂机真气', SILVER: '挂机纹银', DROP: '巡历掉落' }
+/** 加成上限 +400%（五倍）；最长 30 天 */
+export const RATE_LIMITS = { pct: 400, days: 30 } as const
+
+/** 「挂机真气 ×2」 */
+export const boostLabel = ({ kind, pct }: Pick<RateBoostDTO, 'kind' | 'pct'>) => `${RATE_KIND_LABEL[kind]} ×${(100 + pct) / 100}`
 
 // ==================== 后台接口的数据形状 ====================
 
@@ -153,9 +188,44 @@ export interface AdminAuditDTO { id: number; admin: string; action: string; targ
 
 export interface AdminAccountDTO { id: string; login: string; role: AdminRole; disabled: boolean; createdAt: number }
 
+export interface AdminRateBoostDTO extends RateBoostDTO { createdBy: string | null; createdAt: number }
+
+export interface AdminShopGoodsDTO extends Omit<ShopGoodsDTO, 'bought' | 'stockLeft'> {
+  startsAt: number
+  stock: number | null
+  sold: number
+  sort: number
+  hidden: boolean
+  /** 累计收入：元宝或纹银 */
+  revenue: number
+  buyers: number
+  createdBy: string | null
+}
+
+/** 报表（北京时间按日） */
+export interface AdminReportDTO {
+  days: {
+    day: string
+    newPlayers: number
+    active: number
+    ingotIn: number
+    ingotOut: number
+    gacha: number
+    shopIngot: number
+    peakOnline: number | null
+  }[]
+  /** 按建角日分组：次日、第 3 日、第 7 日还来的人数；还没到那天为空 */
+  retention: { day: string; cohort: number; d1: number | null; d3: number | null; d7: number | null }[]
+  levels: { label: string; count: number }[]
+  realms: { label: string; count: number }[]
+  sects: { label: string; count: number }[]
+  maps: { label: string; count: number }[]
+}
+
 /** 审计日志里的操作名 */
 export const ADMIN_ACTION_LABEL: Record<string, string> = {
   login: '登录', ban: '封号', unban: '解封', mute: '禁言', unmute: '解除禁言', kick: '踢下线', resetPassword: '重置密码',
   mail: '发邮件', revokeMail: '撤回邮件', announce: '发公告', revokeAnnouncement: '撤下公告',
   createAdmin: '新建后台账号', updateAdmin: '修改后台账号',
+  createBoost: '开倍率活动', endBoost: '结束倍率活动', createGoods: '上架商品', updateGoods: '修改商品', adjust: '调整资产',
 }

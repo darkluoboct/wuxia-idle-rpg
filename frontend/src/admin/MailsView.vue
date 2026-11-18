@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
-import { checkMailAttachments, mailAttachmentText, MAIL_LIMITS, type AdminMailDTO, type AdminPermission } from '../../../shared/admin.ts'
-import { ITEMS, SKILLS } from '../../../shared/gameData.ts'
-import { adminApi, errorText, formatTime } from './api'
+import { checkMailAttachments, mailAttachmentText, type AdminMailDTO, type AdminPermission } from '../../../shared/admin.ts'
+import { adminApi, blankGoods, errorText, formatTime, goodsOf } from './api'
+import GoodsEditor from './GoodsEditor.vue'
 
-/** 系统邮件：单发或全服补偿，附元宝、纹银、真气、装备与残页；已发的可撤回 */
+/** 系统邮件：单发或全服补偿，附元宝、纹银、真气、装备、残页与丹药；已发的可撤回 */
 const props = defineProps<{ can: (permission: AdminPermission) => boolean; target: { id: string; nickname: string } | null }>()
 const emit = defineEmits<{ clearTarget: [] }>()
 
@@ -14,11 +14,8 @@ const notice = ref('')
 const busy = ref(false)
 const form = reactive({
   audience: 'ALL' as 'ALL' | 'PLAYER', playerId: '', existingOnly: true, title: '', body: '', expiresInDays: 30,
-  ingot: 0, silver: 0, qiExp: 0, items: [] as string[], fragments: {} as Record<string, number>,
 })
-const itemPick = ref('')
-const skillPick = ref('')
-const skillCount = ref(1)
+const goods = ref(blankGoods())
 
 watch(() => props.target, (target) => {
   if (!target) return
@@ -35,33 +32,7 @@ async function load() {
 }
 void load()
 
-const itemOptions = Object.values(ITEMS).map(({ id, name }) => ({ id, name }))
-const skillOptions = Object.values(SKILLS).map(({ id, name }) => ({ id, name }))
-const pickId = (input: string, options: { id: string; name: string }[]) =>
-  options.find(({ id, name }) => id === input.trim() || name === input.trim())?.id
-function addItem() {
-  const id = pickId(itemPick.value, itemOptions)
-  if (!id) return void (error.value = `没有这件装备：${itemPick.value}`)
-  if (!form.items.includes(id)) form.items.push(id)
-  itemPick.value = ''
-  error.value = ''
-}
-function addFragment() {
-  const id = pickId(skillPick.value, skillOptions)
-  if (!id) return void (error.value = `没有这门武学：${skillPick.value}`)
-  form.fragments = { ...form.fragments, [id]: skillCount.value }
-  skillPick.value = ''
-  error.value = ''
-}
-function removeFragment(id: string) {
-  const { [id]: _removed, ...rest } = form.fragments
-  form.fragments = rest
-}
-
-const attachments = computed(() => checkMailAttachments({
-  ingot: form.ingot || undefined, silver: form.silver || undefined, qiExp: form.qiExp || undefined,
-  items: form.items, fragments: form.fragments,
-}))
+const attachments = computed(() => checkMailAttachments(goodsOf(goods.value)))
 const preview = computed(() => 'error' in attachments.value ? '' : mailAttachmentText(attachments.value))
 
 async function send() {
@@ -77,7 +48,8 @@ async function send() {
       ...(form.audience === 'PLAYER' ? { playerId: form.playerId.trim() } : { existingOnly: form.existingOnly }),
     })
     notice.value = `已发出「${form.title}」`
-    Object.assign(form, { title: '', body: '', ingot: 0, silver: 0, qiExp: 0, items: [], fragments: {} })
+    Object.assign(form, { title: '', body: '' })
+    goods.value = blankGoods()
     await load()
   } catch (cause) {
     error.value = errorText(cause)
@@ -121,24 +93,7 @@ async function revoke(mail: AdminMailDTO) {
       <textarea v-model="form.body" class="input w-full" rows="3" maxlength="500" placeholder="正文（500 字内，可空）" aria-label="正文" />
       <fieldset class="space-y-2">
         <legend class="text-sm font-medium">附件</legend>
-        <div class="flex flex-wrap gap-3 text-sm">
-          <label class="flex items-center gap-1.5">元宝 <input v-model.number="form.ingot" class="input w-28" type="number" min="0" :max="MAIL_LIMITS.ingot"></label>
-          <label class="flex items-center gap-1.5">纹银 <input v-model.number="form.silver" class="input w-32" type="number" min="0" :max="MAIL_LIMITS.silver"></label>
-          <label class="flex items-center gap-1.5">真气 <input v-model.number="form.qiExp" class="input w-36" type="number" min="0" :max="MAIL_LIMITS.qiExp"></label>
-        </div>
-        <div class="flex flex-wrap items-center gap-2 text-sm">
-          <input v-model="itemPick" class="input w-64" list="admin-items" placeholder="装备名或 ID" aria-label="装备">
-          <button type="button" class="btn btn-sm" @click="addItem">加装备</button>
-          <span v-for="id in form.items" :key="id" class="tag">【{{ ITEMS[id]?.name }}】<button type="button" class="ml-1 muted" :aria-label="`去掉${ITEMS[id]?.name}`" @click="form.items = form.items.filter((entry) => entry !== id)">×</button></span>
-        </div>
-        <div class="flex flex-wrap items-center gap-2 text-sm">
-          <input v-model="skillPick" class="input w-64" list="admin-skills" placeholder="武学名或 ID" aria-label="残页武学">
-          <input v-model.number="skillCount" class="input w-20" type="number" min="1" :max="MAIL_LIMITS.fragments" aria-label="残页张数">
-          <button type="button" class="btn btn-sm" @click="addFragment">加残页</button>
-          <span v-for="(count, id) in form.fragments" :key="id" class="tag">《{{ SKILLS[id]?.name }}》×{{ count }}<button type="button" class="ml-1 muted" :aria-label="`去掉${SKILLS[id]?.name}残页`" @click="removeFragment(String(id))">×</button></span>
-        </div>
-        <datalist id="admin-items"><option v-for="item in itemOptions" :key="item.id" :value="item.name">{{ item.id }}</option></datalist>
-        <datalist id="admin-skills"><option v-for="skill in skillOptions" :key="skill.id" :value="skill.name">{{ skill.id }}</option></datalist>
+        <GoodsEditor v-model="goods" allow-ingot />
         <p class="text-sm" :class="'error' in attachments ? 'danger' : 'muted'">{{ 'error' in attachments ? attachments.error : `附件：${preview || '无'}` }}</p>
       </fieldset>
       <button class="btn btn-primary" :disabled="busy || !form.title.trim()">发出</button>

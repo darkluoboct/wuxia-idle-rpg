@@ -782,6 +782,22 @@ summary.quest-row:hover { background-color: var(--gold-faint); }
   line-height: 1.15;
 }
 .cultivate-status svg { width: 1.2em; height: 1.2em; color: oklch(89% .121 70); }
+.cultivate-boosts {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: .3rem .5rem;
+  margin-top: -.2rem;
+}
+.cultivate-boosts span {
+  padding: .08rem .55rem;
+  border: 1px solid #e8b96a8c;
+  border-radius: 999px;
+  background: #3a1d10cc;
+  color: oklch(90% .11 75);
+  font-size: .78rem;
+  font-variant-numeric: tabular-nums;
+}
 .cultivate-income {
   border-block: 1px solid #d5b27c6b;
   background: linear-gradient(90deg, #181c21b0, #181c21e8 15% 85%, #181c21b0);

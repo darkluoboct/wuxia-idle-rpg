@@ -268,6 +268,8 @@ export interface PlayerSnapshot {
   chongyangClears: number
   juxianClears: number
   idlePreview: { pendingQi: number; pendingSilver: number }
+  /** 运营的倍率活动：进行中与已排期的，前端按它预估挂机收益 */
+  boosts?: RateBoostDTO[]
 }
 
 export interface IdleGain {
@@ -806,6 +808,8 @@ export type WsServerEvent =
   | { event: 'STALL_SOLD'; data: { kind: 'HERB' | 'FRAGMENT'; goodsId: string; qty: number; silver: number } }
   | { event: 'MAIL_NEW'; data: { title: string } }
   | { event: 'ANNOUNCEMENT'; data: AnnouncementDTO }
+  /** 倍率活动有增改时推给全服，前端换上新的活动表 */
+  | { event: 'RATE_BOOSTS'; data: RateBoostDTO[] }
 
 /** 系统邮件附件（docs/22） */
 export interface MailAttachments {
@@ -816,6 +820,42 @@ export interface MailAttachments {
   items?: string[]
   /** 武学残页：武学 ID → 张数 */
   fragments?: Record<string, number>
+  /** 冲穴与突破丹药：丹药 ID → 枚数 */
+  pills?: Record<string, number>
+}
+
+/** 倍率活动（docs/22）：QI 挂机真气、SILVER 挂机纹银、DROP 巡历掉落几率；pct 为加成百分比，100 即双倍，同时段同类取最高 */
+export type RateBoostKind = 'QI' | 'SILVER' | 'DROP'
+
+export interface RateBoostDTO {
+  id: string
+  kind: RateBoostKind
+  pct: number
+  title: string
+  startsAt: number
+  endsAt: number
+}
+
+/** 运营商店（docs/22）：后台上架的商品，用元宝或纹银买 */
+export type ShopCurrency = 'INGOT' | 'SILVER'
+export type ShopLimitKind = 'TOTAL' | 'DAILY' | 'WEEKLY'
+
+export interface ShopGoodsDTO {
+  id: string
+  title: string
+  description: string
+  /** 买到的东西，与邮件附件同形，不含元宝 */
+  goods: MailAttachments
+  currency: ShopCurrency
+  price: number
+  /** 限购：总计、每日或每周（北京时间）几次；空为不限 */
+  limit: { kind: ShopLimitKind; count: number } | null
+  /** 本人在当前限购周期里已买的次数 */
+  bought: number
+  /** 全服剩余库存；空为不限量 */
+  stockLeft: number | null
+  /** 下架时刻；空为长期 */
+  endsAt: number | null
 }
 
 /** 系统邮件（docs/22）：运营发给你或全服的信，附件领一次 */

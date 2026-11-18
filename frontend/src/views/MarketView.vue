@@ -52,6 +52,7 @@ import GhostAuction from '@/components/GhostAuction.vue'
 import GhostStalls from '@/components/GhostStalls.vue'
 import EquipmentForge from '@/components/EquipmentForge.vue'
 import ArtifactBoard from '@/components/ArtifactBoard.vue'
+import ShopPanel from '@/components/ShopPanel.vue'
 
 const store = useGameStore()
 const sub = computed({
@@ -182,6 +183,7 @@ const FLAME_META = {
       <div class="flex shrink-0 flex-wrap items-center justify-between gap-2">
         <div class="tabs flex-1" role="tablist">
           <button v-if="store.marketTabOpen('INN')" class="tab" role="tab" :aria-selected="sub === 'INN'" @click="sub = 'INN'">醉仙客栈</button>
+          <button v-if="!IS_MOCK_MODE && store.marketTabOpen('SHOP')" class="tab" role="tab" :aria-selected="sub === 'SHOP'" @click="sub = 'SHOP'">江湖商行</button>
           <button v-if="store.marketTabOpen('GHOST')" class="tab" role="tab" :aria-selected="sub === 'GHOST'" @click="enterGhostMarket()">子时鬼市</button>
           <button v-if="store.marketTabOpen('ALCHEMY')" class="tab" role="tab" :aria-selected="sub === 'ALCHEMY'" @click="sub = 'ALCHEMY'">百草丹房</button>
           <button v-if="store.marketTabOpen('HUASHAN')" class="tab" role="tab" :aria-selected="sub === 'HUASHAN'" @click="sub = 'HUASHAN'">华山论剑</button>
@@ -190,7 +192,7 @@ const FLAME_META = {
         <span class="flex items-center gap-1.5 text-xs text-ink3">
           真气 <b class="text-sm tabular-nums text-jade">{{ store.player.qiExp.toLocaleString() }}</b> ·
           纹银 <b class="text-sm tabular-nums text-ink">{{ store.player.silver.toLocaleString() }}</b>
-          <template v-if="sub === 'GHOST' || sub === 'INN'"> · 元宝 <b class="text-sm tabular-nums text-gold">{{ store.player.goldIngot }}</b></template>
+          <template v-if="sub === 'GHOST' || sub === 'INN' || sub === 'SHOP'"> · 元宝 <b class="text-sm tabular-nums text-gold">{{ store.player.goldIngot }}</b></template>
           <template v-if="sub === 'ALCHEMY'"> · 药渣 <b class="text-sm tabular-nums text-gold">{{ store.furnaceResidue }}</b> 团</template>
         </span>
       </div>
@@ -407,6 +409,9 @@ const FLAME_META = {
           </template>
         </div>
       </div>
+
+      <!-- ============ 江湖商行（运营上架） ============ -->
+      <ShopPanel v-else-if="sub === 'SHOP'" />
 
       <!-- ============ 子时鬼市 ============ -->
       <div v-else-if="sub === 'GHOST'" class="view-scroll -mr-1 space-y-3 pr-1">

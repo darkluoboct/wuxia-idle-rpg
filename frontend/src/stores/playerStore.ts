@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { computed, onScopeDispose, ref, shallowRef } from 'vue'
-import type { PlayerSnapshot } from '@/network/protocol'
+import type { PlayerSnapshot, RateBoostDTO } from '@/network/protocol'
 import { computeDerivedStats, simulateServerBattle as simulateBattle } from '@/network/mockEngine'
 import {
   activeJianghuTitle,
@@ -253,8 +253,17 @@ export const usePlayerStore = defineStore('wuxiaPlayer', () => {
     onlineState.value = { snapshot, receivedAt }
   }
 
+  /** 运营的倍率活动（docs/22）：随档案下发，后台增改时由推送换新 */
+  const rateBoosts = computed(() => onlineState.value?.snapshot.boosts ?? [])
+  function applyRateBoosts(boosts: RateBoostDTO[]) {
+    const live = onlineState.value
+    if (live) onlineState.value = { ...live, snapshot: { ...live.snapshot, boosts } }
+  }
+
   return {
     applySnapshot,
+    rateBoosts,
+    applyRateBoosts,
     learnedSkills,
     player,
     learnSkill,

@@ -5,7 +5,7 @@ import { ITEMS, MAPS, REALMS, SECTS, SKILLS } from '../../../shared/gameData.ts'
 import { isOriginId, ORIGINS } from '../../../shared/origins.ts'
 import { adminApi, errorText, formatTime, INGOT_REASON_LABEL } from './api'
 
-/** 玩家：按昵称、账号或角色 ID 查侠客，看资产与流水，封号、禁言、踢下线、重置密码、给他发信 */
+/** 玩家：按昵称、账号或角色 ID 查侠客，看资产与流水，封号、禁言、踢下线、重置密码、调整资产、给他发信 */
 const props = defineProps<{ can: (permission: AdminPermission) => boolean }>()
 const emit = defineEmits<{ write: [player: { id: string; nickname: string }] }>()
 
@@ -21,6 +21,7 @@ const tempPassword = ref('')
 const DURATIONS = [{ label: '1 小时', hours: 1 }, { label: '1 天', hours: 24 }, { label: '3 天', hours: 72 }, { label: '7 天', hours: 168 }, { label: '30 天', hours: 720 }, { label: '永久', hours: null }]
 const ban = reactive<{ hours: number | null; reason: string }>({ hours: 24, reason: '' })
 const mute = reactive<{ hours: number | null }>({ hours: 24 })
+const adjust = reactive({ ingot: 0, silver: 0, qiExp: 0, reason: '' })
 
 const mapName = (id: string) => MAPS.find((map) => map.id === id)?.name ?? id
 const realmName = (tier: number) => REALMS.find((realm) => realm.tier === tier)?.name ?? `第 ${tier} 境`
@@ -67,6 +68,28 @@ async function act(action: keyof typeof ACTION_TEXT, body: Record<string, unknow
     tempPassword.value = result.password ?? ''
     if (action === 'ban') ban.reason = ''
     await search()
+  } catch (cause) {
+    error.value = errorText(cause)
+  } finally {
+    busy.value = false
+  }
+}
+
+/** 调整资产：正数加、负数扣，必须写原因；元宝进流水，审计留底 */
+async function adjustAssets() {
+  const player = detail.value
+  if (!player) return
+  const parts = ([['元宝', adjust.ingot], ['纹银', adjust.silver], ['真气', adjust.qiExp]] as const)
+    .filter(([, amount]) => amount).map(([label, amount]) => `${label} ${amount > 0 ? '+' : ''}${amount.toLocaleString()}`)
+  if (!parts.length || !window.confirm(`给「${player.nickname}」调整：${parts.join('、')}\n原因：${adjust.reason}\n确定？`)) return
+  busy.value = true
+  error.value = ''
+  notice.value = ''
+  try {
+    await adminApi('POST', `/players/${player.id}/adjust`, { ...adjust, reason: adjust.reason.trim() })
+    await open(player.id)
+    notice.value = `已调整：${parts.join('、')}`
+    Object.assign(adjust, { ingot: 0, silver: 0, qiExp: 0, reason: '' })
   } catch (cause) {
     error.value = errorText(cause)
   } finally {
@@ -162,7 +185,16 @@ const gachaName = (kind: string, refId: string | null) => !refId ? kind : (ITEMS
             <button class="btn btn-sm" :disabled="busy || !props.can('resetPassword')" @click="act('resetPassword')">重置为临时密码</button>
             <span class="muted text-xs">核实身份后再重置；会让他所有设备下线</span>
           </div>
-          <p v-if="!props.can('ban')" class="muted text-xs">客服权限只能禁言与踢下线；封号、重置密码、发信需运营。</p>
+          <div v-if="props.can('adjust')" class="flex flex-wrap items-center gap-2">
+            <span class="w-14 text-sm muted">资产</span>
+            <label class="flex items-center gap-1 text-sm">元宝 <input v-model.number="adjust.ingot" class="input w-24" type="number" aria-label="元宝增减"></label>
+            <label class="flex items-center gap-1 text-sm">纹银 <input v-model.number="adjust.silver" class="input w-28" type="number" aria-label="纹银增减"></label>
+            <label class="flex items-center gap-1 text-sm">真气 <input v-model.number="adjust.qiExp" class="input w-28" type="number" aria-label="真气增减"></label>
+            <input v-model="adjust.reason" class="input min-w-40 flex-1" maxlength="100" placeholder="调整原因（必填，记进审计）" aria-label="调整原因">
+            <button class="btn btn-sm" :disabled="busy || !adjust.reason.trim() || !(adjust.ingot || adjust.silver || adjust.qiExp)" @click="adjustAssets">调整</button>
+            <span class="muted w-full pl-16 text-xs">正数为加、负数为扣，扣完不能为负；他在线的话页面会自动刷新。</span>
+          </div>
+          <p v-if="!props.can('ban')" class="muted text-xs">客服权限只能禁言与踢下线；封号、重置密码、调整资产、发信需运营。</p>
         </div>
 
         <div class="overflow-x-auto">

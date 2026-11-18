@@ -1,4 +1,5 @@
 import type {
+  ShopCurrency,
   ArtifactAction,
   ArtifactResult,
   AuctionAction,
@@ -107,6 +108,7 @@ interface Actions {
   raid: [RaidStartInput | undefined, BattleReportDTO]
   raidMirror: [undefined, { mirrorAt: number }]
   mail: [{ action: 'claim'; mailId: string }, { mailId: string; attachments: MailAttachments }]
+  shop: [{ goodsId: string }, { goodsId: string; title: string; goods: MailAttachments; spent: number; currency: ShopCurrency }]
   coCultivate: [CoCultivationAction, IdleGain]
   duel: [DuelAction | undefined, BattleReportDTO | null]
   escort: [{ action: 'start' | 'claim' }, { silver: number }]
@@ -168,6 +170,7 @@ const requests: { [K in keyof Actions]: (input: Actions[K][0]) => Request | unde
   raid: (body) => body && ['POST', '/raid/start', body],
   raidMirror: () => ['POST', '/raid/mirror'],
   mail: (body) => ['POST', '/mail', body],
+  shop: (body) => ['POST', '/shop', body],
   coCultivate: (body) => ['POST', '/map/co-cultivate', body],
   duel: (body) => body && ['POST', '/duel', body],
   escort: (body) => ['POST', '/escort', body],

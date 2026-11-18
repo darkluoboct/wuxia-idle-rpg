@@ -9,10 +9,10 @@ import { forgeEquipment, forgeMaterials } from '../../shared/equipmentForge.ts'
 import { activeJianghuTitle, activeSetBonuses, canEquipCompanionItem, companionView, COMPANIONS, COOP_RAIDS, GHOST_MARKET_LISTINGS, hiddenWeaponCapacity, INN_GIFT_COST, INN_TEA_COST, ITEMS, JIANGHU_TITLES, marketListingPrice, MEDICINES, meetsItemStatRequirement, ONLINE_MAPS, PILL_RECIPES, REALMS, SECTS, SKILLS, totalCompanionSetBonuses, trialRewardItems, unlockedHiddenWeapons } from '../../shared/gameData.ts'
 import {
   advancePatrol, announceChapterOneTitle, CHAPTER_ONE_FINAL_STAGE, collectTrialDrop, equippedGearSkill, hasTrialPart, patrolEncounterCount, patrolEncounterRate, recruitTrialCompanions, rollTrialDrop,
-  switchPatrolStage, TRIAL_PATROL_HOURS, TRIAL_REPLAY_HOURS, TRIAL_STAGES, trialFirstClearKarma, trialItemOf, trialPartId, trialPuzzleOutcome,
+  IDLE_CAP_MS, switchPatrolStage, TRIAL_PATROL_HOURS, TRIAL_REPLAY_HOURS, TRIAL_STAGES, trialFirstClearKarma, trialItemOf, trialPartId, trialPuzzleOutcome,
   trialStageOf, upgradesPatrolYield, type TrialStageConfig,
 } from '../../shared/trialStages.ts'
-import { appraiseGhostCurio, autoEquipItem, autoEquipSkill, canEnterMap, canReceiveSnakeRecipe, cityInspectionDue, coCultivationRate, createNewGameCharacter, createStarterCharacter, cultivatePlayer, cultivationRate, cultivationRates, GHOST_APPRAISAL_SWORD, idleQiNumerator, innAffinityGain, innGiftsRemaining, innVisitDay, karmaAfterEvent, legacyAcupoints, planMapJourney, recipeForPlayer, resolveSeaVoyage, settlePatrolCaches, trialFirstClearSilver } from '../../shared/player.ts'
+import { appraiseGhostCurio, autoEquipItem, averageBoostPct, autoEquipSkill, canEnterMap, canReceiveSnakeRecipe, cityInspectionDue, coCultivationRate, createNewGameCharacter, createStarterCharacter, cultivatePlayer, cultivationRate, cultivationRates, GHOST_APPRAISAL_SWORD, idleQiNumerator, innAffinityGain, innGiftsRemaining, innVisitDay, karmaAfterEvent, legacyAcupoints, planMapJourney, recipeForPlayer, resolveSeaVoyage, settlePatrolCaches, trialFirstClearSilver } from '../../shared/player.ts'
 import { HUASHAN_HONORS, HUASHAN_RESPECT_QI, huashanDay, huashanRankReward, huashanRatingSwing, huashanSeason, huashanSeasonEndsAt } from '../../shared/huashan.ts'
 import { GAIBANG_DEBATE, GAIBANG_FINAL_DISHES, gaibangDishFlag, gaibangDishPrepared, gaibangSilverGain } from '../../shared/gaibang.ts'
 import { BETRAYAL_BOUNTY, SECT_CHIEF_SALUTE_QI, SECT_CONTEST_MIN_RANK, SECT_SALUTE_QI, sectContestEndsAt, sectContestWeek, sectContributionGain, sectExamBlockReason, sectPromotion, sectPromotionRewards, simulateSectTrial } from '../../shared/sectProgress.ts'
@@ -41,11 +41,13 @@ import { gainReunionClues, newReunion, reunionCluesToday, reunionEncounter, reun
 import type {
   ArtifactBoardDTO, ArtifactResult, AuctionBoardDTO, AuctionLotDTO, AuctionResult, AwakenResult, BattleReportDTO, BountyBoardDTO, BountyEntryDTO, ChapterOneStatueDTO, CoCultivationDTO, CoCultivationInviteDTO, CompanionState, CompanionWear, CultivationResult, DuelInviteDTO, FeastResult, ForgeInput, ForgeResult, FtueClaimResult, GachaResult, GameAction, HuashanBoardDTO, HuashanEntryDTO, HuashanResult, IdleGain, InnGiftResult, LibraryResult, LibraryStatusDTO, LoadoutPresetDTO, MapMoveResult, PersonalEquipSlot, PlayerDTO, PlayerSnapshot, StallBoardDTO, StallListingDTO, StallResult,
   MirrorRankEntryDTO, ReunionResult, RichSegment, SectChiefDTO, SectContestBoardDTO, SectContestResult, SectResult, SkillSlotType, SkillUpgradeResult, StoryAdventureResult, StoryChallengeResult, StorySnakeChoiceResult, TrialChallengeResult, TrialDropDTO, TrialPatrolStatusDTO, TrialReplayResult,
-  AnnouncementDTO, AwayReportDTO, MailAttachments, MailDTO, RaidId, RaidMirrorBoardDTO, RoomPlayerDTO, WsServerEvent, XiangyangAwardDTO, XiangyangBoardDTO, XiangyangGateDTO, XiangyangGateId, XiangyangResult,
+  AnnouncementDTO, AwayReportDTO, MailAttachments, MailDTO, ShopGoodsDTO, ShopLimitKind, RaidId, RaidMirrorBoardDTO, RoomPlayerDTO, WsServerEvent, XiangyangAwardDTO, XiangyangBoardDTO, XiangyangGateDTO, XiangyangGateId, XiangyangResult,
 } from '../../shared/protocol.ts'
 import { requireSession } from './auth.ts'
 import { serverTime, transaction } from './db.ts'
 import { GameError, objectBody } from './http.ts'
+import { beijingDay } from '../../shared/admin.ts'
+import { freshRateBoosts, rateBoosts } from './rates.ts'
 import type { registerRaidLobby } from './raidLobby.ts'
 import type { registerRooms } from './rooms.ts'
 
@@ -337,9 +339,10 @@ async function lockHuashanSeason(client: PoolClient, seasonId: number, current: 
 }
 
 function idleRewards(character: Character, now: number, rate: ReturnType<typeof cultivationRates>) {
-  const earned = (hourly: number) => idleQiNumerator(character.player.lastSettleAt, now, hourly, character.coCultivation)
-  const qi = BigInt(character.qiRemainder) + earned(rate.qi)
-  const silver = BigInt(character.silverRemainder) + earned(gaibangSilverGain(character.player, rate.silverBasis)) * 28n
+  const earned = (hourly: number, kind: 'QI' | 'SILVER') =>
+    idleQiNumerator(character.player.lastSettleAt, now, hourly, character.coCultivation, rateBoosts(kind))
+  const qi = BigInt(character.qiRemainder) + earned(rate.qi, 'QI')
+  const silver = BigInt(character.silverRemainder) + earned(gaibangSilverGain(character.player, rate.silverBasis), 'SILVER') * 28n
   return {
     gainedQi: Number(qi / 3_600_000n),
     gainedSilver: Number(silver / 360_000_000n),
@@ -384,6 +387,8 @@ function changeKarma(character: Character, delta: number, now: number) {
 async function settlePatrol(character: Character, now: number, client: PoolClient) {
   const { player } = character
   const { trial } = player
+  // 运营的掉落活动按这段巡历里活动时长的占比折算
+  const dropPct = averageBoostPct(rateBoosts('DROP'), Math.max(trial.lastPatrolAt, now - IDLE_CAP_MS), now)
   const encounters = advancePatrol(trial, now, patrolEncounterRate(activeLoadout(character).accId))
   if (encounters === undefined) return false
   const stage = trialStageOf(trial.selectedStageId)
@@ -391,7 +396,7 @@ async function settlePatrol(character: Character, now: number, client: PoolClien
     forgeMaterials(player, encounters, encounters)
     character.patrolForgeMaterials = encounters
     for (let i = 0; i < encounters; i++) {
-      const roll = rollTrialDrop(stage, 'PATROL')
+      const roll = rollTrialDrop(stage, 'PATROL', Math.random, dropPct)
       if (roll) (character.patrolDrops ??= []).push(await awardTrialDrop(character, stage, roll, now, client))
     }
     const cache = settlePatrolCaches(player, activeLoadout(character), encounters, now)
@@ -475,14 +480,32 @@ function snapshot(character: Character, now: number): PlayerSnapshot {
     chongyangClears: character.chongyangClears,
     juxianClears: character.juxianClears,
     idlePreview: { pendingQi: gainedQi, pendingSilver: gainedSilver },
+    boosts: rateBoosts(),
   }
 }
 
-export function getSnapshot(accountId: string) {
+export async function getSnapshot(accountId: string) {
+  await freshRateBoosts()
   return transaction(async (client) => {
     const character = await readCharacter(client, accountId)
     return snapshot(character, Math.max(character.player.lastSettleAt, await serverTime(client)))
   }, true)
+}
+
+/** 后台调整资产（docs/22）：锁住角色加减元宝、纹银、真气，扣后不能为负；元宝记流水 admin */
+export async function adjustPlayerAssets(client: PoolClient, playerId: string, delta: { ingot: number; silver: number; qiExp: number }, now: number) {
+  const { rows: [row] } = await client.query<CharacterRow>('SELECT * FROM players WHERE id = $1 FOR UPDATE', [playerId])
+  if (!row) throw new GameError(404, 'PLAYER_NOT_FOUND', '找不到这位侠客')
+  const character = await hydrateCharacter(client, row)
+  const { player } = character
+  const after = { ingot: player.goldIngot + delta.ingot, silver: player.silver + delta.silver, qiExp: player.qiExp + delta.qiExp }
+  if (after.ingot < 0 || after.silver < 0 || after.qiExp < 0) throw new GameError(409, 'ASSET_NEGATIVE', '扣完会变成负数，他手上没有这么多')
+  player.goldIngot = after.ingot
+  player.silver = after.silver
+  player.qiExp = after.qiExp
+  logIngot(character, delta.ingot, 'admin')
+  await saveCharacter(client, character, now)
+  return { snapshot: snapshot(character, Math.max(now, player.lastSettleAt)), after }
 }
 
 async function createPlayer(accountId: string, input: unknown) {
@@ -728,6 +751,7 @@ async function writeAction<T>(request: FastifyRequest, apply: ApplyAction<T>): P
   replayed?: true
 }> {
   const { accountId } = await requireSession(request)
+  await freshRateBoosts()
   const requestId = request.headers['idempotency-key']
   if (typeof requestId !== 'string' || !UUID.test(requestId)) {
     throw new GameError(400, 'INVALID_REQUEST_KEY', '操作编号有误，请重试')
@@ -782,6 +806,7 @@ async function writeAction<T>(request: FastifyRequest, apply: ApplyAction<T>): P
         if (changed) await saveCharacter(client, character, now)
         for (const other of related) await saveCharacter(client, other, now)
         await client.query('INSERT INTO player_actions VALUES ($1, $2, $3, $4)', [row.id, requestId, fingerprint, result])
+        await client.query('INSERT INTO player_activity_days (player_id, day) VALUES ($1, $2) ON CONFLICT DO NOTHING', [row.id, beijingDay(now)])
         const latest = snapshot(character, now)
         const updates = changed ? [latest] : []
         for (const other of related) updates.push(snapshot(other, now))
@@ -1610,6 +1635,22 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
       }
     }
     return added
+  }
+
+  /** 邮件附件与商店商品的发放（元宝另算，各有各的流水） */
+  async function grantGoods(client: PoolClient, character: Character, goods: MailAttachments) {
+    const { player } = character
+    if (goods.silver) player.silver += goods.silver
+    if (goods.qiExp) player.qiExp += goods.qiExp
+    if (goods.items?.length) await grantItems(client, character, goods.items)
+    for (const [skillId, count] of Object.entries(goods.fragments ?? {})) {
+      const owned = player.skillFragments ??= {}
+      owned[skillId] = (owned[skillId] ?? 0) + count
+    }
+    for (const [pillId, count] of Object.entries(goods.pills ?? {})) {
+      const owned = player.acupointPills ??= {}
+      owned[pillId] = (owned[pillId] ?? 0) + count
+    }
   }
 
   app.get('/api/v1/sect/library', async (request): Promise<LibraryStatusDTO> => {
@@ -3486,17 +3527,78 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
     const { rowCount } = await client.query('INSERT INTO mail_claims (mail_id, player_id, claimed_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING',
       [mail.id, player.id, now])
     if (!rowCount) throw new GameError(409, 'MAIL_CLAIMED', '这封信已经领过了')
-    const { ingot, silver, qiExp, items, fragments } = mail.attachments
-    if (ingot) await grantIngotOnce(client, character, ingot, 'mail', `mail:${mail.id}`)
-    if (silver) player.silver += silver
-    if (qiExp) player.qiExp += qiExp
-    if (items?.length) await grantItems(client, character, items)
-    for (const [skillId, count] of Object.entries(fragments ?? {})) {
-      const owned = player.skillFragments ??= {}
-      owned[skillId] = (owned[skillId] ?? 0) + count
-    }
+    if (mail.attachments.ingot) await grantIngotOnce(client, character, mail.attachments.ingot, 'mail', `mail:${mail.id}`)
+    await grantGoods(client, character, mail.attachments)
     return { result: { mailId: mail.id, attachments: mail.attachments }, changed: true }
   }))
+
+  // ==================== 运营商店（docs/22） ====================
+  type GoodsRow = {
+    id: string; title: string; description: string; goods: MailAttachments; currency: ShopGoodsDTO['currency']; price: number
+    limit_kind: ShopLimitKind | null; limit_count: number | null; stock: number | null; sold: number; starts_at: string; ends_at: string | null
+  }
+  const ON_SALE = 'NOT hidden AND starts_at <= $1 AND (ends_at IS NULL OR ends_at > $1)'
+
+  /** 限购周期与每日江湖事、门派演武同步：每日子时（23:00）换日，每周六 20:00 换周 */
+  function shopPeriodStart(kind: ShopLimitKind, now: number) {
+    if (kind === 'TOTAL') return 0
+    if (kind === 'DAILY') return innVisitDay(now) * 86_400_000 - 9 * 3_600_000
+    return sectContestEndsAt(sectContestWeek(now) - 1)
+  }
+
+  /** 本人在当前限购周期里买过几次 */
+  async function boughtInPeriod(client: PoolClient, playerId: string, goods: GoodsRow, now: number) {
+    if (!goods.limit_kind) return 0
+    const since = shopPeriodStart(goods.limit_kind, now)
+    const { rows: [{ count }] } = await client.query<{ count: number }>(
+      'SELECT count(*)::int AS count FROM shop_purchases WHERE player_id = $1 AND goods_id = $2 AND created_at >= $3', [playerId, goods.id, since])
+    return count
+  }
+
+  function goodsView(goods: GoodsRow, bought: number): ShopGoodsDTO {
+    return {
+      id: goods.id, title: goods.title, description: goods.description, goods: goods.goods, currency: goods.currency, price: goods.price,
+      limit: goods.limit_kind ? { kind: goods.limit_kind, count: goods.limit_count! } : null, bought,
+      stockLeft: goods.stock === null ? null : Math.max(0, goods.stock - goods.sold), endsAt: goods.ends_at === null ? null : Number(goods.ends_at),
+    }
+  }
+
+  app.get('/api/v1/shop', async (request): Promise<ShopGoodsDTO[]> => {
+    const { accountId } = await requireSession(request)
+    return transaction(async (client) => {
+      const { rows: [player] } = await client.query<{ id: string }>('SELECT id FROM players WHERE account_id = $1', [accountId])
+      if (!player) throw new GameError(404, 'PLAYER_NOT_CREATED', '先创建你的角色')
+      const now = await serverTime(client)
+      const { rows } = await client.query<GoodsRow>(`SELECT * FROM shop_goods WHERE ${ON_SALE} ORDER BY sort DESC, created_at DESC LIMIT 100`, [now])
+      return Promise.all(rows.map(async (goods) => goodsView(goods, await boughtInPeriod(client, player.id, goods, now))))
+    }, true)
+  })
+
+  app.post('/api/v1/shop', (request) => respond<{ goodsId: string; title: string; goods: MailAttachments; spent: number; currency: ShopGoodsDTO['currency'] }>(
+    request, async (character, now, client) => {
+      const { goodsId } = objectBody(request.body)
+      if (typeof goodsId !== 'string' || !UUID.test(goodsId)) throw new GameError(400, 'INVALID_GOODS', '请选择要买的商品')
+      // 锁住商品行：库存与限购都按它排队
+      const { rows: [goods] } = await client.query<GoodsRow>(`SELECT * FROM shop_goods WHERE id = $2 AND ${ON_SALE} FOR UPDATE`, [now, goodsId.toLowerCase()])
+      if (!goods) throw new GameError(404, 'GOODS_NOT_FOUND', '这件商品已下架')
+      if (goods.stock !== null && goods.sold >= goods.stock) throw new GameError(409, 'GOODS_SOLD_OUT', '这件商品已经卖完了')
+      const { player } = character
+      if (goods.limit_kind && await boughtInPeriod(client, player.id, goods, now) >= goods.limit_count!) {
+        throw new GameError(409, 'GOODS_LIMIT', goods.limit_kind === 'TOTAL' ? '这件商品你已买到限购数' : `这件商品${goods.limit_kind === 'DAILY' ? '今日' : '本周'}已买到限购数`)
+      }
+      const balance = goods.currency === 'INGOT' ? player.goldIngot : player.silver
+      if (balance < goods.price) throw new GameError(409, goods.currency === 'INGOT' ? 'INGOT_INSUFFICIENT' : 'SILVER_INSUFFICIENT', `${goods.currency === 'INGOT' ? '元宝' : '纹银'}不足`)
+      const { rows: [purchase] } = await client.query<{ id: string }>(
+        'INSERT INTO shop_purchases (goods_id, player_id, currency, price, created_at) VALUES ($1, $2, $3, $4, $5) RETURNING id',
+        [goods.id, player.id, goods.currency, goods.price, now])
+      await client.query('UPDATE shop_goods SET sold = sold + 1 WHERE id = $1', [goods.id])
+      if (goods.currency === 'INGOT') {
+        player.goldIngot -= goods.price
+        logIngot(character, -goods.price, 'shop', `shop:${purchase.id}`)
+      } else player.silver -= goods.price
+      await grantGoods(client, character, goods.goods)
+      return { result: { goodsId: goods.id, title: goods.title, goods: goods.goods, spent: goods.price, currency: goods.currency }, changed: true }
+    }))
 
   app.get('/api/v1/announcements', async (request): Promise<AnnouncementDTO[]> => {
     await requireSession(request)

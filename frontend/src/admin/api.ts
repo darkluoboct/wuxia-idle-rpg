@@ -1,4 +1,4 @@
-import { FOREVER } from '../../../shared/admin.ts'
+import { FOREVER, type MailAttachments } from '../../../shared/admin.ts'
 
 /** 后台接口（/api/admin，docs/22）；失败时抛出带服务端提示的错误 */
 export class AdminError extends Error {
@@ -31,5 +31,26 @@ export const errorText = (error: unknown) => error instanceof Error ? error.mess
 export const INGOT_REASON_LABEL: Record<string, string> = {
   start: '开局', milestone: '里程碑', daily: '每日江湖事', patrol: '巡历宝箱', huashan: '华山论剑', 'sect-contest': '门派演武',
   raid: '结义副本', xiangyang: '襄阳守卫战', mail: '系统邮件', gacha: '结缘抽卡', 'reunion-ticket': '故人重逢令',
-  'auction-bid': '暗拍出价', 'auction-refund': '暗拍退还', 'auction-dividend': '暗拍红封',
+  'auction-bid': '暗拍出价', 'auction-refund': '暗拍退还', 'auction-dividend': '暗拍红封', shop: '江湖商行', admin: '后台调整',
 }
+
+/** 附件与商品的编辑表单（GoodsEditor） */
+export interface GoodsForm {
+  ingot: number
+  silver: number
+  qiExp: number
+  items: string[]
+  fragments: Record<string, number>
+  pills: Record<string, number>
+}
+
+export const blankGoods = (): GoodsForm => ({ ingot: 0, silver: 0, qiExp: 0, items: [], fragments: {}, pills: {} })
+
+/** 交给 checkMailAttachments / checkShopGoods 的形状：零与空的不带 */
+export const goodsOf = (form: GoodsForm): MailAttachments => ({
+  ingot: form.ingot || undefined, silver: form.silver || undefined, qiExp: form.qiExp || undefined,
+  items: form.items, fragments: form.fragments, pills: form.pills,
+})
+
+/** datetime-local 输入框的值（本机时间）↔ 时间戳 */
+export const fromLocalInput = (value: string) => value ? new Date(value).getTime() : null

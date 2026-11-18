@@ -1,4 +1,4 @@
-import type { CultivationResult, IdleGain, LoadoutPresetDTO, TrialDropDTO } from '@/network/protocol'
+import type { CultivationResult, IdleGain, LoadoutPresetDTO, RateBoostKind, TrialDropDTO } from '@/network/protocol'
 import { ACUPOINTS, MEDICINES, getMapHerbs, COMPANIONS } from '@/config/gameData'
 import { gaibangSilverGain } from '../../../shared/gaibang.ts'
 import { cultivatePlayer, cultivationRate, cultivationRates, idleQiNumerator, karmaAfterEvent } from '../../../shared/player.ts'
@@ -51,13 +51,15 @@ export function useCultivation({
     if (live) {
       const { snapshot, receivedAt } = live
       const current = snapshot.serverTime + Math.max(0, now - receivedAt)
-      const amountAt = (time: number, rate: number) => idleQiNumerator(snapshot.player.lastSettleAt, time, rate, snapshot.coCultivation)
-      const gained = (rate: number, scale: bigint, divisor: bigint) => Number(
-        amountAt(current, rate) * scale / divisor - amountAt(snapshot.serverTime, rate) * scale / divisor,
+      const boosts = (kind: RateBoostKind) => (snapshot.boosts ?? []).filter((boost) => boost.kind === kind)
+      const amountAt = (time: number, rate: number, kind: RateBoostKind) =>
+        idleQiNumerator(snapshot.player.lastSettleAt, time, rate, snapshot.coCultivation, boosts(kind))
+      const gained = (rate: number, kind: RateBoostKind, scale: bigint, divisor: bigint) => Number(
+        amountAt(current, rate, kind) * scale / divisor - amountAt(snapshot.serverTime, rate, kind) * scale / divisor,
       )
       return {
-        gainedQi: snapshot.idlePreview.pendingQi + gained(snapshot.soloQiPerHour, 1n, 3_600_000n),
-        gainedSilver: snapshot.idlePreview.pendingSilver + gained(snapshot.soloSilverBasis ?? snapshot.soloQiPerHour, 28n, 360_000_000n),
+        gainedQi: snapshot.idlePreview.pendingQi + gained(snapshot.soloQiPerHour, 'QI', 1n, 3_600_000n),
+        gainedSilver: snapshot.idlePreview.pendingSilver + gained(snapshot.soloSilverBasis ?? snapshot.soloQiPerHour, 'SILVER', 28n, 360_000_000n),
       }
     }
     const elapsedSec = Math.max(60, Math.floor((now - player.value.lastSettleAt) / 1000))

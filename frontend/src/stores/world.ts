@@ -3,6 +3,7 @@ import type {
   AnnouncementDTO,
   BattleReportDTO,
   MailDTO,
+  ShopGoodsDTO,
   BountyEntryDTO,
   DuelInviteDTO,
   HuashanAction,
@@ -131,6 +132,26 @@ export function useWorld({ battle, actions, selectTab, cultivation, companions }
     } catch {
       // 公告读不到不影响游戏
     }
+  }
+
+  /** 运营商店（docs/22）：后台上架的商品；单机试玩没有运营，货架为空 */
+  const shopGoods = ref<ShopGoodsDTO[]>([])
+  async function refreshShop() {
+    if (IS_MOCK_MODE) return
+    try {
+      shopGoods.value = await apiClient.request<ShopGoodsDTO[]>('GET', '/shop')
+    } catch {
+      // 读不到时保留上一次的货架
+    }
+  }
+
+  function buyShopGoods(goods: ShopGoodsDTO) {
+    return Promise.resolve(actions.run('shop', { goodsId: goods.id }, ({ title, goods: bought, spent, currency }) => {
+      const gained = mailAttachmentText(bought)
+      const paid = currency === 'INGOT' ? `${spent.toLocaleString()} 元宝` : `${spent.toLocaleString()} 两纹银`
+      appendLog('JIANGHU', [{ type: 'tag', text: '江湖商行', tone: 'gold' }, { type: 'text', text: ` 花 ${paid}买下「${title}」，收下 ${gained}。` }])
+      showToast(`已买下「${title}」：${gained}`, 'gold')
+    })).finally(refreshShop)
   }
 
   function claimMail(mail: MailDTO) {
@@ -657,6 +678,9 @@ export function useWorld({ battle, actions, selectTab, cultivation, companions }
     unreadMail,
     refreshMail,
     claimMail,
+    shopGoods,
+    refreshShop,
+    buyShopGoods,
     announcements,
     absentPlayers,
     refreshAbsentPlayers,

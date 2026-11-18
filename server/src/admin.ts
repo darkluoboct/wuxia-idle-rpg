@@ -7,6 +7,7 @@ import {
   type AdminRole, type MailAttachments,
 } from '../../shared/admin.ts'
 import type { PlayerDTO } from '../../shared/protocol.ts'
+import { registerAdminOps } from './adminOps.ts'
 import { hashPassword, hashToken, newToken, verifyPassword } from './auth.ts'
 import { db, serverTime, transaction } from './db.ts'
 import { GameError, objectBody } from './http.ts'
@@ -123,6 +124,7 @@ export function registerAdmin(app: FastifyInstance, rooms: Rooms, secure: boolea
   })
 
   app.get('/api/admin/me', (request) => requireAdmin(request, 'view'))
+  registerAdminOps(app, rooms, { requireAdmin, audit, text })
 
   // ==================== 总览 ====================
   app.get('/api/admin/dashboard', async (request): Promise<AdminDashboardDTO> => {

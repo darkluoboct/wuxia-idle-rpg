@@ -4,7 +4,9 @@ import { LockKeyhole, Sparkles, Wind } from 'lucide-vue-next'
 import { useGameStore } from '@/stores/gameStore'
 import { ACUPOINTS, SKILLS } from '@/config/gameData'
 import { IS_MOCK_MODE } from '@/network/apiClient'
-import { nextCultivationRealm, realmBreakChance } from '../../../shared/player.ts'
+import { boostPctOver, nextCultivationRealm, realmBreakChance } from '../../../shared/player.ts'
+import { boostLabel } from '../../../shared/admin.ts'
+import type { RateBoostKind } from '@/network/protocol'
 
 const store = useGameStore()
 const usePill = ref(false)
@@ -37,6 +39,12 @@ onMounted(() => { timer = setInterval(() => { now.value = Date.now() }, 5000) })
 onUnmounted(() => clearInterval(timer))
 const pending = computed(() => store.getIdleRewards(now.value))
 
+/** 运营的倍率活动（docs/22）：进行中的列在修行状态下，时薪按活动折算 */
+const activeBoosts = computed(() => store.rateBoosts.filter((boost) => boost.startsAt <= store.worldTime && boost.endsAt > store.worldTime))
+const boosted = (hourly: number, kind: RateBoostKind) =>
+  Math.floor(hourly * (100 + boostPctOver(activeBoosts.value.filter((boost) => boost.kind === kind), store.worldTime, store.worldTime)) / 100)
+const until = new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+
 const skills = computed(() => {
   const l = store.currentLoadout
   return [
@@ -62,6 +70,9 @@ function openSkill(id: string | null) {
       <Wind aria-hidden="true" />
       {{ partner ? '双人共修中' : '正在修行' }}<span aria-hidden="true">…</span>
     </p>
+    <p v-if="activeBoosts.length" class="cultivate-boosts" aria-label="进行中的活动">
+      <span v-for="boost in activeBoosts" :key="boost.id" :title="boost.title">{{ boostLabel(boost) }} · 至 {{ until.format(boost.endsAt) }}</span>
+    </p>
 
     <section class="cultivate-income" aria-label="修行收益">
       <div class="cultivate-progress" :title="levelHint">
@@ -74,11 +85,11 @@ function openSkill(id: string | null) {
         <span class="income-label font-brush">修行收益</span>
         <div class="income-resource">
           <i class="art art-coin" aria-hidden="true" />
-          <div><b>{{ store.effectiveSilverPerHour.toLocaleString() }}</b><small>纹银 / 小时</small></div>
+          <div><b>{{ boosted(store.effectiveSilverPerHour, 'SILVER').toLocaleString() }}</b><small>纹银 / 小时</small></div>
         </div>
         <div class="income-resource">
           <i class="art art-inner" aria-hidden="true" />
-          <div><b>{{ store.effectiveQiPerHour.toLocaleString() }}</b><small>真气 / 小时</small></div>
+          <div><b>{{ boosted(store.effectiveQiPerHour, 'QI').toLocaleString() }}</b><small>真气 / 小时</small></div>
         </div>
         <button
           class="claim-reward" aria-label="领取修行收益" :title="`可领 ${pending.gainedQi.toLocaleString()} 真气和 ${pending.gainedSilver.toLocaleString()} 纹银`"

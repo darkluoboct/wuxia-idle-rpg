@@ -1464,9 +1464,10 @@ export function rollEquipmentAffix(item: ItemConfig, source: 'PATROL' | 'REPLAY'
   return ranges[Math.floor(rng() * ranges.length)]
 }
 
-export function rollTrialDrop(stage: TrialStageConfig, source: 'PATROL' | 'REPLAY', rng = Math.random) {
+/** dropPct：运营倍率活动给巡历掉落几率的加成百分比（docs/22） */
+export function rollTrialDrop(stage: TrialStageConfig, source: 'PATROL' | 'REPLAY', rng = Math.random, dropPct = 0) {
   const ids = source === 'REPLAY' ? stage.replayPartIds : trialSetOfStage(stage)?.parts.map(({ slot }) => trialPartId(stage.setId, slot))
-  if (!ids || (source === 'PATROL' && rng() >= PATROL_DROP_CHANCE)) return
+  if (!ids || (source === 'PATROL' && rng() >= PATROL_DROP_CHANCE * (100 + dropPct) / 100)) return
   const baseId = ids[Math.floor(rng() * ids.length)]
   const base = trialItemOf(baseId)!
   const affixRoll = rollEquipmentAffix(base, source, rng)

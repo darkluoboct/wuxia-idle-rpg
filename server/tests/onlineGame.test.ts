@@ -20,13 +20,13 @@ import { AUCTION_BID_STEP, AUCTION_SOFT_CLOSE_MS, auctionDay, auctionDividendAt,
 import { computeDerivedStats } from '../../shared/battle.ts'
 import { huashanSeason } from '../../shared/huashan.ts'
 import { createStarterCharacter, innVisitDay, legacyAcupoints } from '../../shared/player.ts'
-import type { AnnouncementDTO, MailDTO, ArtifactBoardDTO, ArtifactResult, AuctionBoardDTO, AuctionResult, AwakenResult, BattleReportDTO, BountyBoardDTO, BountyEntryDTO, FeastResult, FtueClaimResult, GachaResult, GameAction, HuashanBoardDTO, HuashanResult, IdleGain, LibraryResult, LibraryStatusDTO, OriginId, PlayerSnapshot, RaidId, RaidMirrorBoardDTO, ReunionResult, RoomPlayerDTO, SectContestBoardDTO, SectContestResult, SectResult, StallBoardDTO, StallResult, StoryAdventureResult, StoryChallengeResult, TrialChallengeResult, TrialPatrolStatusDTO, TrialReplayResult, WsServerEvent, XiangyangBoardDTO, XiangyangResult } from '../../shared/protocol.ts'
+import type { AnnouncementDTO, MailDTO, ArtifactBoardDTO, ArtifactResult, AuctionBoardDTO, AuctionResult, AwakenResult, BattleReportDTO, BountyBoardDTO, BountyEntryDTO, FeastResult, FtueClaimResult, GachaResult, GameAction, HuashanBoardDTO, HuashanResult, IdleGain, LibraryResult, LibraryStatusDTO, OriginId, PlayerSnapshot, RaidId, RaidMirrorBoardDTO, ReunionResult, RoomPlayerDTO, ShopGoodsDTO, SectContestBoardDTO, SectContestResult, SectResult, StallBoardDTO, StallResult, StoryAdventureResult, StoryChallengeResult, TrialChallengeResult, TrialPatrolStatusDTO, TrialReplayResult, WsServerEvent, XiangyangBoardDTO, XiangyangResult } from '../../shared/protocol.ts'
 import { QUANZHEN_LIBRARY } from '../../shared/quanzhen.ts'
 import { BETRAYAL_BOUNTY, SECT_CHIEF_SALUTE_QI, SECT_SALUTE_QI, sectContestEndsAt, sectContestWeek } from '../../shared/sectProgress.ts'
 import { hasTrialPart, trialPartId, trialSetOfStage, trialStageOf } from '../../shared/trialStages.ts'
 import { ONLINE_STORY_CHAPTERS, ONLINE_STORY_PROGRESS_VERSION } from '../../shared/storyData.ts'
 import { xiangyangWar, xiangyangWarOf } from '../../shared/xiangyang.ts'
-import type { AdminAuditDTO, AdminDashboardDTO, AdminMailDTO, AdminPlayerDetailDTO, AdminPlayerRowDTO } from '../../shared/admin.ts'
+import type { AdminAuditDTO, AdminDashboardDTO, AdminMailDTO, AdminPlayerDetailDTO, AdminPlayerRowDTO, AdminReportDTO } from '../../shared/admin.ts'
 import { RAID_LEND, raidLendQi } from '../../shared/mirror.ts'
 import { GameError, TRUST_PROXY } from '../src/http.ts'
 
@@ -1340,6 +1340,125 @@ describe('联机战斗', { skip: connection ? false : '请设置 GAME_TEST_DATAB
     }
     assert.ok(!JSON.stringify(trail.find(({ action }) => action === 'resetPassword')).includes(password))
     assert.deepEqual(trail.find(({ action, admin }) => action === 'login' && admin === 'gm_super')?.detail, { ip: '203.0.113.7' })
+  })
+
+  /** 后台账号登录后的请求；建号只建一次 */
+  async function opsAdmin(loginName: string, role: 'SUPER' | 'OPERATOR' | 'SUPPORT') {
+    const { createAdminAccount } = await import('../src/admin.ts')
+    const password = `${loginName}-password`
+    await createAdminAccount(db, loginName, password, role)
+    const login = await app.inject({ method: 'POST', url: '/api/admin/login', payload: { loginName, password } })
+    assert.equal(login.statusCode, 200, login.body)
+    const headers = { cookie: `${login.cookies[0].name}=${login.cookies[0].value}` }
+    return {
+      get: (path: string) => app.inject({ method: 'GET', url: `/api/admin${path}`, headers }),
+      post: (path: string, payload?: Record<string, unknown>) => app.inject({ method: 'POST', url: `/api/admin${path}`, headers, payload }),
+    }
+  }
+
+  it('倍率活动：只按活动时段加成，不能补到开始之前，提前结束不收回已累计的', async () => {
+    const { reloadRateBoosts } = await import('../src/rates.ts')
+    const gm = await opsAdmin('gm_rates', 'OPERATOR')
+    const support = await opsAdmin('gm_rates_view', 'SUPPORT')
+    const actor = await createPlayer('boost_a')
+    const start = Date.now() + 400 * 86_400_000
+    const hour = 3_600_000
+    try {
+      fixedServerTime = start
+      const base = (await actor.act('/cultivate/settle')).snapshot.soloQiPerHour
+      assert.equal((await support.post('/boosts', { kind: 'QI', pct: 100, hours: 2 })).statusCode, 403)
+      assert.equal((await gm.post('/boosts', { kind: 'QI', pct: 900, hours: 2 })).statusCode, 400)
+      // 开始时刻填在过去，按此刻算：[start, start + 2h] 双倍
+      const created = await gm.post('/boosts', { kind: 'QI', pct: 100, hours: 2, startsAt: start - 5 * hour })
+      assert.equal(created.statusCode, 200, created.body)
+      fixedServerTime = start + 4 * hour
+      const doubled = await actor.act<IdleGain>('/cultivate/settle')
+      assert.equal(doubled.result.gainedQi, base * 6)
+      assert.deepEqual(doubled.snapshot.boosts?.map(({ kind, pct }) => [kind, pct]), [['QI', 100]])
+
+      // 进行中提前结束：已过的一小时照算，之后不再加成
+      const running = (await gm.post('/boosts', { kind: 'QI', pct: 100, hours: 2 })).json<{ id: string }>()
+      fixedServerTime = start + 5 * hour
+      assert.equal((await gm.post(`/boosts/${running.id}/end`)).statusCode, 200)
+      fixedServerTime = start + 7 * hour
+      assert.equal((await actor.act<IdleGain>('/cultivate/settle')).result.gainedQi, base * 4)
+      assert.equal((await gm.post(`/boosts/${running.id}/end`)).statusCode, 409)
+
+      // 还没开始的直接取消
+      const later = (await gm.post('/boosts', { kind: 'SILVER', pct: 50, hours: 1, startsAt: start + 30 * hour })).json<{ id: string }>()
+      assert.equal((await gm.post(`/boosts/${later.id}/end`)).statusCode, 200)
+      const listed = (await support.get('/boosts')).json<{ id: string; endsAt: number }[]>()
+      assert.ok(!listed.some(({ id }) => id === later.id))
+      assert.equal(listed.find(({ id }) => id === running.id)?.endsAt, start + 5 * hour)
+    } finally {
+      fixedServerTime = undefined
+      await db.query('DELETE FROM rate_boosts')
+      await reloadRateBoosts()
+    }
+  })
+
+  it('运营商店：限购、库存、元宝或纹银付款，下架即买不到；后台调整资产不能扣成负数并留痕；报表按日统计', async () => {
+    const gm = await opsAdmin('gm_shop', 'OPERATOR')
+    const support = await opsAdmin('gm_shop_view', 'SUPPORT')
+    // 定住时钟：收功不再多出零头，余额只随买卖变
+    fixedServerTime = Date.now()
+    try {
+      const [first, second, third] = await Promise.all(['shop_a', 'shop_b', 'shop_c'].map(createPlayer))
+      for (const { id } of [first, second, third]) await profile(id, { goldIngot: 300, silver: 5_000 })
+      // 头一次写操作会补发里程碑元宝，先收一次功再记余额
+      const [before, , thirdBefore] = await Promise.all([first, second, third].map(async (actor) => (await actor.act('/cultivate/settle')).snapshot))
+      const bundle = { pills: { pozhang_dan: 2 }, silver: 1_000 }
+      assert.equal((await gm.post('/shop', { title: '元宝礼包', goods: { ingot: 10 }, currency: 'SILVER', price: 100 })).statusCode, 400)
+      assert.equal((await support.post('/shop', { title: '破障礼包', goods: bundle, currency: 'INGOT', price: 50 })).statusCode, 403)
+      const created = await gm.post('/shop', { title: '破障礼包', goods: bundle, currency: 'INGOT', price: 50, limit: { kind: 'DAILY', count: 1 }, stock: 2 })
+      assert.equal(created.statusCode, 200, created.body)
+      const goodsId = created.json<{ id: string }>().id
+
+      const listed = (await first.read<ShopGoodsDTO[]>('/shop')).find(({ id }) => id === goodsId)
+      assert.deepEqual([listed?.bought, listed?.stockLeft, listed?.limit], [0, 2, { kind: 'DAILY', count: 1 }])
+      const bought = await first.act<{ spent: number }>('/shop', { goodsId })
+      assert.equal(bought.snapshot.player.goldIngot, before.player.goldIngot - 50)
+      assert.equal(bought.snapshot.player.silver, before.player.silver + 1_000)
+      assert.equal(bought.snapshot.pillInventory?.pozhang_dan, (before.pillInventory?.pozhang_dan ?? 0) + 2)
+      const { rows: [ledger] } = await db.query('SELECT delta, reason FROM ingot_ledger WHERE player_id = $1 ORDER BY id DESC LIMIT 1', [first.id])
+      assert.deepEqual(ledger, { delta: -50, reason: 'shop' })
+      assert.equal((await first.post('/shop', { goodsId })).json().code, 'GOODS_LIMIT')
+      assert.equal((await second.post('/shop', { goodsId })).statusCode, 200)
+      assert.equal((await third.post('/shop', { goodsId })).json().code, 'GOODS_SOLD_OUT')
+      assert.equal((await first.read<ShopGoodsDTO[]>('/shop')).find(({ id }) => id === goodsId)?.stockLeft, 0)
+
+      // 纹银商品；下架后列不出也买不到
+      const silverGoods = (await gm.post('/shop', { title: '真气丹', goods: { qiExp: 500 }, currency: 'SILVER', price: 2_000 })).json<{ id: string }>().id
+      const paid = await third.act('/shop', { goodsId: silverGoods })
+      assert.equal(paid.snapshot.player.silver, thirdBefore.player.silver - 2_000)
+      assert.equal((await gm.post(`/shop/${silverGoods}`, { hidden: true })).statusCode, 200)
+      assert.ok(!(await third.read<ShopGoodsDTO[]>('/shop')).some(({ id }) => id === silverGoods))
+      assert.equal((await third.post('/shop', { goodsId: silverGoods })).json().code, 'GOODS_NOT_FOUND')
+      const goods = (await support.get('/shop')).json<{ id: string; sold: number; revenue: number; buyers: number }[]>()
+      assert.deepEqual(goods.filter(({ id }) => id === goodsId).map(({ sold, revenue, buyers }) => [sold, revenue, buyers]), [[2, 100, 2]])
+
+      // 调整资产：要写原因，扣不成负数，元宝进流水，审计留底
+      assert.equal((await support.post(`/players/${first.id}/adjust`, { ingot: 10, reason: '补偿' })).statusCode, 403)
+      assert.equal((await gm.post(`/players/${first.id}/adjust`, { ingot: 10 })).statusCode, 400)
+      assert.equal((await gm.post(`/players/${first.id}/adjust`, { silver: -1_000_000, reason: '回收' })).json().code, 'ASSET_NEGATIVE')
+      const adjusted = await gm.post(`/players/${first.id}/adjust`, { ingot: 100, silver: -500, reason: '误扣补回' })
+      assert.equal(adjusted.statusCode, 200, adjusted.body)
+      const after = await first.read()
+      assert.deepEqual([after.player.goldIngot, after.player.silver], [bought.snapshot.player.goldIngot + 100, bought.snapshot.player.silver - 500])
+      const { rows: [refund] } = await db.query('SELECT delta, reason FROM ingot_ledger WHERE player_id = $1 ORDER BY id DESC LIMIT 1', [first.id])
+      assert.deepEqual(refund, { delta: 100, reason: 'admin' })
+      const trail = (await support.get('/audit')).json<AdminAuditDTO[]>()
+      assert.ok(['createGoods', 'updateGoods', 'adjust'].every((action) => trail.some((entry) => entry.action === action)))
+      assert.equal(trail.find(({ action }) => action === 'adjust')?.detail.reason, '误扣补回')
+
+      const report = (await support.get('/reports')).json<AdminReportDTO>()
+      assert.equal(report.days.length, 14)
+      assert.ok(report.days[0].active >= 3 && report.days[0].shopIngot >= 100 && report.days[0].newPlayers >= 3)
+      assert.equal(report.retention[0].d1, null)
+      assert.ok(report.levels.reduce((total, { count }) => total + count, 0) >= 3)
+    } finally {
+      fixedServerTime = undefined
+    }
   })
 
   it('每日江湖事四件做完才能领元宝，当日只领一次', async () => {

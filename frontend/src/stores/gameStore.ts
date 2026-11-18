@@ -120,6 +120,7 @@ export const useGameStore = defineStore('wuxiaGame', () => {
       if (event.event === 'AUCTION_OUTBID') market.onAuctionOutbid(event.data)
       else if (event.event === 'UNIQUE_ARTIFACT_CHANGED') artifacts.onArtifactChanged(event.data)
       else if (event.event === 'STALL_SOLD') stalls.onStallSold(event.data)
+      else if (event.event === 'RATE_BOOSTS') playerStore.applyRateBoosts(event.data)
       else world.handleRoomEvent(event)
     },
     disconnected: world.clearRoom,
@@ -225,6 +226,7 @@ export const useGameStore = defineStore('wuxiaGame', () => {
     collectionBonus: playerRefs.collectionBonus,
     effectiveQiPerHour: playerRefs.effectiveQiPerHour,
     effectiveSilverPerHour: playerRefs.effectiveSilverPerHour,
+    rateBoosts: playerRefs.rateBoosts,
     onlineTime: playerRefs.onlineTime,
     activeCoCultivation: playerRefs.activeCoCultivation,
     coCultivationInvite: playerRefs.coCultivationInvite,
@@ -271,6 +273,9 @@ export const useGameStore = defineStore('wuxiaGame', () => {
     unreadMail: world.unreadMail,
     refreshMail: world.refreshMail,
     claimMail: world.claimMail,
+    shopGoods: world.shopGoods,
+    refreshShop: world.refreshShop,
+    buyShopGoods: world.buyShopGoods,
     announcements: world.announcements,
     absentPlayers: world.absentPlayers,
     ghostListings: market.ghostListings,

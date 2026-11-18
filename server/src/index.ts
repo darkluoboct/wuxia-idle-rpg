@@ -8,6 +8,7 @@ import { db } from './db.ts'
 import { registerGame } from './game.ts'
 import { GameError, TRUST_PROXY } from './http.ts'
 import { registerRaidLobby } from './raidLobby.ts'
+import { freshRateBoosts } from './rates.ts'
 import { registerRooms } from './rooms.ts'
 
 const origin = new URL(process.env.APP_ORIGIN || 'http://localhost:5173')
@@ -39,13 +40,27 @@ registerAuth(app, origin.protocol === 'https:', rooms.closeSession)
 registerGame(app, rooms, raid)
 registerAdmin(app, rooms, origin.protocol === 'https:')
 db.on('error', (error) => app.log.error(error))
-app.addHook('onClose', async () => db.end())
+
+// 报表的在线人数：每 5 分钟留一个点，保留 35 天
+const onlineSampler = setInterval(() => {
+  const now = Date.now()
+  db.query('INSERT INTO online_samples (at, online) VALUES ($1, $2) ON CONFLICT DO NOTHING', [now, rooms.onlineCount()])
+    .then(() => db.query('DELETE FROM online_samples WHERE at < $1', [now - 35 * 86_400_000]))
+    .catch((error) => app.log.error(error))
+}, 5 * 60_000)
+onlineSampler.unref()
+app.addHook('onClose', async () => {
+  clearInterval(onlineSampler)
+  await db.end()
+})
 
 try {
   await db.query('SELECT co_cultivation_id, shaoshi_clears, chongyang_clears, juxian_clears FROM players LIMIT 0')
   await db.query('SELECT chapter FROM chapter_one_statue LIMIT 0')
   await db.query('SELECT 1 FROM sect_contest_entries, sect_contest_results LIMIT 0')
   await db.query('SELECT 1 FROM admin_accounts, mails, mail_claims, announcements LIMIT 0')
+  await db.query('SELECT 1 FROM rate_boosts, shop_goods, shop_purchases, player_activity_days, online_samples LIMIT 0')
+  await freshRateBoosts()
   await app.listen({ host: '127.0.0.1', port: Number(process.env.PORT || 8080) })
 } catch (error) {
   app.log.error(error)

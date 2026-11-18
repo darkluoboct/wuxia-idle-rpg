@@ -1,4 +1,4 @@
-import type { CoCultivationDTO, CompanionState, CultivationResult, GhostAppraisalResult, LoadoutPresetDTO, OriginId, PatrolCacheReward, PlayerDTO, SixStats, VoyageResult } from './protocol.ts'
+import type { CoCultivationDTO, CompanionState, CultivationResult, GhostAppraisalResult, LoadoutPresetDTO, OriginId, PatrolCacheReward, PlayerDTO, RateBoostDTO, SixStats, VoyageResult } from './protocol.ts'
 import { calcNextLevelQi } from './battle.ts'
 import { resolveBattleLoadout } from './battleEffects.ts'
 import { battleEnvironmentAt, EQUIP_SLOT_META, jianghuHour } from './combatMeta.ts'
@@ -561,11 +561,40 @@ export function coCultivationRate(soloQiPerHour: number) {
   return Math.round(soloQiPerHour * 115 / 100)
 }
 
+/** 倍率活动的一段：pct 为加成百分比，100 即双倍（docs/22） */
+export type BoostWindow = Pick<RateBoostDTO, 'startsAt' | 'endsAt' | 'pct'>
+
+/** [from, to] 整段都在活动里的最高加成；同时段同类活动不叠加 */
+export function boostPctOver(boosts: readonly BoostWindow[], from: number, to: number) {
+  return boosts.reduce((best, boost) => boost.startsAt <= from && boost.endsAt >= to ? Math.max(best, boost.pct) : best, 0)
+}
+
+/** 把 [from, to] 按共修与活动的起止切段 */
+function idleSegments(from: number, to: number, windows: readonly Pick<BoostWindow, 'startsAt' | 'endsAt'>[]) {
+  const cuts = new Set([from, to])
+  for (const { startsAt, endsAt } of windows) for (const at of [startsAt, endsAt]) if (at > from && at < to) cuts.add(at)
+  const points = [...cuts].sort((a, b) => a - b)
+  return points.slice(1).map((end, index) => [points[index], end] as const)
+}
+
+/** 一段时间里活动加成的时间加权平均（巡历掉落用）；区间为空时取那一刻的加成 */
+export function averageBoostPct(boosts: readonly BoostWindow[], from: number, to: number) {
+  if (to <= from) return boostPctOver(boosts, to, to)
+  const weighted = idleSegments(from, to, boosts).reduce((total, [start, end]) => total + (end - start) * boostPctOver(boosts, start, end), 0)
+  return weighted / (to - from)
+}
+
 export function idleQiNumerator(
   lastSettleAt: number, now: number, soloRate: number, pair: Pick<CoCultivationDTO, 'startsAt' | 'endsAt'> | null,
+  boosts: readonly BoostWindow[] = [],
 ) {
   const since = Math.max(lastSettleAt, now - IDLE_CAP_MS)
-  const elapsed = Math.max(0, now - since)
-  const together = pair ? Math.max(0, Math.min(now, pair.endsAt) - Math.max(since, pair.startsAt)) : 0
-  return BigInt(elapsed - together) * BigInt(soloRate) + BigInt(together) * BigInt(coCultivationRate(soloRate))
+  if (now <= since) return 0n
+  let total = 0n
+  for (const [from, to] of idleSegments(since, now, pair ? [pair, ...boosts] : boosts)) {
+    const together = !!pair && pair.startsAt <= from && pair.endsAt >= to
+    const rate = BigInt(together ? coCultivationRate(soloRate) : soloRate)
+    total += BigInt(to - from) * rate * BigInt(100 + boostPctOver(boosts, from, to)) / 100n
+  }
+  return total
 }
