@@ -4,6 +4,7 @@ import { on, once } from 'node:events'
 import { readdir, readFile } from 'node:fs/promises'
 import { after, before, describe, it, mock } from 'node:test'
 import cookie from '@fastify/cookie'
+import rateLimit from '@fastify/rate-limit'
 import websocket from '@fastify/websocket'
 import Fastify from 'fastify'
 import pg from 'pg'
@@ -27,12 +28,12 @@ import { ONLINE_STORY_CHAPTERS, ONLINE_STORY_PROGRESS_VERSION } from '../../shar
 import { xiangyangWar, xiangyangWarOf } from '../../shared/xiangyang.ts'
 import type { AdminAuditDTO, AdminDashboardDTO, AdminMailDTO, AdminPlayerDetailDTO, AdminPlayerRowDTO } from '../../shared/admin.ts'
 import { RAID_LEND, raidLendQi } from '../../shared/mirror.ts'
-import { GameError } from '../src/http.ts'
+import { GameError, TRUST_PROXY } from '../src/http.ts'
 
 const connection = process.env.GAME_TEST_DATABASE_URL ?? process.env.STORY_TEST_DATABASE_URL
 
 describe('联机战斗', { skip: connection ? false : '请设置 GAME_TEST_DATABASE_URL' }, () => {
-  const app = Fastify()
+  const app = Fastify({ trustProxy: TRUST_PROXY })
   const schema = `game_test_${randomUUID().replaceAll('-', '')}`
   const admin = new pg.Pool({ connectionString: connection })
   let db: pg.Pool
@@ -1226,8 +1227,9 @@ describe('联机战斗', { skip: connection ? false : '请设置 GAME_TEST_DATAB
     const { createAdminAccount } = await import('../src/admin.ts')
     await createAdminAccount(db, 'gm_super', 'super-password-1', 'SUPER')
     await createAdminAccount(db, 'gm_support', 'support-password', 'SUPPORT')
+    // 经同机 nginx 转来，审计记的是来访者的 IP
     const adminLogin = async (loginName: string, password: string) => {
-      const response = await app.inject({ method: 'POST', url: '/api/admin/login', payload: { loginName, password } })
+      const response = await app.inject({ method: 'POST', url: '/api/admin/login', headers: { 'x-forwarded-for': '203.0.113.7' }, payload: { loginName, password } })
       assert.equal(response.statusCode, 200, response.body)
       const cookie = response.cookies[0]
       const headers = { cookie: `${cookie.name}=${cookie.value}` }
@@ -1335,6 +1337,7 @@ describe('联机战斗', { skip: connection ? false : '请设置 GAME_TEST_DATAB
       assert.ok(actions.includes(action), action)
     }
     assert.ok(!JSON.stringify(trail.find(({ action }) => action === 'resetPassword')).includes(password))
+    assert.deepEqual(trail.find(({ action, admin }) => action === 'login' && admin === 'gm_super')?.detail, { ip: '203.0.113.7' })
   })
 
   it('每日江湖事四件做完才能领元宝，当日只领一次', async () => {
@@ -1917,6 +1920,23 @@ describe('联机战斗', { skip: connection ? false : '请设置 GAME_TEST_DATAB
       assert.match((await reject(buyer, { action: 'buy', listingId: system.id, qty: system.qty, unitPrice: system.unitPrice })).message, /已经收摊/)
     } finally {
       fixedServerTime = undefined
+    }
+  })
+})
+
+describe('反向代理后的来访 IP', () => {
+  it('登录限流按每位来访者的 IP 分开计，不因同经 nginx 而全服共用一份', async () => {
+    const app = Fastify({ trustProxy: TRUST_PROXY })
+    await app.register(rateLimit, { global: false })
+    app.post('/login', { config: { rateLimit: { max: 2, timeWindow: '1 minute' } } }, (request) => ({ ip: request.ip }))
+    const login = (ip: string) => app.inject({ method: 'POST', url: '/login', headers: { 'x-forwarded-for': ip } })
+    try {
+      assert.deepEqual((await login('198.51.100.1')).json(), { ip: '198.51.100.1' })
+      assert.equal((await login('198.51.100.1')).statusCode, 200)
+      assert.equal((await login('198.51.100.1')).statusCode, 429)
+      assert.equal((await login('198.51.100.2')).statusCode, 200)
+    } finally {
+      await app.close()
     }
   })
 })

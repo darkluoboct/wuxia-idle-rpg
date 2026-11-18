@@ -15,3 +15,6 @@ export function objectBody(value: unknown): Record<string, unknown> {
   }
   return value as Record<string, unknown>
 }
+
+/** 游戏服务只听 127.0.0.1，由同机的反向代理转发；只信本机代理传来的 X-Forwarded-For，登录限流与后台审计才按侠客的真实 IP 计 */
+export const TRUST_PROXY = 'loopback'

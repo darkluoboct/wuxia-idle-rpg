@@ -6,12 +6,12 @@ import { registerAdmin } from './admin.ts'
 import { registerAuth } from './auth.ts'
 import { db } from './db.ts'
 import { registerGame } from './game.ts'
-import { GameError } from './http.ts'
+import { GameError, TRUST_PROXY } from './http.ts'
 import { registerRaidLobby } from './raidLobby.ts'
 import { registerRooms } from './rooms.ts'
 
 const origin = new URL(process.env.APP_ORIGIN || 'http://localhost:5173')
-const app = Fastify({ logger: true, bodyLimit: 16_384 })
+const app = Fastify({ logger: true, bodyLimit: 16_384, trustProxy: TRUST_PROXY })
 await app.register(cookie)
 await app.register(rateLimit, { global: false })
 await app.register(websocket, { options: { maxPayload: 4_096 } })
