@@ -52,9 +52,10 @@ const onlineSampler = setInterval(() => {
     .catch((error) => app.log.error(error))
 }, 5 * 60_000)
 onlineSampler.unref()
-// 聊天留档 180 天，每 6 小时清一次过期的
+// 聊天留档 180 天、删除的角色转存 30 天，每 6 小时清一次过期的
 const chatPruner = setInterval(() => {
   db.query('DELETE FROM chat_messages WHERE created_at < $1', [Date.now() - CHAT_RULES.retentionDays * 86_400_000])
+    .then(() => db.query('DELETE FROM deleted_players WHERE purge_after < $1', [Date.now()]))
     .catch((error) => app.log.error(error))
 }, 6 * 3_600_000)
 chatPruner.unref()
@@ -70,7 +71,7 @@ try {
   await db.query('SELECT 1 FROM sect_contest_entries, sect_contest_results LIMIT 0')
   await db.query('SELECT 1 FROM admin_accounts, mails, mail_claims, announcements LIMIT 0')
   await db.query('SELECT 1 FROM rate_boosts, shop_goods, shop_purchases, player_activity_days, online_samples LIMIT 0')
-  await db.query('SELECT 1 FROM chat_messages, chat_blocks, chat_banned_words LIMIT 0')
+  await db.query('SELECT 1 FROM chat_messages, chat_blocks, chat_banned_words, deleted_players LIMIT 0')
   await freshRateBoosts()
   await app.listen({ host: '127.0.0.1', port: Number(process.env.PORT || 8080) })
 } catch (error) {

@@ -26,7 +26,7 @@ import { BETRAYAL_BOUNTY, SECT_CHIEF_SALUTE_QI, SECT_SALUTE_QI, sectContestEndsA
 import { hasTrialPart, trialPartId, trialSetOfStage, trialStageOf } from '../../shared/trialStages.ts'
 import { ONLINE_STORY_CHAPTERS, ONLINE_STORY_PROGRESS_VERSION } from '../../shared/storyData.ts'
 import { xiangyangWar, xiangyangWarOf } from '../../shared/xiangyang.ts'
-import type { AdminAuditDTO, AdminChatMessageDTO, AdminDashboardDTO, AdminMailDTO, AdminPlayerDetailDTO, AdminPlayerRowDTO, AdminReportDTO } from '../../shared/admin.ts'
+import type { AdminAuditDTO, AdminChatMessageDTO, AdminDashboardDTO, AdminDeletedPlayerDTO, AdminMailDTO, AdminPlayerDetailDTO, AdminPlayerRowDTO, AdminReportDTO } from '../../shared/admin.ts'
 import { RAID_LEND, raidLendQi } from '../../shared/mirror.ts'
 import { GameError, TRUST_PROXY } from '../src/http.ts'
 
@@ -114,7 +114,8 @@ describe('联机战斗', { skip: connection ? false : '请设置 GAME_TEST_DATAB
   /** fresh：联机新角色；gated 时保留新手序章的玩法开放顺序，否则按老角色处理（玩法全部开放） */
   async function register(name: string, fresh: boolean, gated = false, origin: OriginId = 'xuanmen') {
     const loginName = `story_${name}`
-    const registration = await app.inject({ method: 'POST', url: '/api/v1/auth/register', payload: { loginName, password: randomUUID() } })
+    const password = randomUUID()
+    const registration = await app.inject({ method: 'POST', url: '/api/v1/auth/register', payload: { loginName, password } })
     assert.equal(registration.statusCode, 201)
     const cookie = registration.cookies[0]
     const headers = { cookie: `${cookie.name}=${cookie.value}` }
@@ -150,7 +151,7 @@ describe('联机战斗', { skip: connection ? false : '请设置 GAME_TEST_DATAB
       })
       return socket
     }
-    return { id, snapshot, get, post, act, read, connect }
+    return { id, snapshot, get, post, act, read, connect, password, headers }
   }
   const createPlayer = (name: string) => register(name, false)
   const createRookie = (name: string) => register(name, true)
@@ -1552,6 +1553,56 @@ describe('联机战斗', { skip: connection ? false : '请设置 GAME_TEST_DATAB
     }
   })
 
+  it('删除角色：要密码与角色名，暗拍领先时不能删；转存 30 天可由后台恢复，名号只留给原账号，流水留档', async () => {
+    const gm = await opsAdmin('gm_restore', 'OPERATOR')
+    const support = await opsAdmin('gm_restore_view', 'SUPPORT')
+    const owner = await createPlayer('del_a')
+    const { nickname } = (await owner.read()).player
+    const remove = (body: Record<string, unknown>) => app.inject({ method: 'POST', url: '/api/v1/player/delete', headers: owner.headers, payload: body })
+    assert.equal((await remove({ nickname, password: 'wrong-password' })).json().code, 'WRONG_PASSWORD')
+    assert.equal((await remove({ nickname: '别人', password: owner.password })).json().code, 'NICKNAME_MISMATCH')
+
+    // 暗拍领先时元宝冻着，落槌前不能删
+    const day = 900_000 + Math.floor(Math.random() * 1000)
+    await db.query(`INSERT INTO ghost_auctions (day, item_id, start_price, price, leader_id, bids, closes_at, mask_salt)
+      VALUES ($1, 'dagou_stick', 180, 230, $2, 1, $3, 'salt')`, [day, owner.id, Date.now() + 3_600_000])
+    assert.equal((await remove({ nickname, password: owner.password })).json().code, 'DELETE_AUCTION_LEADING')
+    await db.query('DELETE FROM ghost_auctions WHERE day = $1', [day])
+
+    const socket = await owner.connect()
+    const closed = new Promise<number>((resolve) => socket.addEventListener('close', ({ code }) => resolve(code), { once: true }))
+    const { rows: [{ count: ledgerBefore }] } = await db.query('SELECT count(*)::int AS count FROM ingot_ledger WHERE player_id = $1', [owner.id])
+    const deleted = await remove({ nickname, password: owner.password })
+    assert.equal(deleted.statusCode, 200, deleted.body)
+    assert.equal(await closed, 4001)
+    assert.equal((await owner.get('/player/me')).json().code, 'PLAYER_NOT_CREATED')
+    const { rows: [{ count: ledgerAfter }] } = await db.query('SELECT count(*)::int AS count FROM ingot_ledger WHERE player_id = $1', [owner.id])
+    assert.ok(ledgerBefore > 0 && ledgerAfter === ledgerBefore)
+
+    // 名号 30 天内只留给原账号
+    const stranger = await app.inject({ method: 'POST', url: '/api/v1/auth/register', payload: { loginName: 'story_del_b', password: randomUUID() } })
+    const strangerHeaders = { cookie: `${stranger.cookies[0].name}=${stranger.cookies[0].value}` }
+    const taken = await app.inject({ method: 'POST', url: '/api/v1/player/create', headers: strangerHeaders, payload: { nickname, origin: 'xuanmen' } })
+    assert.equal(taken.json().code, 'NICKNAME_TAKEN')
+
+    // 后台恢复：原 ID、原装备回来；恢复过的不能再恢复
+    const [archived] = (await support.get(`/deleted-players?q=${encodeURIComponent(nickname)}`)).json<AdminDeletedPlayerDTO[]>()
+    assert.deepEqual([archived.id, archived.deletedBy, archived.blocked], [owner.id, 'PLAYER', null])
+    assert.equal((await support.post(`/deleted-players/${owner.id}/restore`)).statusCode, 403)
+    assert.equal((await gm.post(`/deleted-players/${owner.id}/restore`)).statusCode, 200)
+    const back = await owner.read()
+    assert.deepEqual([back.player.id, back.player.nickname, back.ownedItemIds.length], [owner.id, nickname, owner.snapshot.ownedItemIds.length])
+    assert.equal((await gm.post(`/deleted-players/${owner.id}/restore`)).statusCode, 404)
+    assert.ok((await support.get('/audit')).json<AdminAuditDTO[]>().some(({ action }) => action === 'restorePlayer'))
+
+    // 再删一次后原账号可以马上用回这个名号，此后旧角色不能再恢复
+    assert.equal((await remove({ nickname, password: owner.password })).statusCode, 200)
+    const recreated = await app.inject({ method: 'POST', url: '/api/v1/player/create', headers: owner.headers, payload: { nickname, origin: 'xuanmen' } })
+    assert.equal(recreated.statusCode, 200, recreated.body)
+    assert.equal((await support.get(`/deleted-players?q=${encodeURIComponent(nickname)}`)).json<AdminDeletedPlayerDTO[]>()[0].blocked, '账号已新建角色')
+    assert.equal((await gm.post(`/deleted-players/${owner.id}/restore`)).json().code, 'ACCOUNT_HAS_PLAYER')
+  })
+
   it('每日江湖事四件做完才能领元宝，当日只领一次', async () => {
     const actor = await createRookie('daily_a')
     await actor.act('/cultivate/settle')
@@ -1607,7 +1658,8 @@ describe('联机战斗', { skip: connection ? false : '请设置 GAME_TEST_DATAB
     const { player } = await newcomer.read()
     await profile(newcomer.id, { maxChapterId: 3, trial: { ...player.trial, rewardedStageIds: [1, 3] } })
     assert.equal(await code('/daily/claim'), 'DAILY_NOT_READY')
-    const morning = Date.UTC(2026, 10, 18, 3) // 北京时间 11:00
+    // 明天北京时间 11:00：晚于建角时刻，也不跨子时换日
+    const morning = (Math.floor((Date.now() + 8 * 3_600_000) / 86_400_000) + 1) * 86_400_000 + 3 * 3_600_000
     const done = DAILY_TASKS.map(({ id }) => id)
     try {
       fixedServerTime = morning

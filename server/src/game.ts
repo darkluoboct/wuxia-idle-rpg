@@ -43,7 +43,8 @@ import type {
   MirrorRankEntryDTO, ReunionResult, RichSegment, SectChiefDTO, SectContestBoardDTO, SectContestResult, SectResult, SkillSlotType, SkillUpgradeResult, StoryAdventureResult, StoryChallengeResult, StorySnakeChoiceResult, TrialChallengeResult, TrialDropDTO, TrialPatrolStatusDTO, TrialReplayResult,
   AnnouncementDTO, AwayReportDTO, MailAttachments, MailDTO, ShopGoodsDTO, ShopLimitKind, RaidId, RaidMirrorBoardDTO, RoomPlayerDTO, WsServerEvent, XiangyangAwardDTO, XiangyangBoardDTO, XiangyangGateDTO, XiangyangGateId, XiangyangResult,
 } from '../../shared/protocol.ts'
-import { requireSession } from './auth.ts'
+import { requireSession, verifyPassword } from './auth.ts'
+import { archiveAndDeletePlayer, nicknameReserved } from './deletePlayer.ts'
 import { serverTime, transaction } from './db.ts'
 import { GameError, objectBody } from './http.ts'
 import { beijingDay } from '../../shared/admin.ts'
@@ -532,6 +533,8 @@ async function createPlayer(accountId: string, input: unknown) {
       return snapshot(character, Math.max(now, character.player.lastSettleAt))
     }
 
+    // 30 天内删掉的角色名只留给原账号（docs/24）
+    if (await nicknameReserved(client, nickname, accountId, now)) throw new GameError(409, 'NICKNAME_TAKEN', '这位侠客的名字已有人用')
     const id = randomUUID()
     const starter = createNewGameCharacter({ id, nickname, avatarId }, now, origin)
     starter.player.openedAcupointIds = starter.openedAcupointIds
@@ -996,6 +999,33 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
 
   app.get('/api/v1/player/me', async (request) => getSnapshot((await requireSession(request)).accountId))
   app.post('/api/v1/player/create', async (request) => createPlayer((await requireSession(request)).accountId, request.body))
+
+  /** 删除角色（docs/24）：要账号密码与角色名；共修中、暗拍领先、结义组队时先了结，免得连累别人 */
+  app.post('/api/v1/player/delete', { config: { rateLimit: { max: 5, timeWindow: '1 minute' } } }, async (request) => {
+    const { accountId } = await requireSession(request)
+    const { nickname, password } = objectBody(request.body)
+    if (typeof nickname !== 'string' || typeof password !== 'string') throw new GameError(400, 'INVALID_INPUT', '请输入角色名与账号密码')
+    const deleted = await transaction(async (client) => {
+      const { rows: [account] } = await client.query<{ password_hash: string }>('SELECT password_hash FROM accounts WHERE id = $1 FOR UPDATE', [accountId])
+      if (!(await verifyPassword(password, account?.password_hash))) throw new GameError(403, 'WRONG_PASSWORD', '账号密码不对')
+      const { rows: [row] } = await client.query<{ id: string; nickname: string; co_cultivation_id: string | null }>(
+        'SELECT id, nickname, co_cultivation_id FROM players WHERE account_id = $1 FOR UPDATE', [accountId])
+      if (!row) throw new GameError(404, 'PLAYER_NOT_CREATED', '先创建你的角色')
+      if (nickname.trim().normalize('NFKC') !== row.nickname) throw new GameError(400, 'NICKNAME_MISMATCH', '输入的角色名对不上')
+      const now = await serverTime(client)
+      if (raid.inTeam(row.id)) throw new GameError(409, 'DELETE_IN_RAID_TEAM', '你还在结义队伍里，先离队再删除')
+      const { rowCount: pairing } = await client.query(
+        'SELECT 1 FROM co_cultivations WHERE id = $1 AND starts_at <= $2 AND ends_at > $2', [row.co_cultivation_id, now])
+      if (pairing) throw new GameError(409, 'DELETE_CO_CULTIVATING', '正在与人共修，结束后才能删除')
+      const { rowCount: leading } = await client.query(
+        'SELECT 1 FROM ghost_auctions WHERE leader_id = $1 AND NOT claimed AND closes_at > $2', [row.id, now])
+      if (leading) throw new GameError(409, 'DELETE_AUCTION_LEADING', '你在鬼市暗拍里领先，落槌后才能删除')
+      return archiveAndDeletePlayer(client, row.id, 'PLAYER', now)
+    })
+    // 其他设备上的连接一并断开，它们重连时会回到建角
+    rooms.evict(deleted.id)
+    return { ok: true }
+  })
 
   app.get('/api/v1/trial/champion', async (request): Promise<{ statue: ChapterOneStatueDTO | null }> => {
     await requireSession(request)

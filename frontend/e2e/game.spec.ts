@@ -70,7 +70,7 @@ test('游客进入演武，切换五个页签并从浏览器读档', async ({ pa
   await expect(game.getByRole('button', { name: '领取修行收益' })).toBeVisible()
 })
 
-test('联机注册、创角、同图聊天、领取收益和换装读档', async ({ browser }) => {
+test('联机注册、创角、同图聊天、私聊、领取收益、换装读档与删除角色', async ({ browser }) => {
   test.skip(!process.env.WUXIA_E2E_DATABASE_URL, '需要专用 PostgreSQL 测试库')
   // 两位侠客各自注册、走完序章，慢机器上光这些就近 30 秒
   test.setTimeout(90_000)
@@ -108,7 +108,7 @@ test('联机注册、创角、同图聊天、领取收益和换装读档', async
         await game.getByRole('tablist', { name: '江湖卷栏目' }).getByRole('tab', { name: '附近' }).click()
         // 江湖传音在左栏人物卷下：切到附近（同图）频道
         await game.getByRole('tablist', { name: '频道' }).getByRole('tab', { name: /^附近/ }).click()
-        return { game, page, nickname }
+        return { game, page, nickname, password }
       }),
     )
     // 聊天会留档，测试库反复跑时每次换一句
@@ -159,6 +159,17 @@ test('联机注册、创角、同图聊天、领取收益和换装读档', async
     await stage.getByRole('button', { name: '青钢长剑', exact: true }).click()
     await stage.getByRole('button', { name: '装备青钢长剑', exact: true }).click()
     await expect(worn).toBeVisible()
+
+    // 删除角色：输入角色名与账号密码，删后回到建角
+    await alice.game.getByRole('button', { name: '选择角色' }).click()
+    await alice.game.getByRole('button', { name: '删除角色' }).click()
+    const confirm = alice.game.getByRole('button', { name: '确认删除' })
+    await alice.game.getByLabel(/^输入角色名/).fill(alice.nickname)
+    await expect(confirm).toBeDisabled()
+    await alice.game.getByLabel('账号密码').fill(alice.password)
+    await confirm.click()
+    await expect(alice.game.getByRole('button', { name: '创建角色', exact: true })).toBeVisible()
+    await expect(alice.game.getByText(alice.nickname)).toHaveCount(0)
   } finally {
     await Promise.all(contexts.map((context) => context.close()))
   }

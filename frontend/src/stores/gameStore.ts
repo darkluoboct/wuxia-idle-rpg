@@ -267,6 +267,7 @@ export const useGameStore = defineStore('wuxiaGame', () => {
     resumeOnline: onlineStore.resume,
     signIn: onlineStore.signIn,
     createOnlinePlayer: onlineStore.create,
+    deleteOnlineCharacter: onlineStore.deleteCharacter,
     characterList: local.characterList,
     selectLocalCharacter: local.selectLocalCharacter,
     createLocalCharacter: local.createLocalCharacter,

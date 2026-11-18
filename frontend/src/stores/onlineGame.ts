@@ -31,7 +31,8 @@ export function useOnlineGame(callbacks: OnlineGameCallbacks, prepare: () => Pro
     callbacks.snapshot(snapshot)
   }
 
-  function endSession() {
+  /** 结束本次在江湖的会话：登出回登录页；角色被删回建角（账号仍登录着） */
+  function endSession(next: 'login' | 'create' = 'login') {
     session++
     clearTimeout(reconnectTimer)
     apiClient.closeWs()
@@ -42,7 +43,7 @@ export function useOnlineGame(callbacks: OnlineGameCallbacks, prepare: () => Pro
     lastServerTime = 0
     announcedRevision = 0
     reconnectDelay = 1_000
-    phase.value = 'login'
+    phase.value = next
     callbacks.reset()
   }
 
@@ -55,6 +56,8 @@ export function useOnlineGame(callbacks: OnlineGameCallbacks, prepare: () => Pro
       return true
     } catch (error) {
       if (started === session && error instanceof ApiError && error.status === 401) endSession()
+      // 别的设备上删了角色：回到建角
+      else if (started === session && error instanceof ApiError && error.code === 'PLAYER_NOT_CREATED') endSession('create')
       return false
     }
   }
@@ -147,6 +150,14 @@ export function useOnlineGame(callbacks: OnlineGameCallbacks, prepare: () => Pro
     })
   }
 
+  /** 删除角色（docs/24）：要角色名与账号密码，删后回到建角 */
+  function deleteCharacter(nickname: string, password: string) {
+    return authorize(async () => {
+      await apiClient.request('POST', '/player/delete', { nickname, password })
+      endSession('create')
+    })
+  }
+
   function logout() {
     return authorize(async () => {
       await apiClient.request('POST', '/auth/logout')
@@ -199,6 +210,6 @@ export function useOnlineGame(callbacks: OnlineGameCallbacks, prepare: () => Pro
   return {
     phase, authBusy, authError, roomConnected, revision,
     actionBusy, canRetry: computed(() => retryAction.value !== null),
-    resume, signIn, create, logout, action, retry: () => retryAction.value?.(),
+    resume, signIn, create, deleteCharacter, logout, action, retry: () => retryAction.value?.(),
   }
 }

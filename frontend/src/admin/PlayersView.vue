@@ -4,6 +4,7 @@ import type { AdminPermission, AdminPlayerDetailDTO, AdminPlayerRowDTO } from '.
 import { ITEMS, MAPS, REALMS, SECTS, SKILLS } from '../../../shared/gameData.ts'
 import { isOriginId, ORIGINS } from '../../../shared/origins.ts'
 import { adminApi, errorText, formatTime, INGOT_REASON_LABEL } from './api'
+import DeletedPlayers from './DeletedPlayers.vue'
 
 /** 玩家：按昵称、账号或角色 ID 查侠客，看资产与流水，封号、禁言、踢下线、重置密码、调整资产、给他发信 */
 const props = defineProps<{ can: (permission: AdminPermission) => boolean }>()
@@ -228,5 +229,6 @@ const gachaName = (kind: string, refId: string | null) => !refId ? kind : (ITEMS
       </div>
       <div v-else class="card grid place-items-center p-8 muted">点列表里的侠客查看详情。</div>
     </div>
+    <DeletedPlayers :can="props.can" @restored="search" />
   </div>
 </template>

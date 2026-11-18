@@ -2,13 +2,14 @@ import { randomUUID } from 'node:crypto'
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import type { PoolClient } from 'pg'
 import {
-  beijingDay, checkShopGoods, MAIL_LIMITS, RATE_KIND_LABEL, RATE_LIMITS, type AdminChatMessageDTO, type AdminMeDTO, type AdminPermission,
+  beijingDay, checkShopGoods, MAIL_LIMITS, RATE_KIND_LABEL, RATE_LIMITS, type AdminChatMessageDTO, type AdminDeletedPlayerDTO, type AdminMeDTO, type AdminPermission,
   type AdminRateBoostDTO, type AdminReportDTO, type AdminShopGoodsDTO, type MailAttachments, type RateBoostKind,
 } from '../../shared/admin.ts'
 import { MAPS, REALMS, SECTS } from '../../shared/gameData.ts'
 import type { ChatChannel, ShopCurrency, ShopLimitKind } from '../../shared/protocol.ts'
 import { db, serverTime, transaction } from './db.ts'
 import { chatBannedWords, chatMessageOf, MESSAGE_COLUMNS, reloadChatBannedWords } from './chat.ts'
+import { restoreDeletedPlayer } from './deletePlayer.ts'
 import { adjustPlayerAssets } from './game.ts'
 import { GameError, objectBody } from './http.ts'
 import { boostOf, reloadRateBoosts } from './rates.ts'
@@ -339,5 +340,39 @@ export function registerAdminOps(app: FastifyInstance, rooms: ReturnType<typeof 
     })
     reloadChatBannedWords()
     return { ok: true, count: list.length }
+  })
+
+  // ==================== 已删除的角色（docs/24） ====================
+  app.get<{ Querystring: { q?: string } }>('/api/admin/deleted-players', async (request): Promise<AdminDeletedPlayerDTO[]> => {
+    await requireAdmin(request, 'view')
+    const q = (request.query.q ?? '').trim().slice(0, 40).replace(/[%_\\]/g, '\\$&')
+    const { rows } = await db.query<{
+      id: string; nickname: string; login_name: string; level: number; deleted_at: string; deleted_by: string; purge_after: string
+      restored_at: string | null; has_player: boolean; taken: boolean
+    }>(`
+      SELECT d.id, d.nickname, a.login_name, d.level, d.deleted_at, d.deleted_by, d.purge_after, d.restored_at,
+        EXISTS (SELECT 1 FROM players p WHERE p.account_id = d.account_id) AS has_player,
+        EXISTS (SELECT 1 FROM players p WHERE p.nickname = d.nickname) AS taken
+      FROM deleted_players d JOIN accounts a ON a.id = d.account_id
+      WHERE $1 = '' OR d.nickname ILIKE '%' || $1 || '%' OR a.login_name ILIKE '%' || $1 || '%' OR d.id::text = lower($1)
+      ORDER BY d.deleted_at DESC LIMIT 50`, [q])
+    const now = Date.now()
+    return rows.map((row) => ({
+      id: row.id, nickname: row.nickname, login: row.login_name, level: row.level, deletedAt: Number(row.deleted_at), deletedBy: row.deleted_by,
+      purgeAfter: Number(row.purge_after), restoredAt: row.restored_at === null ? null : Number(row.restored_at),
+      blocked: row.restored_at !== null ? '已恢复' : Number(row.purge_after) <= now ? '已过保留期'
+        : row.has_player ? '账号已新建角色' : row.taken ? '名号已被占用' : null,
+    }))
+  })
+
+  app.post<{ Params: { id: string } }>('/api/admin/deleted-players/:id/restore', async (request) => {
+    const admin = await requireAdmin(request, 'restore')
+    if (!UUID.test(request.params.id)) throw new GameError(404, 'DELETED_PLAYER_NOT_FOUND', '找不到这个已删除的角色')
+    return transaction(async (client) => {
+      const now = await serverTime(client)
+      const restored = await restoreDeletedPlayer(client, request.params.id.toLowerCase(), now)
+      await audit(client, admin, 'restorePlayer', `${restored.nickname}（${request.params.id}）`, {}, now)
+      return { ok: true }
+    })
   })
 }

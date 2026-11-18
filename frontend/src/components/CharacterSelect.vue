@@ -25,6 +25,9 @@ const avatarId = ref<PlayerAvatarId>('hero_sword')
 /** 联机创角时选家世；本地试玩在「新游戏」开局时选 */
 const origin = ref<OriginId>()
 const formError = ref('')
+/** 联机删角色：输入角色名与账号密码确认（docs/24） */
+const deleteName = ref('')
+const deletePassword = ref('')
 const movingScene = ref(true)
 const submitting = ref(false)
 
@@ -37,6 +40,8 @@ async function openModal(kind: typeof modalKind.value) {
   formError.value = ''
   store.authError = ''
   nickname.value = ''
+  deleteName.value = ''
+  deletePassword.value = ''
   origin.value = undefined
   avatarId.value = selected.value?.avatarId ?? 'hero_sword'
   modal.value?.showModal()
@@ -71,10 +76,17 @@ async function createCharacter() {
   }
 }
 
-function deleteCharacter() {
-  if (!selected.value || !IS_MOCK_MODE) return
-  store.deleteLocalCharacter(selected.value.id)
-  modal.value?.close()
+async function deleteCharacter() {
+  if (!selected.value) return
+  if (IS_MOCK_MODE) {
+    store.deleteLocalCharacter(selected.value.id)
+    modal.value?.close()
+    return
+  }
+  if (deleteName.value.trim() !== selected.value.nickname || !deletePassword.value || store.authBusy) return
+  await store.deleteOnlineCharacter(deleteName.value.trim(), deletePassword.value)
+  deletePassword.value = ''
+  if (!store.authError) modal.value?.close()
 }
 
 function enterJianghu() {
@@ -138,7 +150,7 @@ async function toggleFullscreen() {
       </div>
 
       <button class="create-character" :disabled="!canCreate || store.authBusy" @click="openModal('create')"><span class="create-plus"><Plus aria-hidden="true" /></span><span class="font-brush">创建角色</span></button>
-      <div class="ledger-footer"><span>{{ roles.length }} / {{ IS_MOCK_MODE ? 4 : 1 }} 位侠客</span><button :disabled="!IS_MOCK_MODE || !selected" :title="IS_MOCK_MODE ? '删除所选试玩角色' : '联机角色暂不支持删除'" @click="openModal('delete')"><Trash2 aria-hidden="true" />删除角色</button></div>
+      <div class="ledger-footer"><span>{{ roles.length }} / {{ IS_MOCK_MODE ? 4 : 1 }} 位侠客</span><button :disabled="!selected || store.authBusy" :title="IS_MOCK_MODE ? '删除所选试玩角色' : '删除所选角色'" @click="openModal('delete')"><Trash2 aria-hidden="true" />删除角色</button></div>
       <p class="ledger-note"><ShieldCheck aria-hidden="true" />{{ IS_MOCK_MODE ? '本地试玩' : '江湖存档 · 随账号保存' }}</p>
     </section>
 
@@ -178,10 +190,28 @@ async function toggleFullscreen() {
           <p id="character-form-message" class="form-message" :class="{ 'form-error': formError || store.authError }" :role="formError || store.authError ? 'alert' : undefined">{{ formError || store.authError || '2–16 位汉字、字母或数字，可用 · _ -' }}</p>
           <button class="dialog-primary" type="submit" :disabled="submitting || store.authBusy">{{ submitting || store.authBusy ? '正在落笔…' : '创建侠客' }}<ChevronRight aria-hidden="true" /></button>
         </form>
-        <div v-else-if="modalKind === 'delete'">
-          <p class="dialog-description">确定删除「{{ selected?.nickname }}」？该试玩角色的修行进度将一并清除。</p>
-          <div class="dialog-buttons"><button @click="modal?.close()">留在江湖</button><button class="dialog-danger" @click="deleteCharacter">确认删除</button></div>
-        </div>
+        <form v-else-if="modalKind === 'delete'" @submit.prevent="deleteCharacter">
+          <p v-if="IS_MOCK_MODE" class="dialog-description">确定删除「{{ selected?.nickname }}」？该试玩角色的修行进度将一并清除。</p>
+          <template v-else>
+            <p class="dialog-description">删除「{{ selected?.nickname }}」后，他的修为、元宝、纹银、装备、武学与伙伴一并清除，可以马上新建一位侠客。</p>
+            <ul class="delete-notes">
+              <li>持有的真品神兵交还传功长老，摆着的摊位一并撤掉。</li>
+              <li>正在共修、暗拍领先或结义组队时不能删除。</li>
+              <li>误删或账号被盗删的，30 天内联系客服可以恢复；新建角色之后就不能恢复了。</li>
+            </ul>
+            <label class="name-label" for="delete-name">输入角色名「{{ selected?.nickname }}」确认</label>
+            <input id="delete-name" v-model="deleteName" class="character-name-input" autocomplete="off" :disabled="store.authBusy" />
+            <label class="name-label" for="delete-password">账号密码</label>
+            <input id="delete-password" v-model="deletePassword" class="character-name-input" type="password" autocomplete="current-password" :disabled="store.authBusy" />
+            <p class="form-message" :class="{ 'form-error': store.authError }" :role="store.authError ? 'alert' : undefined">{{ store.authError || '删除后不能自行撤销' }}</p>
+          </template>
+          <div class="dialog-buttons">
+            <button type="button" @click="modal?.close()">留在江湖</button>
+            <button class="dialog-danger" type="submit" :disabled="!IS_MOCK_MODE && (deleteName.trim() !== selected?.nickname || !deletePassword || store.authBusy)">
+              {{ store.authBusy ? '正在删除…' : '确认删除' }}
+            </button>
+          </div>
+        </form>
         <div v-else-if="modalKind === 'server'">
           <p class="dialog-description">当前开放区服</p>
           <button class="available-server" @click="modal?.close()"><i class="server-dot" /><span>{{ serverName }}<small>{{ IS_MOCK_MODE ? '独立试玩，随时启程' : '账号存档，同游江湖' }}</small></span><Check aria-hidden="true" /></button>
@@ -314,6 +344,8 @@ async function toggleFullscreen() {
 .dialog-primary svg { width: 1rem; height: 1rem; }
 .dialog-primary:disabled { opacity: .5; }
 .dialog-buttons { display: flex; gap: .8rem; }
+.delete-notes { display: grid; gap: .3rem; margin: -.6rem 0 1.1rem; padding-left: 1.1rem; color: #baaf9e; font-size: .82rem; line-height: 1.6; list-style: disc; }
+.dialog-buttons + .dialog-buttons, .character-name-input + .name-label { margin-top: .8rem; }
 .dialog-buttons button:first-child { background: transparent; }
 .dialog-buttons .dialog-danger { border-color: #b87765; background: #753e35; }
 .available-server { display: flex; align-items: center; gap: .8rem; width: 100%; padding: 1rem; border: 1px solid #b49a6066; background: #a5894820; text-align: left; }

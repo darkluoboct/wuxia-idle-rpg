@@ -266,6 +266,14 @@ export function registerRooms(app: FastifyInstance) {
       for (const member of online.values()) if (member.sectId === sectId) for (const connection of member.connections) send(connection, message)
     },
     onChat: (listener: NonNullable<typeof onChat>) => { onChat = listener },
+    /** 角色被删：断开他的全部连接 */
+    evict: (playerId: string) => {
+      const member = online.get(playerId)
+      for (const connection of [...member?.connections ?? []]) {
+        leave(member!, connection)
+        connection.socket.close(4001, 'Character deleted')
+      }
+    },
     /** 向全服在线侠客推送 */
     announce: (event: WsServerEvent) => {
       const message = JSON.stringify(event)
