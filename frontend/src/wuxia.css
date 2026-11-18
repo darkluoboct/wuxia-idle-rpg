@@ -649,11 +649,14 @@ summary.quest-row:hover { background-color: var(--gold-faint); }
 .quest-options .btn small { color: var(--gold); }
 .quest-link { justify-self: start; color: var(--gold); text-decoration: underline; text-underline-offset: .18rem; }
 
-.world-bulletins { flex: none; }
+/* 系统日志另占一栏后，江湖快报占满任务、活动栏余下的高度 */
+.world-bulletins { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; margin-top: .5rem; }
 .news-list {
   display: grid;
   gap: .26rem;
-  max-height: 7.9rem;
+  flex: 1;
+  align-content: start;
+  min-height: 0;
   overflow: auto;
   padding: .42rem .25rem .55rem;
 }
@@ -684,7 +687,7 @@ summary.quest-row:hover { background-color: var(--gold-faint); }
   flex: 1;
   min-height: 0;
 }
-.log-tabs { margin-top: .38rem; }
+.log-tabs { margin-top: .6rem; }
 .log-tabs button { min-height: 1.54rem; font-size: .8rem; }
 .log-entries { min-height: 0; flex: 1; overflow-y: auto; margin-top: .26rem; padding: .12rem .26rem .22rem; }
 .log-entry {

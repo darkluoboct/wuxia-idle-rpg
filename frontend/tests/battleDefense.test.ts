@@ -4,6 +4,7 @@ import { computeDerivedStats, incomingDamage, innerPressure, simulateShaoshiRaid
 import { applyDirectedDamage, battleEffectLoot, recoverHitMp, recoverRoundMp, resolveBattleLoadout } from '../../shared/battleEffects.ts'
 import { COMPANIONS, companionView, ITEMS, SECTS } from '../../shared/gameData.ts'
 import { TRIAL_PATROL_HOURS, trialPartId, trialStageOf } from '../../shared/trialStages.ts'
+import { BATTLE_STEP_MS } from '@/stores/battlePlayback'
 import { newStore } from './helpers'
 import { player, loadout, flaskId, nanBei, enemy, agileEnemy, baseCompanion, fight, effectEvents, mainUnit, mainCast, equipped } from './battleFixtures'
 
@@ -158,10 +159,10 @@ describe('装备免死与复活', () => {
     expect(report.events.some((event) => event.round >= 5 && event.actorSlot === 'ALLY_RIGHT')).toBe(false)
   })
 
-  it('历练回放在普通、倍速和跳过时都记下锁血和实际复活回血', () => {
+  it('历练回放在普通播放与跳过时都记下锁血和实际复活回血', () => {
     vi.useFakeTimers()
     try {
-      function replay(speed: 1 | 2 | 'skip') {
+      function replay(speed: 'normal' | 'skip') {
         const store = newStore('NEW')
         try {
           Object.assign(store.player.stats, player.stats)
@@ -172,7 +173,6 @@ describe('装备免死与复活', () => {
             store.ownedItemIds.push(id)
             store.equipItem(id)
           }
-          if (speed !== 'skip') store.battleSpeed = speed
           store.challengeTrialStage(28)
           const report = store.activeBattle!
           const { maxHp } = mainUnit(report)
@@ -185,7 +185,7 @@ describe('装备免死与复活', () => {
           if (speed === 'skip') {
             store.skipBattleToEnd()
           } else {
-            const delay = speed === 1 ? 920 : 480
+            const delay = BATTLE_STEP_MS
             vi.advanceTimersByTime((savedAt - 1) * delay)
             expect(store.liveUnitStates.ALLY_MAIN.hp).toBe(1)
             vi.advanceTimersByTime(delay)
@@ -206,8 +206,7 @@ describe('装备免死与复活', () => {
           store.closeBattleStage()
         }
       }
-      const normal = replay(1)
-      expect(replay(2)).toEqual(normal)
+      const normal = replay('normal')
       expect(replay('skip')).toEqual(normal)
     } finally {
       vi.useRealTimers()
@@ -1406,10 +1405,10 @@ describe('软猬甲、一阳指与兰花拂穴手', () => {
       const poisonIndex = report.events.findIndex((event) => event.type === 'DOT_TICK')
       expect(reflectIndex).toBeGreaterThan(0)
       expect(poisonIndex).toBeGreaterThan(reflectIndex)
-      vi.advanceTimersByTime(reflectIndex * 920)
+      vi.advanceTimersByTime(reflectIndex * BATTLE_STEP_MS)
       expect(store.floatingPopups.ENEMY_MAIN).toMatchObject({ category: 'reflect', text: `反伤 ${report.events[reflectIndex].hpDelta}` })
       const hpAfterReflect = store.liveUnitStates.ENEMY_MAIN.hp
-      vi.advanceTimersByTime((poisonIndex - reflectIndex) * 920)
+      vi.advanceTimersByTime((poisonIndex - reflectIndex) * BATTLE_STEP_MS)
       const poison = report.events[poisonIndex]
       expect(store.floatingPopups.ENEMY_MAIN).toMatchObject({ category: 'poison', text: `毒伤 ${poison.hpDelta}` })
       expect(store.liveUnitStates.ENEMY_MAIN.hp).toBe(hpAfterReflect + poison.hpDelta!)
@@ -1557,10 +1556,10 @@ describe('护盾与九阴白骨爪', () => {
     ])
   })
 
-  it('历练第 7 关普通、倍速和跳过回放同步展示盾值、破盾和流血实扣气血', () => {
+  it('历练第 7 关普通播放与跳过回放同步展示盾值、破盾和流血实扣气血', () => {
     vi.useFakeTimers()
     try {
-      function replay(speed: 1 | 2 | 'skip') {
+      function replay(speed: 'normal' | 'skip') {
         const store = newStore('NEW')
         try {
           Object.assign(store.player.stats, player.stats, { str: 3 })
@@ -1568,14 +1567,13 @@ describe('护盾与九阴白骨爪', () => {
           store.trial.stageHours['7'] = TRIAL_PATROL_HOURS[7]
           store.learnedSkills[clawId] = 1
           store.updateLoadout({ ...loadout, ...claw })
-          if (speed !== 'skip') store.battleSpeed = speed
           store.challengeTrialStage(7)
 
           const report = store.activeBattle!
           if (speed === 'skip') {
             store.skipBattleToEnd()
           } else {
-            const delay = speed === 1 ? 920 : 480
+            const delay = BATTLE_STEP_MS
             const hitIndex = report.events.findIndex((event) => event.shieldAbsorbed === 111)
             const tickIndex = report.events.findIndex((event) => event.type === 'DOT_TICK')
             expect(hitIndex).toBeGreaterThan(0)
@@ -1600,8 +1598,7 @@ describe('护盾与九阴白骨爪', () => {
         }
       }
 
-      const normal = replay(1)
-      expect(replay(2)).toEqual(normal)
+      const normal = replay('normal')
       expect(replay('skip')).toEqual(normal)
     } finally {
       vi.useRealTimers()

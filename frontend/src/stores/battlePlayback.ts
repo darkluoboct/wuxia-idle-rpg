@@ -10,6 +10,9 @@ import { useGameUiStore } from './gameUiStore'
 
 const DAMAGE_POPUP_LABELS: Partial<Record<string, string>> = { poison: '毒伤 ', bleed: '流血 ', reflect: '反伤 ', true: '真伤 ' }
 
+/** 战报每一步的间隔：只按一倍速播放，可以跳过回放直接看结果 */
+export const BATTLE_STEP_MS = 920
+
 export function useBattlePlayback({ claimNodeFirstClear, onStoryNodeWon, playPendingDuel }: {
   claimNodeFirstClear: (nodeId: number) => void
   onStoryNodeWon: (nodeId: number) => void
@@ -32,7 +35,6 @@ export function useBattlePlayback({ claimNodeFirstClear, onStoryNodeWon, playPen
   })
   let activeChapterId: number | null = null
   const battleEventCursor = ref(0)
-  const battleSpeed = ref<1 | 2>(1)
   const isBattlePlaying = ref(false)
   const liveUnitStates = ref<Record<string, {
     hp: number; maxHp: number; rage: number; mp: number; maxMp: number; anim: 'NONE' | 'LUNGE_ALLY' | 'LUNGE_ENEMY' | 'HIT'
@@ -186,8 +188,7 @@ export function useBattlePlayback({ claimNodeFirstClear, onStoryNodeWon, playPen
 
     applyBattleEvent(ev)
 
-    const delay = battleSpeed.value === 2 ? 480 : 920
-    battleTimer = setTimeout(stepNextBattleEvent, delay)
+    battleTimer = setTimeout(stepNextBattleEvent, BATTLE_STEP_MS)
   }
 
   function skipBattleToEnd() {
@@ -297,7 +298,6 @@ export function useBattlePlayback({ claimNodeFirstClear, onStoryNodeWon, playPen
     battleOpponentEntry,
     battleEventCursor,
     battleUnits,
-    battleSpeed,
     liveUnitStates,
     slashBanner,
     floatingPopups,

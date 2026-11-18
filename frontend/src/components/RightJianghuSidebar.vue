@@ -8,8 +8,9 @@ import RichLogStream from './RichLogStream.vue'
 import { featureRequirementText } from '../../../shared/features.ts'
 
 const store = useGameStore()
+/** 江湖卷四个栏目：任务与活动下挂江湖快报，系统日志单独一栏占满余下的高度 */
 const panes = [
-  { key: 'TASKS', label: '任务' }, { key: 'EVENTS', label: '活动' }, { key: 'SOCIAL', label: '附近' },
+  { key: 'TASKS', label: '任务' }, { key: 'EVENTS', label: '活动' }, { key: 'SOCIAL', label: '附近' }, { key: 'LOGS', label: '日志' },
 ] as const
 const pane = ref<(typeof panes)[number]['key']>(IS_MOCK_MODE ? 'TASKS' : 'SOCIAL')
 const chapters = IS_MOCK_MODE ? STORY_CHAPTERS : ONLINE_STORY_CHAPTERS
@@ -32,7 +33,12 @@ const news = computed(() => {
 })
 
 
-watch(() => store.activeBattle?.battleId, (id) => { if (id) pane.value = 'TASKS' })
+// 开打时切到日志看战报
+watch(() => store.activeBattle?.battleId, (id) => { if (id) pane.value = 'LOGS' })
+// 不在日志栏时来了新纪事，页签上点个红点
+const unreadLogs = ref(false)
+watch(() => store.logs[0]?.id, () => { if (pane.value !== 'LOGS') unreadLogs.value = true })
+watch(pane, (value) => { if (value === 'LOGS') unreadLogs.value = false })
 
 const mapsHint = computed(() => `${featureRequirementText('MAPS')}后开放`)
 
@@ -64,7 +70,7 @@ const coCultivationTimeLeft = computed(() => {
     <div class="rail-tabs world-tabs" role="tablist" aria-label="江湖卷栏目">
       <button
         v-for="item in panes" :key="item.key" role="tab" :aria-selected="pane === item.key" @click="pane = item.key"
-      >{{ item.label }}</button>
+      >{{ item.label }}<i v-if="item.key === 'LOGS' && unreadLogs" class="world-unread" aria-label="有新纪事" /></button>
     </div>
 
     <section v-if="store.activeCoCultivation || store.coCultivationInvite" class="well shrink-0 space-y-1.5 px-3 py-2.5" aria-label="双人共修">
@@ -173,6 +179,8 @@ const coCultivationTimeLeft = computed(() => {
         <ChevronRight class="quest-arrow" aria-hidden="true" />
       </button>
     </div>
+
+    <RichLogStream v-else-if="pane === 'LOGS'" />
 
     <div v-else class="world-social flex min-h-0 flex-1 flex-col gap-3">
       <!-- 江湖地图：一行概要，点「换地图」弹出选择 -->
@@ -293,7 +301,7 @@ const coCultivationTimeLeft = computed(() => {
       </ul>
     </div>
 
-    <template v-if="pane !== 'SOCIAL'">
+    <template v-if="pane === 'TASKS' || pane === 'EVENTS'">
       <section class="world-bulletins">
         <h2 class="rail-heading"><span>江湖快报</span></h2>
         <div class="news-list">
@@ -308,7 +316,6 @@ const coCultivationTimeLeft = computed(() => {
           </details>
         </div>
       </section>
-      <RichLogStream />
     </template>
   </div>
 </template>

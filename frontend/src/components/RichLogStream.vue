@@ -23,7 +23,6 @@ const DMG_LABEL = { phys: '外功', qi: '内力', true: '真伤', poison: '毒�
 
 <template>
   <section class="world-logs" aria-label="系统日志">
-    <h2 class="rail-heading"><span>系统日志</span></h2>
     <div class="rail-tabs log-tabs" role="tablist" aria-label="纪事筛选">
       <button v-for="tab in tabs" :key="tab.key" role="tab" :aria-selected="filter === tab.key" @click="filter = tab.key">{{ tab.label }}</button>
     </div>

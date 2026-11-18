@@ -298,7 +298,6 @@ export const useGameStore = defineStore('wuxiaGame', () => {
     storyFlags: playerRefs.storyFlags,
     activeBattle: battle.activeBattle,
     isBattlePlaying: battle.isBattlePlaying,
-    battleSpeed: battle.battleSpeed,
     liveUnitStates: battle.liveUnitStates,
     slashBanner: battle.slashBanner,
     floatingPopups: battle.floatingPopups,

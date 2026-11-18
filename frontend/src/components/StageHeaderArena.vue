@@ -78,9 +78,6 @@ function inspectReward(id: string) {
         </div>
         <div class="flex shrink-0 items-center gap-1.5">
           <button class="btn btn-sm !text-[#e8e2d6] xl:hidden" @click="store.mobileDrawer = 'WORLD'">战报</button>
-          <button class="btn btn-sm !text-[#e8e2d6]" @click="store.battleSpeed = store.battleSpeed === 1 ? 2 : 1">
-            {{ store.battleSpeed }}x 倍速
-          </button>
           <button v-if="store.isBattlePlaying" class="btn btn-sm btn-gold" @click="store.skipBattleToEnd()">跳过回放</button>
           <button v-else class="btn btn-sm btn-seal" @click="store.closeBattleStage()">
             返回 <kbd class="hidden font-sans text-[0.7rem] opacity-70 md:inline">Space</kbd>

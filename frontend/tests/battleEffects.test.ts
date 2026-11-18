@@ -30,6 +30,7 @@ import {
 import { damageAfterDefense } from '../../shared/combatMeta.ts'
 import { MEDICINES, SHAOSHI_RAID, SKILLS, VIP_SKILL_REWARDS } from '../../shared/gameData.ts'
 import { TRIAL_PATROL_HOURS, trialPartId, trialStageOf } from '../../shared/trialStages.ts'
+import { BATTLE_STEP_MS } from '@/stores/battlePlayback'
 import { newStore } from './helpers'
 import { player, loadout, pomiaoSet, pomiaoPieces, flaskId, nanBei, enemy, agileEnemy, baseCompanion, fight, effectEvents, mainUnit, mainCast, equipped } from './battleFixtures'
 
@@ -1794,14 +1795,13 @@ describe('醉仙短打与荒山煞风的流血、中毒联动', () => {
   })
 })
 
-it('普通、倍速和跳过回放得到同样的气血、反伤、怒气和战报', () => {
+it('普通播放与跳过回放得到同样的气血、反伤、怒气和战报', () => {
   vi.useFakeTimers()
   try {
-    function replay(speed: 1 | 2 | 'skip') {
+    function replay(speed: 'normal' | 'skip') {
       const store = newStore('DEMO')
       store.companionAffinity.yideng.recruited = true
       store.updateLoadout({ ...pomiaoPieces, ...nanBei, accId: flaskId, stance: 'TAICHI' })
-      if (speed !== 'skip') store.battleSpeed = speed
       store.challengeChapter(5)
       const report = store.activeBattle!
       const healIndex = report.events.findIndex((event) => event.hpDelta && event.hpDelta > 0)
@@ -1811,7 +1811,7 @@ it('普通、倍速和跳过回放得到同样的气血、反伤、怒气和战�
       if (speed === 'skip') {
         store.skipBattleToEnd()
       } else {
-        const delay = speed === 1 ? 920 : 480
+        const delay = BATTLE_STEP_MS
         vi.advanceTimersByTime(healIndex * delay)
         expect(store.floatingPopups.ALLY_MAIN).toMatchObject({ category: 'heal', text: `+${report.events[healIndex].hpDelta}` })
         vi.advanceTimersByTime((report.events.length - healIndex) * delay)
@@ -1824,8 +1824,7 @@ it('普通、倍速和跳过回放得到同样的气血、反伤、怒气和战�
       store.closeBattleStage()
       return result
     }
-    const normal = replay(1)
-    expect(replay(2)).toEqual(normal)
+    const normal = replay('normal')
     expect(replay('skip')).toEqual(normal)
   } finally {
     vi.useRealTimers()
