@@ -801,6 +801,38 @@ export type WsServerEvent =
   | { event: 'UNIQUE_ARTIFACT_CHANGED'; data: { itemId: string; cause: 'GRANT' | 'SEIZE' | 'RECALL' | 'BETRAY'; newOwner: string | null; previousOwner: string | null } }
   | { event: 'AUCTION_OUTBID'; data: { day: number; itemId: string; refund: number; price: number } }
   | { event: 'STALL_SOLD'; data: { kind: 'HERB' | 'FRAGMENT'; goodsId: string; qty: number; silver: number } }
+  | { event: 'MAIL_NEW'; data: { title: string } }
+  | { event: 'ANNOUNCEMENT'; data: AnnouncementDTO }
+
+/** 系统邮件附件（docs/22） */
+export interface MailAttachments {
+  ingot?: number
+  silver?: number
+  qiExp?: number
+  /** 装备或道具 ID，已拥有的不重复发 */
+  items?: string[]
+  /** 武学残页：武学 ID → 张数 */
+  fragments?: Record<string, number>
+}
+
+/** 系统邮件（docs/22）：运营发给你或全服的信，附件领一次 */
+export interface MailDTO {
+  id: string
+  title: string
+  body: string
+  attachments: MailAttachments
+  createdAt: number
+  expiresAt: number
+  claimed: boolean
+}
+
+/** 全服公告（docs/22） */
+export interface AnnouncementDTO {
+  id: string
+  content: string
+  startsAt: number
+  endsAt: number
+}
 
 /** 襄阳守卫战（shared/xiangyang.ts） */
 export type XiangyangGateId = 'EAST' | 'NORTH' | 'WATER'

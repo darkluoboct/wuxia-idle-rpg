@@ -18,6 +18,10 @@ export default defineConfig({
     include: ['tests/**/*.test.ts'],
     setupFiles: ['tests/setup.ts'],
   },
+  build: {
+    // 游戏页与运营后台（admin.html，docs/22）两个入口
+    rollupOptions: { input: { main: path.resolve(__dirname, 'index.html'), admin: path.resolve(__dirname, 'admin.html') } },
+  },
   server: {
     port: 5173,
     host: true,

@@ -19,12 +19,13 @@ import { AUCTION_BID_STEP, AUCTION_SOFT_CLOSE_MS, auctionDay, auctionDividendAt,
 import { computeDerivedStats } from '../../shared/battle.ts'
 import { huashanSeason } from '../../shared/huashan.ts'
 import { createStarterCharacter, innVisitDay, legacyAcupoints } from '../../shared/player.ts'
-import type { ArtifactBoardDTO, ArtifactResult, AuctionBoardDTO, AuctionResult, AwakenResult, BattleReportDTO, BountyBoardDTO, BountyEntryDTO, FeastResult, FtueClaimResult, GachaResult, GameAction, HuashanBoardDTO, HuashanResult, IdleGain, LibraryResult, LibraryStatusDTO, OriginId, PlayerSnapshot, RaidId, RaidMirrorBoardDTO, ReunionResult, RoomPlayerDTO, SectContestBoardDTO, SectContestResult, SectResult, StallBoardDTO, StallResult, StoryAdventureResult, StoryChallengeResult, TrialChallengeResult, TrialPatrolStatusDTO, TrialReplayResult, WsServerEvent, XiangyangBoardDTO, XiangyangResult } from '../../shared/protocol.ts'
+import type { AnnouncementDTO, MailDTO, ArtifactBoardDTO, ArtifactResult, AuctionBoardDTO, AuctionResult, AwakenResult, BattleReportDTO, BountyBoardDTO, BountyEntryDTO, FeastResult, FtueClaimResult, GachaResult, GameAction, HuashanBoardDTO, HuashanResult, IdleGain, LibraryResult, LibraryStatusDTO, OriginId, PlayerSnapshot, RaidId, RaidMirrorBoardDTO, ReunionResult, RoomPlayerDTO, SectContestBoardDTO, SectContestResult, SectResult, StallBoardDTO, StallResult, StoryAdventureResult, StoryChallengeResult, TrialChallengeResult, TrialPatrolStatusDTO, TrialReplayResult, WsServerEvent, XiangyangBoardDTO, XiangyangResult } from '../../shared/protocol.ts'
 import { QUANZHEN_LIBRARY } from '../../shared/quanzhen.ts'
 import { BETRAYAL_BOUNTY, SECT_CHIEF_SALUTE_QI, SECT_SALUTE_QI, sectContestEndsAt, sectContestWeek } from '../../shared/sectProgress.ts'
 import { hasTrialPart, trialPartId, trialSetOfStage, trialStageOf } from '../../shared/trialStages.ts'
 import { ONLINE_STORY_CHAPTERS, ONLINE_STORY_PROGRESS_VERSION } from '../../shared/storyData.ts'
 import { xiangyangWar, xiangyangWarOf } from '../../shared/xiangyang.ts'
+import type { AdminAuditDTO, AdminDashboardDTO, AdminMailDTO, AdminPlayerDetailDTO, AdminPlayerRowDTO } from '../../shared/admin.ts'
 import { RAID_LEND, raidLendQi } from '../../shared/mirror.ts'
 import { GameError } from '../src/http.ts'
 
@@ -66,9 +67,11 @@ describe('联机战斗', { skip: connection ? false : '请设置 GAME_TEST_DATAB
       if (error instanceof GameError) return reply.code(error.statusCode).send({ code: error.code, message: error.message })
       throw error
     })
+    const { registerAdmin } = await import('../src/admin.ts')
     const rooms = registerRooms(app)
     registerAuth(app, false, rooms.closeSession)
     registerGame(app, rooms, registerRaidLobby(app, rooms))
+    registerAdmin(app, rooms, false)
     await app.listen({ host: '127.0.0.1', port: 0 })
     mock.method(Math, 'random', () => 0.99)
   })
@@ -1217,6 +1220,121 @@ describe('联机战斗', { skip: connection ? false : '请设置 GAME_TEST_DATAB
     } finally {
       fixedServerTime = undefined
     }
+  })
+
+  it('运营后台：分级权限、查侠客、重置密码、封号与解封、禁言、踢下线、系统邮件与全服公告，每步留审计', async () => {
+    const { createAdminAccount } = await import('../src/admin.ts')
+    await createAdminAccount(db, 'gm_super', 'super-password-1', 'SUPER')
+    await createAdminAccount(db, 'gm_support', 'support-password', 'SUPPORT')
+    const adminLogin = async (loginName: string, password: string) => {
+      const response = await app.inject({ method: 'POST', url: '/api/admin/login', payload: { loginName, password } })
+      assert.equal(response.statusCode, 200, response.body)
+      const cookie = response.cookies[0]
+      const headers = { cookie: `${cookie.name}=${cookie.value}` }
+      return {
+        get: (path: string) => app.inject({ method: 'GET', url: `/api/admin${path}`, headers }),
+        post: (path: string, payload?: Record<string, unknown>) => app.inject({ method: 'POST', url: `/api/admin${path}`, headers, payload }),
+      }
+    }
+    assert.equal((await app.inject({ method: 'POST', url: '/api/admin/login', payload: { loginName: 'gm_super', password: 'wrong-password' } })).statusCode, 401)
+    assert.equal((await app.inject({ method: 'GET', url: '/api/admin/me' })).statusCode, 401)
+    const gm = await adminLogin('gm_super', 'super-password-1')
+    const support = await adminLogin('gm_support', 'support-password')
+    assert.equal((await gm.get('/me')).json().role, 'SUPER')
+
+    const target = await createPlayer('gm_target')
+    const dashboard = (await support.get('/dashboard')).json<AdminDashboardDTO>()
+    assert.ok(dashboard.players >= 1 && dashboard.newToday >= 1 && dashboard.online >= 0)
+    const playerLogin = (password: string) => app.inject({ method: 'POST', url: '/api/v1/auth/login', payload: { loginName: 'story_gm_target', password } })
+    const sessionOf = (response: Awaited<ReturnType<typeof playerLogin>>) => {
+      const cookie = response.cookies[0]
+      return { cookie: `${cookie.name}=${cookie.value}` }
+    }
+    assert.deepEqual((await support.get('/players?q=gm_targ')).json<AdminPlayerRowDTO[]>().map(({ id }) => id), [target.id])
+    assert.equal((await support.get(`/players/${target.id}`)).json<AdminPlayerDetailDTO>().nickname, target.snapshot.player.nickname)
+
+    // 重置密码：临时密码只出现一次，旧会话作废；客服无权封号
+    assert.equal((await support.post(`/players/${target.id}`, { action: 'resetPassword' })).json().code, 'ADMIN_FORBIDDEN')
+    const { password } = (await gm.post(`/players/${target.id}`, { action: 'resetPassword' })).json<{ password: string }>()
+    assert.equal((await target.get('/player/me')).statusCode, 401)
+    assert.equal((await playerLogin(password)).statusCode, 200)
+    assert.equal((await support.post(`/players/${target.id}`, { action: 'ban', reason: '测试' })).json().code, 'ADMIN_FORBIDDEN')
+
+    // 封号：会话作废、登录被拦；解封后可登录
+    const banned = sessionOf(await playerLogin(password))
+    assert.equal((await gm.post(`/players/${target.id}`, { action: 'ban', hours: 24, reason: '使用外挂' })).statusCode, 200)
+    assert.equal((await app.inject({ method: 'GET', url: '/api/v1/player/me', headers: banned })).statusCode, 401)
+    const blocked = await playerLogin(password)
+    assert.deepEqual([blocked.statusCode, blocked.json().code], [403, 'ACCOUNT_BANNED'])
+    assert.match(blocked.json().message, /使用外挂/)
+    assert.equal((await gm.post(`/players/${target.id}`, { action: 'unban' })).statusCode, 200)
+    const headers = sessionOf(await playerLogin(password))
+
+    // 禁言：同图聊天被拒
+    assert.equal((await support.post(`/players/${target.id}`, { action: 'mute', hours: 2 })).statusCode, 200)
+    const socket = new WebSocket(`ws://127.0.0.1:${(app.server.address() as { port: number }).port}/ws`, { headers } as never)
+    await once(socket, 'open')
+    const rejected = (async () => {
+      for await (const [message] of on(socket, 'message', { signal: AbortSignal.timeout(5_000) })) {
+        const parsed = JSON.parse(message.data) as WsServerEvent
+        if (parsed.event === 'CHAT_REJECTED') return parsed.data.code
+      }
+    })()
+    socket.send(JSON.stringify({ event: 'CHAT_SEND', data: { content: '有人吗' } }))
+    assert.equal(await rejected, 'CHAT_MUTED')
+    socket.close()
+    assert.equal((await support.post(`/players/${target.id}`, { action: 'unmute' })).statusCode, 200)
+
+    // 系统邮件：单发带附件领一次；全服信只发给发信前已建角的；撤回后领不到
+    const owned = (await app.inject({ method: 'GET', url: '/api/v1/player/me', headers })).json<PlayerSnapshot>()
+    const itemId = Object.keys(ITEMS).find((id) => !owned.ownedItemIds.includes(id) && !id.endsWith('_true'))!
+    const attachments = { ingot: 100, silver: 500, items: [itemId], fragments: { luoying_zhang: 2 } }
+    assert.equal((await support.post('/mails', { title: '补偿', body: '抱歉', attachments, playerId: target.id })).json().code, 'ADMIN_FORBIDDEN')
+    assert.equal((await gm.post('/mails', { title: '补偿', body: '抱歉', attachments: { ingot: 99_999 }, playerId: target.id })).json().code, 'INVALID_ATTACHMENTS')
+    const { id: mailId } = (await gm.post('/mails', { title: '维护补偿', body: '辛苦了', attachments, playerId: target.id })).json<{ id: string }>()
+    const mailbox = (await app.inject({ method: 'GET', url: '/api/v1/mail', headers })).json<MailDTO[]>()
+    assert.deepEqual(mailbox.map(({ id, claimed, attachments: got }) => [id, claimed, got]), [[mailId, false, attachments]])
+    const claim = (key = randomUUID()) => app.inject({ method: 'POST', url: '/api/v1/mail', headers: { ...headers, 'idempotency-key': key }, payload: { action: 'claim', mailId } })
+    const claimed = (await claim()).json<GameAction<{ mailId: string }>>()
+    // 这是该角色头一次写操作，里程碑元宝也会同时入账，所以按流水核这封信的 100
+    assert.ok(claimed.snapshot.player.goldIngot >= owned.player.goldIngot + 100)
+    assert.ok(claimed.snapshot.player.silver >= owned.player.silver + 500)
+    assert.ok(claimed.snapshot.ownedItemIds.includes(itemId))
+    assert.equal(claimed.snapshot.player.skillFragments?.luoying_zhang, (owned.player.skillFragments?.luoying_zhang ?? 0) + 2)
+    assert.equal((await claim()).json().code, 'MAIL_CLAIMED')
+    assert.deepEqual((await ledger(target.id)).filter(({ reason }) => reason === 'mail').map(({ ref, delta }) => [ref, delta]), [[`mail:${mailId}`, 100]])
+    const { id: allId } = (await gm.post('/mails', { title: '开服纪念', body: '', attachments: { silver: 1 }, existingOnly: true })).json<{ id: string }>()
+    const latecomer = await createPlayer('gm_late')
+    assert.ok((await app.inject({ method: 'GET', url: '/api/v1/mail', headers })).json<MailDTO[]>().some(({ id }) => id === allId))
+    assert.ok(!(await latecomer.read<MailDTO[]>('/mail')).some(({ id }) => id === allId))
+    assert.equal((await gm.post(`/mails/${allId}/revoke`)).statusCode, 200)
+    assert.ok(!(await app.inject({ method: 'GET', url: '/api/v1/mail', headers })).json<MailDTO[]>().some(({ id }) => id === allId))
+    assert.equal((await gm.get('/mails')).json<AdminMailDTO[]>().find(({ id }) => id === mailId)?.claims, 1)
+
+    // 全服公告：在期内可见，撤下后不见
+    const now = Date.now()
+    assert.equal((await support.post('/announcements', { content: '今晚维护', endsAt: now + 3_600_000 })).json().code, 'ADMIN_FORBIDDEN')
+    const { id: noticeId } = (await gm.post('/announcements', { content: '今晚 23:00 停服维护半小时', endsAt: now + 3_600_000 })).json<{ id: string }>()
+    assert.ok((await latecomer.read<AnnouncementDTO[]>('/announcements')).some(({ id }) => id === noticeId))
+    await gm.post(`/announcements/${noticeId}/revoke`)
+    assert.ok(!(await latecomer.read<AnnouncementDTO[]>('/announcements')).some(({ id }) => id === noticeId))
+
+    // 后台账号：只有超管能管；不能停用自己；停用后登不进
+    assert.equal((await support.get('/admins')).json().code, 'ADMIN_FORBIDDEN')
+    const me = (await gm.get('/me')).json<{ id: string }>()
+    assert.equal((await gm.post(`/admins/${me.id}`, { disabled: true })).json().code, 'ADMIN_SELF_LOCK')
+    const { id: operatorId } = (await gm.post('/admins', { loginName: 'gm_operator', password: 'operator-password', role: 'OPERATOR' })).json<{ id: string }>()
+    await adminLogin('gm_operator', 'operator-password')
+    assert.equal((await gm.post(`/admins/${operatorId}`, { disabled: true })).statusCode, 200)
+    assert.equal((await app.inject({ method: 'POST', url: '/api/admin/login', payload: { loginName: 'gm_operator', password: 'operator-password' } })).statusCode, 401)
+
+    // 审计：每步都有，重置密码不记密码
+    const trail = (await support.get('/audit')).json<AdminAuditDTO[]>()
+    const actions = trail.map(({ action }) => action)
+    for (const action of ['login', 'resetPassword', 'ban', 'unban', 'mute', 'unmute', 'mail', 'revokeMail', 'announce', 'revokeAnnouncement', 'createAdmin', 'updateAdmin']) {
+      assert.ok(actions.includes(action), action)
+    }
+    assert.ok(!JSON.stringify(trail.find(({ action }) => action === 'resetPassword')).includes(password))
   })
 
   it('每日江湖事四件做完才能领元宝，当日只领一次', async () => {

@@ -1,6 +1,8 @@
-import { computed, ref, shallowRef } from 'vue'
+import { computed, ref, shallowRef, watch } from 'vue'
 import type {
+  AnnouncementDTO,
   BattleReportDTO,
+  MailDTO,
   BountyEntryDTO,
   DuelInviteDTO,
   HuashanAction,
@@ -17,6 +19,7 @@ import { COOP_RAID_RELICS, COOP_RAIDS, ITEMS, MAPS, SHAOSHI_RAID } from '@/confi
 import { apiClient, ApiError, IS_MOCK_MODE } from '@/network/apiClient'
 import { simulatePlayerDuel, simulateShaoshiRaid } from '../../../shared/battle.ts'
 import { gaibangSilverGain } from '../../../shared/gaibang.ts'
+import { mailAttachmentText } from '../../../shared/admin.ts'
 import { cityInspectionDue, createStarterCharacter, planMapJourney, resolveSeaVoyage } from '../../../shared/player.ts'
 import { trialPartId } from '../../../shared/trialStages.ts'
 import { usePlayerStore } from './playerStore'
@@ -96,8 +99,63 @@ export function useWorld({ battle, actions, selectTab, cultivation, companions }
     { id: 'm2', channel: 'WORLD', sender: '重阳首座·清风道长', sect: '全真教', content: '松鹤楼结义秘境【少林金刚伏魔圈】2缺1高爆发少侠，来个会降龙掌的兄弟！', time: '辰时' },
     { id: 'm3', channel: 'WORLD', sender: '桃花小师妹', sect: '桃花岛', content: '哪位散人大哥鬼市淘到了《九阴残页》？诚心高价收！', time: '巳时' },
   ] : [])
+  // ==================== 系统邮件与全服公告（docs/22） ====================
+  const mails = shallowRef<MailDTO[]>([])
+  const mailboxOpen = ref(false)
+  const unreadMail = computed(() => mails.value.filter(({ claimed }) => !claimed).length)
+  const announcements = shallowRef<AnnouncementDTO[]>([])
+  const announced = new Set<string>()
+
+  async function refreshMail() {
+    if (IS_MOCK_MODE) return
+    try {
+      mails.value = await apiClient.request<MailDTO[]>('GET', '/mail')
+    } catch {
+      // 读不到时保留上一次的信件，下次连上再取
+    }
+  }
+
+  function announce(notice: AnnouncementDTO) {
+    if (announced.has(notice.id)) return
+    announced.add(notice.id)
+    appendLog('JIANGHU', [{ type: 'tag', text: '江湖公告', tone: 'gold' }, { type: 'text', text: ` ${notice.content}` }])
+    showToast(`【公告】${notice.content}`, 'gold')
+  }
+
+  async function refreshAnnouncements() {
+    if (IS_MOCK_MODE) return
+    try {
+      announcements.value = await apiClient.request<AnnouncementDTO[]>('GET', '/announcements')
+      for (const notice of announcements.value) announce(notice)
+    } catch {
+      // 公告读不到不影响游戏
+    }
+  }
+
+  function claimMail(mail: MailDTO) {
+    return actions.run('mail', { action: 'claim', mailId: mail.id }, ({ attachments }) => {
+      const gained = mailAttachmentText(attachments)
+      appendLog('JIANGHU', [{ type: 'tag', text: '江湖来信', tone: 'gold' }, { type: 'text', text: ` 拆阅「${mail.title}」${gained ? `，收下 ${gained}` : ''}。` }])
+      showToast(gained ? `已收下：${gained}` : '信已拆阅', 'gold')
+      void refreshMail()
+    })
+  }
+
+  // 连上江湖就取信件与公告
+  watch(() => online.roomConnected, (connected) => {
+    if (!connected) return
+    void refreshMail()
+    void refreshAnnouncements()
+  })
+
   function handleRoomEvent(event: WsServerEvent) {
-    if (event.event === 'ROOM_SYNC') {
+    if (event.event === 'MAIL_NEW') {
+      showToast(`收到来信「${event.data.title}」`, 'gold')
+      void refreshMail()
+    } else if (event.event === 'ANNOUNCEMENT') {
+      announcements.value = [event.data, ...announcements.value.filter(({ id }) => id !== event.data.id)]
+      announce(event.data)
+    } else if (event.event === 'ROOM_SYNC') {
       if (roomMapId.value !== event.data.mapId) worldMessages.value = []
       roomMapId.value = event.data.mapId
       roomCount.value = event.data.onlineCount
@@ -528,7 +586,10 @@ export function useWorld({ battle, actions, selectTab, cultivation, companions }
 
   // 顶部飞鸽江湖邸报走马灯实时拼接文本（无彩色Emoji，纯正武侠邸报文风）
   const marqueeBulletin = computed(() => {
-    if (!IS_MOCK_MODE) return '【江湖在线】在附近可以和同图侠客聊天。'
+    if (!IS_MOCK_MODE) {
+      const live = announcements.value.filter(({ endsAt }) => endsAt > onlineClock.value)
+      return live.length ? live.map(({ content }) => `【公告】${content}`).join('　') : '【江湖在线】在附近可以和同图侠客聊天。'
+    }
     const items: string[] = []
     if (player.value.bountyUntil) {
       items.push(`【海捕文书】「${player.value.nickname}」叛出师门，江湖侠客可追捕领赏。`)
@@ -559,6 +620,10 @@ export function useWorld({ battle, actions, selectTab, cultivation, companions }
     lastDuelBattleId = null
     raidLobby.value = { team: null, invitation: null }
     raidMirrors.value = null
+    mails.value = []
+    mailboxOpen.value = false
+    announcements.value = []
+    announced.clear()
     raidLobbyBusy.value = false
     requestedRaidId.value = 'shaoshi'
     lastRaidBattleId = null
@@ -568,6 +633,12 @@ export function useWorld({ battle, actions, selectTab, cultivation, companions }
     playPendingDuel,
     worldMessages,
     nearbyPlayers,
+    mails,
+    mailboxOpen,
+    unreadMail,
+    refreshMail,
+    claimMail,
+    announcements,
     absentPlayers,
     refreshAbsentPlayers,
     handleRoomEvent,

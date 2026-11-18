@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch, type Component } from 'vue'
-import { Compass, House, Landmark, LogOut, Mountain, Settings, Store, Swords, UserRound } from 'lucide-vue-next'
+import { Compass, House, Landmark, LogOut, Mail, Mountain, Settings, Store, Swords, UserRound } from 'lucide-vue-next'
 import { useGameStore, type MainTab } from '@/stores/gameStore'
 import { IS_MOCK_MODE } from '@/network/apiClient'
 import { TIER_META } from '@/config/uiMeta'
@@ -17,6 +17,7 @@ const GachaOverlay = defineAsyncComponent(() => import('@/components/GachaOverla
 const PrologueStage = defineAsyncComponent(() => import('@/components/PrologueStage.vue'))
 const FeatureStoryCard = defineAsyncComponent(() => import('@/components/FeatureStoryCard.vue'))
 const AwayReport = defineAsyncComponent(() => import('@/components/AwayReport.vue'))
+const Mailbox = defineAsyncComponent(() => import('@/components/Mailbox.vue'))
 const CultivateView = defineAsyncComponent(() => import('@/views/CultivateView.vue'))
 const JianghuView = defineAsyncComponent(() => import('@/views/JianghuView.vue'))
 const ArsenalView = defineAsyncComponent(() => import('@/views/ArsenalView.vue'))
@@ -171,6 +172,13 @@ const TOAST_GLYPH = { gold: '喜', danger: '警', info: '讯' } as const
           </span>
         </div>
         <button v-if="IS_MOCK_MODE" class="wuxia-icon" aria-label="存档并返回开局" title="存档并返回开局" @click="store.backToTitle()"><House /></button>
+        <button
+          v-if="!IS_MOCK_MODE" class="wuxia-icon relative" :aria-label="store.unreadMail ? `江湖来信，${store.unreadMail} 封未领` : '江湖来信'" title="江湖来信"
+          @click="store.mailboxOpen = true"
+        >
+          <Mail />
+          <b v-if="store.unreadMail" class="absolute -right-0.5 -top-0.5 min-w-4 rounded-full bg-[var(--cinnabar)] px-1 text-[0.62rem] leading-4 text-white tabular-nums">{{ store.unreadMail }}</b>
+        </button>
         <button class="wuxia-icon" aria-label="选择角色" title="选择角色" @click="chooseCharacter"><UserRound /></button>
         <button v-if="!IS_MOCK_MODE" class="wuxia-icon" aria-label="退出登录" title="退出登录" :disabled="store.authBusy" @click="store.logout()"><LogOut /></button>
         <button class="wuxia-icon md:hidden" aria-label="查看角色" title="查看角色" aria-controls="character-rail" :aria-expanded="store.mobileDrawer === 'CHAR'" @click="toggleDrawer('CHAR')"><UserRound /></button>
@@ -275,6 +283,7 @@ const TOAST_GLYPH = { gold: '喜', danger: '警', info: '讯' } as const
     <PrologueStage v-if="prologueOpen" />
     <FeatureStoryCard v-else-if="featureCardOpen" />
     <AwayReport v-else-if="awayReportOpen" />
+    <Mailbox v-else-if="store.mailboxOpen && inJianghu && !store.activeBattle" />
 
     <!-- ==================== 开局选择 ==================== -->
     <div

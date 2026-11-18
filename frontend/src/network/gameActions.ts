@@ -24,6 +24,7 @@ import type {
   MapMoveResult,
   ReunionResult,
   SectContestAction,
+  MailAttachments,
   RaidStartInput,
   SectContestResult,
   SectResult,
@@ -105,6 +106,7 @@ interface Actions {
   sectContest: [SectContestAction, SectContestResult]
   raid: [RaidStartInput | undefined, BattleReportDTO]
   raidMirror: [undefined, { mirrorAt: number }]
+  mail: [{ action: 'claim'; mailId: string }, { mailId: string; attachments: MailAttachments }]
   coCultivate: [CoCultivationAction, IdleGain]
   duel: [DuelAction | undefined, BattleReportDTO | null]
   escort: [{ action: 'start' | 'claim' }, { silver: number }]
@@ -165,6 +167,7 @@ const requests: { [K in keyof Actions]: (input: Actions[K][0]) => Request | unde
   sectContest: (body) => ['POST', '/sect/contest', body],
   raid: (body) => body && ['POST', '/raid/start', body],
   raidMirror: () => ['POST', '/raid/mirror'],
+  mail: (body) => ['POST', '/mail', body],
   coCultivate: (body) => ['POST', '/map/co-cultivate', body],
   duel: (body) => body && ['POST', '/duel', body],
   escort: (body) => ['POST', '/escort', body],

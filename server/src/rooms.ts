@@ -3,7 +3,9 @@ import type { FastifyInstance, FastifyRequest } from 'fastify'
 import type { WebSocket } from 'ws'
 import { ITEMS, REALMS, SECTS } from '../../shared/gameData.ts'
 import type { PlayerSnapshot, RoomPlayerDTO, WsServerEvent } from '../../shared/protocol.ts'
+import { FOREVER } from '../../shared/admin.ts'
 import { requireSession, type Session } from './auth.ts'
+import { db } from './db.ts'
 import { getSnapshot } from './game.ts'
 
 interface Connection {
@@ -19,6 +21,8 @@ interface Member {
   connections: Set<Connection>
   lastChatAt: number
 }
+
+const muteTime = new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 
 function publicPlayer(snapshot: PlayerSnapshot): RoomPlayerDTO {
   const { player, loadouts, derivedStats } = snapshot
@@ -149,10 +153,19 @@ export function registerRooms(app: FastifyInstance) {
         return
       }
       member.lastChatAt = now
-      broadcast(member.mapId, {
-        event: 'ROOM_CHAT',
-        data: { id: randomUUID(), mapId: member.mapId, sender: { id, nickname: member.info.nickname }, content, sentAt: now },
-      })
+      // 禁言由运营后台设置（docs/22），每次发言查一次
+      void db.query<{ muted_until: string | null }>('SELECT muted_until FROM players WHERE id = $1', [id]).then(({ rows: [row] }) => {
+        const until = Number(row?.muted_until ?? 0)
+        if (until > Date.now()) {
+          const message = until >= FOREVER ? '你已被禁言' : `你已被禁言至 ${muteTime.format(until)}（北京时间）`
+          send(connection, { event: 'CHAT_REJECTED', data: { code: 'CHAT_MUTED', message } })
+          return
+        }
+        broadcast(member.mapId, {
+          event: 'ROOM_CHAT',
+          data: { id: randomUUID(), mapId: member.mapId, sender: { id, nickname: member.info.nickname }, content, sentAt: now },
+        })
+      }).catch((error) => request.log.error(error))
     })
 
     if (existing) {
@@ -196,6 +209,7 @@ export function registerRooms(app: FastifyInstance) {
 
   return {
     publish, closeSession, onlineMap, publicPlayer,
+    onlineCount: () => [...online.keys()].filter((playerId) => onlineMap(playerId) !== null).length,
     isOnlineInMap: (playerId: string, mapId: string) => onlineMap(playerId) === mapId,
     onlinePlayer: (playerId: string) => onlineMap(playerId) ? online.get(playerId)?.info : undefined,
     sendToPlayer: (playerId: string, event: WsServerEvent) => {

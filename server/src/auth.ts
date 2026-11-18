@@ -2,6 +2,7 @@ import { argon2, createHash, randomBytes, randomUUID, timingSafeEqual } from 'no
 import { promisify } from 'node:util'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type { PoolClient } from 'pg'
+import { FOREVER } from '../../shared/admin.ts'
 import { db, transaction } from './db.ts'
 import { GameError, objectBody } from './http.ts'
 
@@ -9,9 +10,11 @@ const COOKIE = 'wuxia_session'
 const SESSION_SECONDS = 7 * 24 * 60 * 60
 const derive = promisify(argon2)
 
-function hashToken(token: string) {
+export function hashToken(token: string) {
   return createHash('sha256').update(token).digest('hex')
 }
+
+export const newToken = () => randomBytes(32).toString('base64url')
 
 function sessionHash(request: FastifyRequest) {
   const token = request.cookies[COOKIE]
@@ -20,6 +23,29 @@ function sessionHash(request: FastifyRequest) {
 
 function passwordKey(password: string, salt: Buffer) {
   return derive('argon2id', { message: password, nonce: salt, memory: 19_456, passes: 2, parallelism: 1, tagLength: 32 })
+}
+
+/** 存库的密码：盐与 Argon2id 结果，十六进制以冒号分隔 */
+export async function hashPassword(password: string) {
+  const salt = randomBytes(16)
+  return `${salt.toString('hex')}:${(await passwordKey(password, salt)).toString('hex')}`
+}
+
+/** 校验密码；没有这个账号时也算一遍，不让响应时间泄露账号是否存在 */
+export async function verifyPassword(password: string, stored: string | undefined) {
+  const [salt, hash] = stored ? stored.split(':') : ['0'.repeat(32), '0'.repeat(64)]
+  const key = await passwordKey(password, Buffer.from(salt, 'hex'))
+  return timingSafeEqual(key, Buffer.from(hash, 'hex')) && !!stored
+}
+
+const banTime = new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+
+/** 封号中的账号：登录与每次请求都拦（docs/22） */
+function requireNotBanned(bannedUntil: string | number | null, reason: string | null) {
+  const until = bannedUntil === null ? 0 : Number(bannedUntil)
+  if (until <= Date.now()) return
+  const why = reason ? `：${reason}` : ''
+  throw new GameError(403, 'ACCOUNT_BANNED', until >= FOREVER ? `账号已被永久封禁${why}` : `账号封禁至 ${banTime.format(until)}（北京时间）${why}`)
 }
 
 function credentials(body: unknown) {
@@ -32,7 +58,7 @@ function credentials(body: unknown) {
 }
 
 async function addSession(client: typeof db | PoolClient, accountId: string) {
-  const token = randomBytes(32).toString('base64url')
+  const token = newToken()
   await client.query(
     'INSERT INTO sessions (token_hash, account_id, expires_at) VALUES ($1, $2, clock_timestamp() + make_interval(secs => $3))',
     [hashToken(token), accountId, SESSION_SECONDS],
@@ -43,11 +69,15 @@ async function addSession(client: typeof db | PoolClient, accountId: string) {
 export async function requireSession(request: FastifyRequest) {
   const tokenHash = sessionHash(request)
   if (tokenHash) {
-    const { rows } = await db.query<{ account_id: string; expires_at: Date }>(
-      'SELECT account_id, expires_at FROM sessions WHERE token_hash = $1 AND expires_at > clock_timestamp()',
+    const { rows } = await db.query<{ account_id: string; expires_at: Date; banned_until: string | null; ban_reason: string | null }>(
+      `SELECT s.account_id, s.expires_at, a.banned_until, a.ban_reason FROM sessions s JOIN accounts a ON a.id = s.account_id
+       WHERE s.token_hash = $1 AND s.expires_at > clock_timestamp()`,
       [tokenHash],
     )
-    if (rows[0]) return { accountId: rows[0].account_id, expiresAt: rows[0].expires_at.getTime(), tokenHash }
+    if (rows[0]) {
+      requireNotBanned(rows[0].banned_until, rows[0].ban_reason)
+      return { accountId: rows[0].account_id, expiresAt: rows[0].expires_at.getTime(), tokenHash }
+    }
   }
   throw new GameError(401, 'SESSION_EXPIRED', '请重新登录')
 }
@@ -63,13 +93,12 @@ export function registerAuth(app: FastifyInstance, secure: boolean, closeSession
 
   app.post('/api/v1/auth/register', limit, async (request, reply) => {
     const { login, password } = credentials(request.body)
-    const salt = randomBytes(16)
-    const key = await passwordKey(password, salt)
+    const passwordHash = await hashPassword(password)
     const token = await transaction(async (client) => {
       const id = randomUUID()
       const { rowCount } = await client.query(
         'INSERT INTO accounts (id, login_name, password_hash) VALUES ($1, $2, $3) ON CONFLICT (login_name) DO NOTHING',
-        [id, login, `${salt.toString('hex')}:${key.toString('hex')}`],
+        [id, login, passwordHash],
       )
       if (!rowCount) throw new GameError(409, 'LOGIN_TAKEN', '这个账号名已有人使用')
       return addSession(client, id)
@@ -80,16 +109,16 @@ export function registerAuth(app: FastifyInstance, secure: boolean, closeSession
 
   app.post('/api/v1/auth/login', limit, async (request, reply) => {
     const { login, password } = credentials(request.body)
-    const { rows } = await db.query<{ id: string; password_hash: string; has_player: boolean }>(
-      'SELECT a.id, a.password_hash, EXISTS (SELECT 1 FROM players WHERE account_id = a.id) AS has_player FROM accounts a WHERE login_name = $1',
+    const { rows } = await db.query<{ id: string; password_hash: string; has_player: boolean; banned_until: string | null; ban_reason: string | null }>(
+      `SELECT a.id, a.password_hash, a.banned_until, a.ban_reason, EXISTS (SELECT 1 FROM players WHERE account_id = a.id) AS has_player
+       FROM accounts a WHERE login_name = $1`,
       [login],
     )
     const account = rows[0]
-    const [salt, hash] = account ? account.password_hash.split(':') : ['0'.repeat(32), '0'.repeat(64)]
-    const key = await passwordKey(password, Buffer.from(salt, 'hex'))
-    if (!timingSafeEqual(key, Buffer.from(hash, 'hex')) || !account) {
+    if (!(await verifyPassword(password, account?.password_hash))) {
       throw new GameError(401, 'BAD_CREDENTIALS', '账号或密码不对')
     }
+    requireNotBanned(account.banned_until, account.ban_reason)
     setSession(reply, await addSession(db, account.id))
     return { hasPlayer: account.has_player }
   })

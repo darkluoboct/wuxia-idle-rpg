@@ -1,0 +1,77 @@
+@import "tailwindcss";
+
+/* 运营后台（docs/22）：与游戏分开的素净界面，浅色为主，跟随系统深色 */
+:root {
+  --bg: #f5f4f0;
+  --panel: #ffffff;
+  --ink: #1f2328;
+  --muted: #646b73;
+  --line: #e2dfd7;
+  --accent: #8a5a12;
+  --accent-ink: #ffffff;
+  --danger: #b42318;
+  --ok: #1f7a4d;
+  --warn: #9a6200;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #121315;
+    --panel: #1b1d20;
+    --ink: #e7e5e0;
+    --muted: #9ba1a8;
+    --line: #2d3035;
+    --accent: #d8a95c;
+    --accent-ink: #1b1d20;
+    --danger: #f2766b;
+    --ok: #5ccf8f;
+    --warn: #e0b04d;
+    color-scheme: dark;
+  }
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+  font-size: 14px;
+}
+
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+.muted { color: var(--muted); }
+.ok { color: var(--ok); }
+.danger { color: var(--danger); }
+.warn { color: var(--warn); }
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 0.35rem;
+  min-height: 2.1rem; padding: 0 0.85rem; border: 1px solid var(--line); border-radius: 7px;
+  background: var(--panel); color: var(--ink); cursor: pointer; white-space: nowrap;
+}
+.btn:hover:not(:disabled) { border-color: var(--accent); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.btn-danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, var(--line)); }
+.btn-sm { min-height: 1.75rem; padding: 0 0.6rem; font-size: 0.85rem; }
+
+.input {
+  min-height: 2.1rem; padding: 0.3rem 0.6rem; border: 1px solid var(--line); border-radius: 7px;
+  background: var(--panel); color: var(--ink); font: inherit; min-width: 0;
+}
+.input:focus, .btn:focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 60%, transparent); outline-offset: 1px; }
+textarea.input { padding: 0.5rem 0.6rem; }
+
+.table { width: 100%; border-collapse: collapse; }
+.table th, .table td { padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+.table th { color: var(--muted); font-weight: 500; font-size: 0.82rem; white-space: nowrap; }
+.table tbody tr:hover { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+
+.tag { display: inline-flex; align-items: center; padding: 0 0.45rem; border-radius: 999px; font-size: 0.78rem; line-height: 1.35rem; border: 1px solid var(--line); white-space: nowrap; }
+.tag-danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, var(--line)); }
+.tag-ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, var(--line)); }
+.tag-warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, var(--line)); }
+
+.nav-item { display: block; width: 100%; text-align: left; padding: 0.5rem 0.75rem; border-radius: 7px; color: var(--ink); background: none; border: 0; cursor: pointer; }
+.nav-item[aria-current="page"] { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); font-weight: 600; }
+.nav-item:hover:not([aria-current="page"]) { background: color-mix(in srgb, var(--accent) 6%, transparent); }

@@ -41,7 +41,7 @@ import { gainReunionClues, newReunion, reunionCluesToday, reunionEncounter, reun
 import type {
   ArtifactBoardDTO, ArtifactResult, AuctionBoardDTO, AuctionLotDTO, AuctionResult, AwakenResult, BattleReportDTO, BountyBoardDTO, BountyEntryDTO, ChapterOneStatueDTO, CoCultivationDTO, CoCultivationInviteDTO, CompanionState, CompanionWear, CultivationResult, DuelInviteDTO, FeastResult, ForgeInput, ForgeResult, FtueClaimResult, GachaResult, GameAction, HuashanBoardDTO, HuashanEntryDTO, HuashanResult, IdleGain, InnGiftResult, LibraryResult, LibraryStatusDTO, LoadoutPresetDTO, MapMoveResult, PersonalEquipSlot, PlayerDTO, PlayerSnapshot, StallBoardDTO, StallListingDTO, StallResult,
   MirrorRankEntryDTO, ReunionResult, RichSegment, SectChiefDTO, SectContestBoardDTO, SectContestResult, SectResult, SkillSlotType, SkillUpgradeResult, StoryAdventureResult, StoryChallengeResult, StorySnakeChoiceResult, TrialChallengeResult, TrialDropDTO, TrialPatrolStatusDTO, TrialReplayResult,
-  AwayReportDTO, RaidId, RaidMirrorBoardDTO, RoomPlayerDTO, WsServerEvent, XiangyangAwardDTO, XiangyangBoardDTO, XiangyangGateDTO, XiangyangGateId, XiangyangResult,
+  AnnouncementDTO, AwayReportDTO, MailAttachments, MailDTO, RaidId, RaidMirrorBoardDTO, RoomPlayerDTO, WsServerEvent, XiangyangAwardDTO, XiangyangBoardDTO, XiangyangGateDTO, XiangyangGateId, XiangyangResult,
 } from '../../shared/protocol.ts'
 import { requireSession } from './auth.ts'
 import { serverTime, transaction } from './db.ts'
@@ -3455,6 +3455,59 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
       changed: true,
     }
   }))
+
+  // ==================== 系统邮件与全服公告（docs/22） ====================
+  /** 发给自己、或发给全服且自己在资格内的信；全服信勾了「只发给已建角的」时，发信后才建角的侠客收不到 */
+  const MAIL_FOR = `NOT m.revoked AND m.expires_at > $2 AND (m.player_id = $1 OR (m.player_id IS NULL AND (NOT m.existing_only OR $3 <= m.created_at)))`
+
+  app.get('/api/v1/mail', async (request): Promise<MailDTO[]> => {
+    const { accountId } = await requireSession(request)
+    return transaction(async (client) => {
+      const { rows: [player] } = await client.query<{ id: string; created_at: string }>('SELECT id, created_at FROM players WHERE account_id = $1', [accountId])
+      if (!player) throw new GameError(404, 'PLAYER_NOT_CREATED', '先创建你的角色')
+      const now = await serverTime(client)
+      const { rows } = await client.query<{ id: string; title: string; body: string; attachments: MailAttachments; created_at: string; expires_at: string; claimed: boolean }>(`
+        SELECT m.id, m.title, m.body, m.attachments, m.created_at, m.expires_at, c.mail_id IS NOT NULL AS claimed
+        FROM mails m LEFT JOIN mail_claims c ON c.mail_id = m.id AND c.player_id = $1
+        WHERE ${MAIL_FOR} ORDER BY m.created_at DESC LIMIT 50`, [player.id, now, Number(player.created_at)])
+      return rows.map(({ created_at: createdAt, expires_at: expiresAt, ...mail }) => ({ ...mail, createdAt: Number(createdAt), expiresAt: Number(expiresAt) }))
+    }, true)
+  })
+
+  /** 领信：附件只发一次（mail_claims 主键），元宝记流水 mail:信件 */
+  app.post('/api/v1/mail', (request) => respond<{ mailId: string; attachments: MailAttachments }>(request, async (character, now, client) => {
+    const { action, mailId } = objectBody(request.body)
+    if (action !== 'claim' || typeof mailId !== 'string' || !UUID.test(mailId)) throw new GameError(400, 'INVALID_MAIL', '请选择要领的信')
+    const { player } = character
+    const { rows: [created] } = await client.query<{ created_at: string }>('SELECT created_at FROM players WHERE id = $1', [player.id])
+    const { rows: [mail] } = await client.query<{ id: string; attachments: MailAttachments }>(
+      `SELECT m.id, m.attachments FROM mails m WHERE m.id = $4 AND ${MAIL_FOR}`, [player.id, now, Number(created.created_at), mailId.toLowerCase()])
+    if (!mail) throw new GameError(404, 'MAIL_NOT_FOUND', '这封信已过期或被撤回')
+    const { rowCount } = await client.query('INSERT INTO mail_claims (mail_id, player_id, claimed_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING',
+      [mail.id, player.id, now])
+    if (!rowCount) throw new GameError(409, 'MAIL_CLAIMED', '这封信已经领过了')
+    const { ingot, silver, qiExp, items, fragments } = mail.attachments
+    if (ingot) await grantIngotOnce(client, character, ingot, 'mail', `mail:${mail.id}`)
+    if (silver) player.silver += silver
+    if (qiExp) player.qiExp += qiExp
+    if (items?.length) await grantItems(client, character, items)
+    for (const [skillId, count] of Object.entries(fragments ?? {})) {
+      const owned = player.skillFragments ??= {}
+      owned[skillId] = (owned[skillId] ?? 0) + count
+    }
+    return { result: { mailId: mail.id, attachments: mail.attachments }, changed: true }
+  }))
+
+  app.get('/api/v1/announcements', async (request): Promise<AnnouncementDTO[]> => {
+    await requireSession(request)
+    return transaction(async (client) => {
+      const now = await serverTime(client)
+      const { rows } = await client.query<{ id: string; content: string; starts_at: string; ends_at: string }>(`
+        SELECT id, content, starts_at, ends_at FROM announcements
+        WHERE NOT revoked AND starts_at <= $1 AND ends_at > $1 ORDER BY starts_at DESC LIMIT 5`, [now])
+      return rows.map(({ id, content, starts_at: startsAt, ends_at: endsAt }) => ({ id, content, startsAt: Number(startsAt), endsAt: Number(endsAt) }))
+    }, true)
+  })
 
   app.post<{ Params: { stageId: string } }>('/api/v1/trial/:stageId/redeem', (request) => respond<{ itemId: string; name: string }>(request, async (character, _now, client) => {
     requireFeature(character.player, 'TRIAL')

@@ -2,6 +2,7 @@ import Fastify, { type FastifyError } from 'fastify'
 import cookie from '@fastify/cookie'
 import rateLimit from '@fastify/rate-limit'
 import websocket from '@fastify/websocket'
+import { registerAdmin } from './admin.ts'
 import { registerAuth } from './auth.ts'
 import { db } from './db.ts'
 import { registerGame } from './game.ts'
@@ -36,6 +37,7 @@ const rooms = registerRooms(app)
 const raid = registerRaidLobby(app, rooms)
 registerAuth(app, origin.protocol === 'https:', rooms.closeSession)
 registerGame(app, rooms, raid)
+registerAdmin(app, rooms, origin.protocol === 'https:')
 db.on('error', (error) => app.log.error(error))
 app.addHook('onClose', async () => db.end())
 
@@ -43,6 +45,7 @@ try {
   await db.query('SELECT co_cultivation_id, shaoshi_clears, chongyang_clears, juxian_clears FROM players LIMIT 0')
   await db.query('SELECT chapter FROM chapter_one_statue LIMIT 0')
   await db.query('SELECT 1 FROM sect_contest_entries, sect_contest_results LIMIT 0')
+  await db.query('SELECT 1 FROM admin_accounts, mails, mail_claims, announcements LIMIT 0')
   await app.listen({ host: '127.0.0.1', port: Number(process.env.PORT || 8080) })
 } catch (error) {
   app.log.error(error)

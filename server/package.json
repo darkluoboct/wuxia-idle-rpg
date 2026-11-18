@@ -9,6 +9,7 @@
     "dev": "node --watch --env-file-if-exists=.env.local src/index.ts",
     "start": "node --env-file-if-exists=.env.local src/index.ts",
     "migrate": "node --env-file-if-exists=.env.local src/migrate.ts",
+    "admin:create": "node --env-file-if-exists=.env.local src/adminCreate.ts",
     "check": "tsc --noEmit",
     "test:story": "npm run test:game",
     "test:game": "node --test tests/onlineGame.test.ts"
