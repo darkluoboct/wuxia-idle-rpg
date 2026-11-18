@@ -336,6 +336,9 @@ const coCultivationTimeLeft = computed(() => {
             >邀请组队</button>
           </div>
         </li>
+        <li v-if="!IS_MOCK_MODE && store.roomConnected && store.roomCount - 1 > store.nearbyPlayers.length" class="py-1 text-center text-xs text-ink3">
+          这里另有 {{ store.roomCount - 1 - store.nearbyPlayers.length }} 位侠客，名单只列前 {{ store.nearbyPlayers.length }} 位
+        </li>
         <template v-if="!IS_MOCK_MODE && (store.featureOpen('HUASHAN') || store.featureOpen('MAPS')) && store.absentPlayers.length">
           <li class="pt-1 text-xs text-ink3">{{ store.currentMap.safety === 'PEACE' ? '不在线、停在本图：可以留帖邀他共修' : '不在线、停在本图：出手由对方的镜像应战' }}</li>
           <li v-for="pl in store.absentPlayers" :key="`absent-${pl.id}`" class="well space-y-2 p-2.5">

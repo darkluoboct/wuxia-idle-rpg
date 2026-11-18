@@ -788,7 +788,10 @@ export type StallResult =
 
 /** WebSocket 实时推送消息联合类型 */
 export type WsServerEvent =
+  /** 连上或换图时给本人一份附近名单（最多列 50 位，人数照常全数） */
   | { event: 'ROOM_SYNC'; data: { mapId: string; onlineCount: number; players: RoomPlayerDTO[] } }
+  /** 此后只推变动：players 为新列入或资料变了的，left 为移出名单的；同图的变动攒半秒合成一条 */
+  | { event: 'ROOM_UPDATE'; data: { mapId: string; onlineCount: number; players: RoomPlayerDTO[]; left: string[] } }
   | { event: 'ROOM_CHAT'; data: { id: string; mapId: string; sender: { id: string; nickname: string }; content: string; sentAt: number } }
   | { event: 'PLAYER_CHANGED'; data: { revision: number } }
   | { event: 'TEAM_ROOM_SYNC'; data: RaidLobbyDTO }

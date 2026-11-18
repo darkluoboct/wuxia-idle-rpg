@@ -85,6 +85,7 @@ export function useWorld({ battle, actions, selectTab, cultivation, companions }
   const raidMirrors = shallowRef<RaidMirrorBoardDTO | null>(null)
   /** 停在本图却不在线的押镖、被通缉侠客：劫镖与追捕由他们的镜像应战 */
   const absentPlayers = ref<RoomPlayerDTO[]>([])
+  let absentTimer: ReturnType<typeof setTimeout> | undefined
   const duelInvite = shallowRef<DuelInviteDTO | null>(null)
   let lastDuelBattleId: string | null = null
   const pendingDuelReport = shallowRef<BattleReportDTO | null>(null)
@@ -160,8 +161,16 @@ export function useWorld({ battle, actions, selectTab, cultivation, companions }
       roomMapId.value = event.data.mapId
       roomCount.value = event.data.onlineCount
       nearbyPlayers.value = event.data.players.filter((entry) => entry.id !== player.value.id)
-      // 有人上下线，停在本图的离线侠客名单也跟着变
       void refreshAbsentPlayers()
+    } else if (event.event === 'ROOM_UPDATE' && event.data.mapId === roomMapId.value) {
+      const { onlineCount, players, left } = event.data
+      roomCount.value = onlineCount
+      const changed = new Map(players.map((entry) => [entry.id, entry]))
+      const kept = nearbyPlayers.value.filter(({ id }) => !left.includes(id)).map((entry) => changed.get(entry.id) ?? entry)
+      const keptIds = new Set(kept.map(({ id }) => id))
+      nearbyPlayers.value = [...kept, ...players.filter(({ id }) => !keptIds.has(id) && id !== player.value.id)]
+      // 有人移出名单（多半是下线），停在本图的离线侠客名单也跟着变
+      if (left.length) refreshAbsentSoon()
     } else if (event.event === 'ROOM_CHAT' && event.data.mapId === roomMapId.value) {
       const { id, content, sender, sentAt } = event.data
       worldMessages.value.unshift({
@@ -190,6 +199,8 @@ export function useWorld({ battle, actions, selectTab, cultivation, companions }
   }
 
   function clearRoom() {
+    clearTimeout(absentTimer)
+    absentTimer = undefined
     nearbyPlayers.value = []
     absentPlayers.value = []
     roomCount.value = 0
@@ -359,6 +370,14 @@ export function useWorld({ battle, actions, selectTab, cultivation, companions }
       playRaidReport(report)
       void refreshRaidMirrors()
     })
+  }
+
+  /** 同图有人离开时过一会儿再刷：五到十五秒内只刷一次，人多时全图不会同一刻一起请求 */
+  function refreshAbsentSoon() {
+    absentTimer ??= setTimeout(() => {
+      absentTimer = undefined
+      void refreshAbsentPlayers()
+    }, 5_000 + Math.random() * 10_000)
   }
 
   async function refreshAbsentPlayers() {

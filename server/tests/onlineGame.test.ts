@@ -138,9 +138,11 @@ describe('联机战斗', { skip: connection ? false : '请设置 GAME_TEST_DATAB
       return response.json<T>()
     }
     if (!fresh || !gated) snapshot = await read()
-    const connect = async () => {
+    /** listen 从第一条消息起收下全部推送 */
+    const connect = async (listen?: (event: WsServerEvent) => void) => {
       const options = { headers }
       const socket = new WebSocket(`ws://127.0.0.1:${(app.server.address() as { port: number }).port}/ws`, options)
+      if (listen) socket.addEventListener('message', ({ data }) => listen(JSON.parse(data) as WsServerEvent))
       await new Promise<void>((resolve, reject) => {
         socket.addEventListener('message', () => resolve(), { once: true })
         socket.addEventListener('error', reject, { once: true })
@@ -1920,6 +1922,61 @@ describe('联机战斗', { skip: connection ? false : '请设置 GAME_TEST_DATAB
       assert.match((await reject(buyer, { action: 'buy', listingId: system.id, qty: system.qty, unitPrice: system.unitPrice })).message, /已经收摊/)
     } finally {
       fixedServerTime = undefined
+    }
+  })
+
+  it('附近名单：连上或换图给一份，此后只推变动；最多列五十位，能出手的排前面', async () => {
+    const { roomWindow, ROOM_LIST_LIMIT } = await import('../src/rooms.ts')
+    const listed = (id: string, flags: Partial<RoomPlayerDTO> = {}): RoomPlayerDTO => ({
+      id, nickname: id, sectName: '', realmName: '', level: 1, combatPower: 1, stance: 'FIERCE', isBetrayerBounty: false, isEscortingDart: false, ...flags,
+    })
+    const crowd = [...Array.from({ length: ROOM_LIST_LIMIT + 5 }, (_, index) => listed(`p${index}`)), listed('wanted', { isBetrayerBounty: true })]
+    assert.deepEqual(roomWindow(crowd).map(({ id }) => id), ['wanted', ...crowd.slice(0, ROOM_LIST_LIMIT - 1).map(({ id }) => id)])
+
+    type RoomEvent = Extract<WsServerEvent, { event: 'ROOM_SYNC' | 'ROOM_UPDATE' }>
+    type RoomUpdate = Extract<WsServerEvent, { event: 'ROOM_UPDATE' }>['data']
+    const [first, second] = await Promise.all(['room_a', 'room_b'].map(createPlayer))
+    await Promise.all([first, second].map(({ id }) => profile(id, { currentMapId: 'taohua_isle' })))
+    const heard = { [first.id]: [] as RoomEvent[], [second.id]: [] as RoomEvent[] }
+    const listen = (id: string) => (event: WsServerEvent) => {
+      if (event.event === 'ROOM_SYNC' || event.event === 'ROOM_UPDATE') heard[id].push(event)
+    }
+    async function poll<T>(find: () => T | undefined) {
+      for (let tries = 0; tries < 60; tries++) {
+        const found = find()
+        if (found) return found
+        await new Promise((resolve) => setTimeout(resolve, 50))
+      }
+      throw new Error(`没等到推送：${JSON.stringify(heard)}`)
+    }
+    const update = (id: string, matches: (data: RoomUpdate) => boolean) =>
+      poll(() => heard[id].flatMap((event) => event.event === 'ROOM_UPDATE' && matches(event.data) ? [event.data] : [])[0])
+    const sockets = [await first.connect(listen(first.id))]
+    try {
+      assert.deepEqual(heard[first.id][0], { event: 'ROOM_SYNC', data: { mapId: 'taohua_isle', onlineCount: 1, players: [] } })
+      await update(first.id, ({ players }) => players.some(({ id }) => id === first.id))
+
+      // 后来者连上拿一份名单，先来的只收到「多了一位」
+      sockets.push(await second.connect(listen(second.id)))
+      const sync = heard[second.id][0]
+      assert.equal(sync.event, 'ROOM_SYNC')
+      assert.deepEqual([sync.data.onlineCount, sync.data.players.map(({ id }) => id)], [2, [first.id]])
+      const joined = await update(first.id, ({ players }) => players.some(({ id }) => id === second.id))
+      assert.deepEqual([joined.onlineCount, joined.players.map(({ id }) => id), joined.left], [2, [second.id], []])
+
+      // 资料变了只推这一位
+      await profile(second.id, { bountyUntil: Date.now() + 3_600_000 })
+      await second.act('/cultivate/settle')
+      const wanted = await update(first.id, ({ players }) => players.some(({ isBetrayerBounty }) => isBetrayerBounty))
+      assert.deepEqual([wanted.players.map(({ id }) => id), wanted.left], [[second.id], []])
+
+      // 换图：新图给一份名单，旧图的人只收到「少了一位」
+      await second.act('/map/move', { mapId: 'zhongnan_forest' })
+      await poll(() => heard[second.id].find(({ event, data }) => event === 'ROOM_SYNC' && data.mapId === 'zhongnan_forest'))
+      const moved = await update(first.id, ({ left }) => left.includes(second.id))
+      assert.deepEqual([moved.onlineCount, moved.players], [1, []])
+    } finally {
+      for (const socket of sockets) socket.close()
     }
   })
 })

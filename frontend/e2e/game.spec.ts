@@ -72,6 +72,8 @@ test('游客进入演武，切换五个页签并从浏览器读档', async ({ pa
 
 test('联机注册、创角、同图聊天、领取收益和换装读档', async ({ browser }) => {
   test.skip(!process.env.WUXIA_E2E_DATABASE_URL, '需要专用 PostgreSQL 测试库')
+  // 两位侠客各自注册、走完序章，慢机器上光这些就近 30 秒
+  test.setTimeout(90_000)
 
   const contexts = await Promise.all([browser.newContext(), browser.newContext()])
   try {
@@ -112,6 +114,14 @@ test('联机注册、创角、同图聊天、领取收益和换装读档', async
     await alice.game.getByRole('textbox', { name: '聊天内容' }).fill(message)
     await alice.game.getByRole('button', { name: '发送', exact: true }).click()
     await expect(bob.game.getByText(message, { exact: true })).toBeVisible()
+    // 同图名单：连上时拿一份，之后的进出只推变动，两边都要看到对方
+    for (const [viewer, other] of [[alice, bob], [bob, alice]]) {
+      await viewer.game.getByRole('tab', { name: /^附近侠客/ }).click()
+      await expect(viewer.game.getByText(other.nickname, { exact: true })).toBeVisible()
+    }
+    await contexts[1].close()
+    await expect(alice.game.getByText(bob.nickname, { exact: true })).toHaveCount(0)
+    await alice.game.getByRole('tab', { name: '同图聊天' }).click()
     const settlement = alice.page.waitForResponse(
       (response) =>
         response.url().endsWith('/api/v1/cultivate/settle') &&
