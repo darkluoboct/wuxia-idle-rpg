@@ -69,7 +69,7 @@ export const useGameStore = defineStore('wuxiaGame', () => {
     logPatrolCache: (reward) => trial.logPatrolCache(reward),
     mockSettlePatrol: (now) => trial.mockSettlePatrol(now),
     announceXiangyangAward: (award) => xiangyang.announceAward(award),
-    claimLocalXiangyang: (now) => xiangyang.claimLocalXiangyang(now),
+    claimLocalXiangyang: (now, since) => xiangyang.claimLocalXiangyang(now, since),
   })
 
   const story = useStory({ cultivation, battle, actions })
@@ -292,6 +292,8 @@ export const useGameStore = defineStore('wuxiaGame', () => {
     inspectById: uiStore.inspectById,
     getIdleRewards: cultivation.getIdleRewards,
     settleOfflineQi: cultivation.settleOfflineQi,
+    awayReport: cultivation.awayReport,
+    closeAwayReport: cultivation.closeAwayReport,
     upgradeLevel: cultivation.upgradeLevel,
     attemptBreakthrough: cultivation.attemptBreakthrough,
     triggerRandomAdventure: story.triggerRandomAdventure,
@@ -347,6 +349,7 @@ export const useGameStore = defineStore('wuxiaGame', () => {
     readLibraryReport: world.readLibraryReport,
     replyCoCultivation: world.replyCoCultivation,
     endCoCultivation: world.endCoCultivation,
+    cancelCoCultivationInvite: world.cancelCoCultivationInvite,
     joinSect: sect.joinSect,
     sectEligibility: sect.sectEligibility,
     saluteChiefPlayer: sect.saluteChiefPlayer,

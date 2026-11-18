@@ -210,6 +210,27 @@ describe('襄阳守卫战 · 本地试玩', () => {
     expect(resumed.xiangyangBoard!.awards).toMatchObject([{ warId: war.id, gate: 'WATER' }])
   })
 
+  it('江湖邸报：离开超过一个时辰收功时弹出，汇总修行与值守代打；刚收过功不弹', () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(beijing('2026-11-18T10:00:00'))
+    const s = newStore('NEW', { origin: 'jiangmen' })
+    boost(s, 30)
+    s.xiangyangAction({ action: 'post', gate: 'EAST' })
+    s.settleOfflineQi()
+    expect(s.awayReport).toBeNull()
+
+    // 一天后回来：周三 16:00、周四 00:00、08:00 三次满溢，镜像各代打一次
+    vi.setSystemTime(beijing('2026-11-19T10:00:00'))
+    s.settleOfflineQi()
+    expect(s.awayReport?.gain.away).toMatchObject({ since: beijing('2026-11-18T10:00:00'), xiangyang: { sorties: 3 } })
+    expect(s.awayReport?.gain.gainedQi).toBeGreaterThan(0)
+    s.closeAwayReport()
+
+    vi.setSystemTime(beijing('2026-11-19T10:10:00'))
+    s.settleOfflineQi()
+    expect(s.awayReport).toBeNull()
+  })
+
   it('新角色打过主线 2-3 才开放', () => {
     const s = newStore('NEW', { gated: true })
     expect(s.jianghuTabOpen('XIANGYANG')).toBe(false)

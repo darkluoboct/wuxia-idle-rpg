@@ -116,6 +116,7 @@ export interface PlayerDTO {
   stallSystem?: { day: number; bought: string[] } // 当日已买过的鬼市散客摊
   stallIncome?: { at: number; silver: number; returned: number } // 最近一次收摊结算：入账纹银、退回的货物份数
   defenseNotices?: DefenseNoticeDTO[] // 下线期间被劫镖、被追捕的战果，收功时告知后清空
+  lastReportAt?: number             // 上次收功出江湖邸报的时刻
   auctionTickets?: number[]         // 鬼市红封签：领过每日江湖事的鬼市日，当日子时开签兑付
   auctionDividend?: { day: number; ingot: number } // 最近一次兑付的红封（未中签为 0）
   gacha?: { pulls: number; pity: number }
@@ -280,6 +281,8 @@ export interface IdleGain {
   contestIngot?: number
   /** 下线期间镜像替你应战的劫镖与追捕，告知后清空 */
   defenseNotices?: DefenseNoticeDTO[]
+  /** 江湖邸报：上次收功以来、你不在场时发生的事 */
+  away?: AwayReportDTO
   /** 收功时顺带领到的襄阳封赏 */
   xiangyang?: { warId: number; skillId: string | null; reward: XiangyangRewardDTO }[]
 }
@@ -472,7 +475,21 @@ export interface RoomPlayerDTO {
   isBetrayerBounty: boolean // 是否背负全服叛师追杀令
   isEscortingDart: boolean  // 是否正在押镖(限定纷争区可劫掠)
   holdingUniqueArtifact?: string // 若持有全服唯一真品神兵则高亮公示
-  offline?: true            // 不在线、停在本图：劫镖或追捕由他的镜像应战
+  offline?: true            // 不在线、停在本图：可留帖共修；劫镖或追捕由他的镜像应战
+}
+
+/** 江湖邸报（docs/21）：收功时汇总上次收功以来、你不在场时发生的事；修行、巡历、封赏等仍在 IdleGain 的其他字段 */
+export interface AwayReportDTO {
+  /** 上次收功的时刻 */
+  since: number
+  /** 襄阳值守镜像代打 */
+  xiangyang?: { sorties: number; merit: number }
+  /** 鬼市摊位卖出（纹银为扣税后） */
+  stallSales?: { count: number; silver: number }
+  /** 暗拍红封（未中签为 0） */
+  dividends?: { day: number; ingot: number }[]
+  /** 结义镜像被借去同闯打赢，记下的助战真气（本次收功到账） */
+  raidLends?: { count: number; qiExp: number }
 }
 
 /** 下线时被劫镖或被追捕：镜像替你应战，收功时一并告知（docs/21） */

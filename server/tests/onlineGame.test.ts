@@ -19,11 +19,13 @@ import { AUCTION_BID_STEP, AUCTION_SOFT_CLOSE_MS, auctionDay, auctionDividendAt,
 import { computeDerivedStats } from '../../shared/battle.ts'
 import { huashanSeason } from '../../shared/huashan.ts'
 import { createStarterCharacter, innVisitDay, legacyAcupoints } from '../../shared/player.ts'
-import type { ArtifactBoardDTO, ArtifactResult, AuctionBoardDTO, AuctionResult, AwakenResult, BattleReportDTO, BountyBoardDTO, BountyEntryDTO, FeastResult, FtueClaimResult, GachaResult, GameAction, HuashanBoardDTO, HuashanResult, IdleGain, LibraryResult, LibraryStatusDTO, OriginId, PlayerSnapshot, RaidId, RaidMirrorBoardDTO, ReunionResult, RoomPlayerDTO, SectContestBoardDTO, SectContestResult, SectResult, StallBoardDTO, StallResult, StoryAdventureResult, StoryChallengeResult, WsServerEvent, XiangyangBoardDTO, XiangyangResult } from '../../shared/protocol.ts'
+import type { ArtifactBoardDTO, ArtifactResult, AuctionBoardDTO, AuctionResult, AwakenResult, BattleReportDTO, BountyBoardDTO, BountyEntryDTO, FeastResult, FtueClaimResult, GachaResult, GameAction, HuashanBoardDTO, HuashanResult, IdleGain, LibraryResult, LibraryStatusDTO, OriginId, PlayerSnapshot, RaidId, RaidMirrorBoardDTO, ReunionResult, RoomPlayerDTO, SectContestBoardDTO, SectContestResult, SectResult, StallBoardDTO, StallResult, StoryAdventureResult, StoryChallengeResult, TrialChallengeResult, TrialPatrolStatusDTO, TrialReplayResult, WsServerEvent, XiangyangBoardDTO, XiangyangResult } from '../../shared/protocol.ts'
 import { QUANZHEN_LIBRARY } from '../../shared/quanzhen.ts'
 import { BETRAYAL_BOUNTY, SECT_CHIEF_SALUTE_QI, SECT_SALUTE_QI, sectContestEndsAt, sectContestWeek } from '../../shared/sectProgress.ts'
+import { hasTrialPart, trialPartId, trialSetOfStage, trialStageOf } from '../../shared/trialStages.ts'
 import { ONLINE_STORY_CHAPTERS, ONLINE_STORY_PROGRESS_VERSION } from '../../shared/storyData.ts'
 import { xiangyangWar, xiangyangWarOf } from '../../shared/xiangyang.ts'
+import { RAID_LEND, raidLendQi } from '../../shared/mirror.ts'
 import { GameError } from '../src/http.ts'
 
 const connection = process.env.GAME_TEST_DATABASE_URL ?? process.env.STORY_TEST_DATABASE_URL
@@ -605,6 +607,29 @@ describe('联机战斗', { skip: connection ? false : '请设置 GAME_TEST_DATAB
     assert.equal((await owner.act<IdleGain>('/cultivate/settle')).result.defenseNotices, undefined)
   })
 
+  it('共修留帖：对方不在线也能邀、一天内有效；应邀只要两人停在同一张和平地图；发帖人可撤回', async () => {
+    const [host, guest, third] = await Promise.all(['note_host', 'note_guest', 'note_third'].map((name) => createPlayer(name)))
+    const absent = await host.read<RoomPlayerDTO[]>('/map/absent')
+    assert.ok(absent.some(({ id, offline }) => id === guest.id && offline))
+    const invited = await host.act<IdleGain>('/map/co-cultivate', { action: 'invite', targetPlayerId: guest.id })
+    const invite = invited.snapshot.coCultivationInvite!
+    assert.ok(invite.expiresAt - invited.snapshot.serverTime > 23 * 3_600_000)
+    assert.equal((await guest.read()).coCultivationInvite?.id, invite.id)
+    // 发帖人早已下线，应邀的人上线后同意即可
+    const accepted = await guest.act<IdleGain>('/map/co-cultivate', { action: 'accept', invitationId: invite.id })
+    assert.equal(accepted.snapshot.coCultivation?.partner.id, host.id)
+    assert.equal((await host.read()).coCultivation?.partner.id, guest.id)
+    await host.act('/map/co-cultivate', { action: 'end', coCultivationId: accepted.snapshot.coCultivation!.id })
+
+    const pending = (await host.act<IdleGain>('/map/co-cultivate', { action: 'invite', targetPlayerId: third.id })).snapshot.coCultivationInvite!
+    assert.equal((await third.post('/map/co-cultivate', { action: 'cancel', invitationId: pending.id })).json().code, 'CO_CULTIVATION_INVITE_NOT_YOURS')
+    const cancelled = await host.act<IdleGain>('/map/co-cultivate', { action: 'cancel', invitationId: pending.id })
+    assert.equal(cancelled.snapshot.coCultivationInvite, null)
+    assert.equal((await third.read()).coCultivationInvite, null)
+    await profile(third.id, { currentMapId: ONLINE_MAPS.find((map) => map.safety === 'CONTESTED')!.id })
+    assert.equal((await host.post('/map/co-cultivate', { action: 'invite', targetPlayerId: third.id })).json().code, 'PARTNER_UNAVAILABLE')
+  })
+
   it('结义镜像：登记后可被借去同闯三人副本，奖励只归借的人；挑人须是两位不同的他人', async () => {
     const [lender, other, solo] = await Promise.all(['mir_a', 'mir_b', 'mir_solo'].map((name) => createPlayer(name)))
     await lender.act('/raid/mirror')
@@ -621,17 +646,24 @@ describe('联机战斗', { skip: connection ? false : '请设置 GAME_TEST_DATAB
     assert.equal((await start([lender.id, other.id], 'nowhere')).json().code, 'INVALID_RAID')
 
     const lenderBefore = await lender.read()
+    await strength(solo.id, 3500, 1200, 40, 4, 200)
     const fought = await solo.act<BattleReportDTO>('/raid/start', { raidId: 'shaoshi', mirrorIds: [lender.id, other.id] })
     const allies = fought.result.units.filter(({ slot }) => slot.startsWith('ALLY')).map(({ name }) => name).sort()
     assert.deepEqual(allies, [solo, lender, other].map(({ snapshot }) => snapshot.player.nickname).sort())
-    if (fought.result.winner === 'ALLY') {
-      assert.equal(fought.snapshot.shaoshiClears, 1)
-      assert.equal(fought.result.rewards?.ingot, INGOT.raidWeekly)
-    }
+    assert.equal(fought.result.winner, 'ALLY')
+    assert.equal(fought.snapshot.shaoshiClears, 1)
+    assert.equal(fought.result.rewards?.ingot, INGOT.raidWeekly)
     const lenderAfter = await lender.read()
     assert.deepEqual([lenderAfter.player.qiExp, lenderAfter.player.silver, lenderAfter.shaoshiClears],
       [lenderBefore.player.qiExp, lenderBefore.player.silver, lenderBefore.shaoshiClears])
     assert.notEqual((await solo.read<RaidMirrorBoardDTO>('/raid/mirrors')).mine, null)
+    // 镜像主人：打赢一次记一次助战真气，每天最多三次，收功时到账
+    for (let round = 0; round < 3; round++) await solo.act('/raid/start', { raidId: 'shaoshi', mirrorIds: [lender.id, other.id] })
+    const qiExp = raidLendQi(COOP_RAIDS.shaoshi.rewardQi)
+    const helped = await lender.act<IdleGain>('/cultivate/settle')
+    assert.deepEqual(helped.result.away?.raidLends, { count: RAID_LEND.dailyCap, qiExp: RAID_LEND.dailyCap * qiExp })
+    assert.ok(helped.snapshot.player.qiExp >= lenderBefore.player.qiExp + RAID_LEND.dailyCap * qiExp)
+    assert.equal((await lender.act<IdleGain>('/cultivate/settle')).result.away?.raidLends, undefined)
   })
 
   it('过期通缉不会显示或触发战斗，旧接令也无法追捕同一人新的通缉', async () => {
@@ -1076,6 +1108,7 @@ describe('联机战斗', { skip: connection ? false : '请设置 GAME_TEST_DATAB
       // 收兵后：此后十次满溢加收兵时的三道，两人各 17 次；收功顺带领赏
       fixedServerTime = war.closesAt + 60_000
       const settled = await guard.act<IdleGain>('/cultivate/settle')
+      assert.deepEqual(settled.result.away?.xiangyang?.sorties, 14)
       const [award] = settled.result.xiangyang ?? []
       assert.equal(award?.warId, war.id)
       assert.equal(award.reward.ingot, INGOT.xiangyang)
@@ -1101,6 +1134,89 @@ describe('联机战斗', { skip: connection ? false : '请设置 GAME_TEST_DATAB
     }
     const newcomer = await createNewcomer('xy_new')
     assert.equal((await newcomer.get('/xiangyang')).json().code, 'FEATURE_LOCKED')
+  })
+
+  it('30 关历练联机验收：巡历时长解锁试炼，打赢升级换关；最多累计 24 小时；遭遇掉件、宝箱元宝按周封顶；章末复战与印记兑换', async () => {
+    const hero = await createRookie('patroller')
+    const hour = 3_600_000
+    await strength(hero.id, 900, 600, 1, 1, 150)
+    const trialOf = async () => (await hero.read()).player.trial
+    let now = Date.now() + 60_000
+    try {
+      fixedServerTime = now
+      const first = await hero.act<TrialChallengeResult>('/trial/1/challenge')
+      assert.equal(first.result.report.winner, 'ALLY')
+      assert.deepEqual([first.result.firstClear, first.result.unlockedStageId, first.snapshot.player.trial.selectedStageId], [true, 2, 2])
+      assert.equal((await hero.post('/trial/2/challenge')).json().code, 'TRIAL_PATROL_REQUIRED')
+      assert.equal((await hero.post('/trial/3/challenge')).json().code, 'TRIAL_STAGE_LOCKED')
+
+      // 巡历满 3 分钟即可挑战第 2 关；打赢后进度清零、切到第 3 关
+      now += 3 * 60_000 + 1_000
+      fixedServerTime = now
+      const second = await hero.act<TrialChallengeResult>('/trial/2/challenge')
+      assert.deepEqual([second.result.report.winner, second.result.unlockedStageId], ['ALLY', 3])
+      assert.deepEqual([second.snapshot.player.trial.selectedStageId, second.snapshot.player.trial.stageHours['2']], [3, 0])
+      assert.equal((await hero.post('/trial/patrol', { stageId: 5 })).json().code, 'TRIAL_STAGE_LOCKED')
+      const moved = await hero.act<TrialPatrolStatusDTO>('/trial/patrol', { stageId: 1 })
+      assert.equal(moved.snapshot.player.trial.selectedStageId, 1)
+
+      // 离线 40 小时：打坐与巡历都只算 24 小时
+      const before = await hero.read()
+      now += 40 * hour
+      fixedServerTime = now
+      const away = await hero.act<IdleGain>('/cultivate/settle')
+      const trial = away.snapshot.player.trial
+      assert.ok(Math.abs((trial.stageHours['1'] ?? 0) - (before.player.trial.stageHours['1'] ?? 0) - 24) < 1e-6)
+      assert.equal(away.result.forgeMaterials, 48)
+      assert.ok(Math.abs(away.result.gainedQi - before.soloQiPerHour * 24) <= 1)
+
+      // 遭遇必中时：掉件、开宝箱；宝箱元宝本周封顶 210，下周重新计
+      const week = sectContestWeek(now)
+      await profile(hero.id, { patrolIngot: { week, got: 200 } })
+      const lucky = mock.method(Math, 'random', () => 0.01)
+      try {
+        now += hour
+        fixedServerTime = now
+        const rich = await hero.act<IdleGain>('/cultivate/settle')
+        assert.ok((rich.result.drops?.length ?? 0) > 0)
+        assert.deepEqual([rich.result.patrolCache?.count, rich.result.patrolCache?.ingot], [2, 10])
+        now += hour
+        fixedServerTime = now
+        assert.equal((await hero.act<IdleGain>('/cultivate/settle')).result.patrolCache?.ingot, undefined)
+        now = sectContestEndsAt(week) + hour
+        fixedServerTime = now
+        const fresh = await hero.act<IdleGain>('/cultivate/settle')
+        assert.equal(fresh.result.patrolCache?.ingot, Math.min(INGOT.patrolWeeklyCap, 5 * fresh.result.patrolCache!.count))
+        assert.deepEqual(fresh.snapshot.player.patrolIngot, { week: week + 1, got: fresh.result.patrolCache?.ingot })
+      } finally {
+        lucky.mock.restore()
+      }
+      const patrolIngot = (await ledger(hero.id)).filter(({ reason }) => reason === 'patrol').map(({ delta }) => delta)
+      assert.equal(patrolIngot[0], 10)
+
+      // 章末第 7 关：巡历满 4 小时才能复战首领，胜后计时清零；集齐 4 枚印记兑换缺的部位
+      const current = await trialOf()
+      await profile(hero.id, { trial: { ...current, maxStageId: 8, rewardedStageIds: [1, 2, 3, 4, 5, 6, 7], selectedStageId: 7, replayHours: { 7: 3 }, marks: { 7: 4 } } })
+      assert.equal((await hero.post('/trial/7/replay')).json().code, 'TRIAL_REPLAY_REQUIRED')
+      assert.equal((await hero.post('/trial/3/replay')).json().code, 'TRIAL_NOT_REPLAYABLE')
+      now += hour
+      fixedServerTime = now
+      await strength(hero.id, 3000, 1200, 20, 3, 300)
+      const replay = await hero.act<TrialReplayResult>('/trial/7/replay')
+      assert.equal(replay.result.report.winner, 'ALLY')
+      assert.ok(replay.result.drop)
+      assert.equal(replay.snapshot.player.trial.replayHours['7'], 0)
+      const set = trialSetOfStage(trialStageOf(7)!)!
+      const missing = set.parts.map(({ slot }) => slot).find((slot) => !hasTrialPart(replay.snapshot.ownedItemIds, trialPartId(set.id, slot)))
+      if (missing) {
+        const redeemed = await hero.act<{ itemId: string }>('/trial/7/redeem', { slot: missing })
+        assert.ok(redeemed.snapshot.ownedItemIds.includes(redeemed.result.itemId))
+        assert.equal(redeemed.snapshot.player.trial.marks['7'], 0)
+        assert.equal((await hero.post('/trial/7/redeem', { slot: missing })).json().code, 'TRIAL_MARKS_REQUIRED')
+      }
+    } finally {
+      fixedServerTime = undefined
+    }
   })
 
   it('每日江湖事四件做完才能领元宝，当日只领一次', async () => {
@@ -1637,6 +1753,11 @@ describe('联机战斗', { skip: connection ? false : '请设置 GAME_TEST_DATAB
       assert.deepEqual((await board(seller)).mine, [])
       const { rows: sales } = await db.query('SELECT qty, unit_price, tax FROM stall_sales WHERE listing_id = $1 ORDER BY id', [listingId])
       assert.deepEqual(sales, [{ qty: 4, unit_price: 30, tax: 12 }, { qty: 6, unit_price: 30, tax: 18 }])
+      // 江湖邸报：摊主收功时看到上次收功以来卖出了多少
+      const report = await seller.act<IdleGain>('/cultivate/settle')
+      assert.deepEqual(report.result.away?.stallSales, { count: 10, silver: 270 })
+      const again = await seller.act<IdleGain>('/cultivate/settle')
+      assert.equal(again.result.away?.stallSales, undefined)
       assert.deepEqual((await board(buyer)).recent.slice(0, 2).map(({ goodsId, qty, unitPrice }) => [goodsId, qty, unitPrice]), [['sanqi', 6, 30], ['sanqi', 4, 30]])
 
       // 残页也能摆；撤摊退货，摆摊费不退
@@ -1645,7 +1766,7 @@ describe('联机战斗', { skip: connection ? false : '请设置 GAME_TEST_DATAB
       const cancelled = await seller.act<StallResult>(path, { action: 'cancel', listingId: pages.result.listingId })
       assert.deepEqual(cancelled.result, { action: 'cancel', kind: 'FRAGMENT', goodsId: 'luoying_zhang', returned: 3, silver: 0 })
       assert.deepEqual([cancelled.snapshot.player.skillFragments?.luoying_zhang, cancelled.snapshot.player.stallOpen, cancelled.snapshot.player.silver],
-        [3, 0, emptied.snapshot.player.silver - 24])
+        [3, 0, again.snapshot.player.silver - 24])
       assert.equal((await reject(seller, { action: 'cancel', listingId: pages.result.listingId })).code, 'STALL_UNAVAILABLE')
 
       // 最多五摊；到期后买不到，摊主下次操作时剩货退回

@@ -37,6 +37,10 @@ export function defenseMirror({ player, loadout, learnedSkills, bonus, companion
 
 export type DefenseMirror = ReturnType<typeof defenseMirror>
 
+/** 结义镜像助战（docs/21）：被借去同闯打赢，给主人记副本真气的两成，每天最多记三次 */
+export const RAID_LEND = { qiShare: 0.2, dailyCap: 3 } as const
+export const raidLendQi = (rewardQi: number) => Math.round(rewardQi * RAID_LEND.qiShare)
+
 export function mirrorFighter({ fighter, companionStates }: DefenseMirror) {
   return {
     ...fighter,

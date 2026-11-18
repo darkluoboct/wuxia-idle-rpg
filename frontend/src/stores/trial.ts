@@ -62,17 +62,22 @@ export function useTrial({ actions, cultivation, battle }: {
   }
 
   /** 本地试玩版惰性巡历：进度、章末复战与 30 分钟一次的小怪掉落 */
-  function mockSettlePatrol(now = Date.now()) {
-    if (!IS_MOCK_MODE) return
+  /** 本地巡历结算；返回与联机收功同样的巡历字段，供江湖邸报汇总 */
+  function mockSettlePatrol(now = Date.now()): Pick<IdleGain, 'drops' | 'forgeMaterials' | 'patrolCache'> {
+    if (!IS_MOCK_MODE) return {}
     const t = player.value.trial
     const encounters = advancePatrol(t, now, patrolEncounterRate(currentLoadout.value.accId))
-    if (!encounters) return
+    if (!encounters) return {}
     const stage = trialStageOf(t.selectedStageId)
-    if (!stage) return
+    if (!stage) return {}
     forgeMaterials(player.value, encounters, encounters)
+    const drops: TrialDropDTO[] = []
     for (let i = 0; i < encounters; i++) {
       const roll = rollTrialDrop(stage, 'PATROL')
-      if (roll) logTrialDrop(awardMockTrialDrop(stage, roll, now))
+      if (!roll) continue
+      const drop = awardMockTrialDrop(stage, roll, now)
+      drops.push(drop)
+      logTrialDrop(drop)
     }
     const cache = settlePatrolCaches(player.value, currentLoadout.value, encounters, now)
     if (cache) {
@@ -81,6 +86,7 @@ export function useTrial({ actions, cultivation, battle }: {
       logPatrolCache(cache)
     }
     logForgeMaterials(encounters)
+    return { drops, forgeMaterials: encounters, ...(cache ? { patrolCache: cache } : {}) }
   }
 
   function logPatrolCache(reward: NonNullable<IdleGain['patrolCache']>) {

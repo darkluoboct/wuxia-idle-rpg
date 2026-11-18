@@ -266,10 +266,16 @@ export function useXiangyang({ actions, battle }: {
     })
   }
 
-  /** 本地收功：与联机一样顺带领已论功的封赏 */
-  function claimLocalXiangyang(now: number) {
+  /** 本地收功：与联机一样顺带领已论功的封赏；另报 since 之后值守镜像代打的次数与战功，供江湖邸报 */
+  function claimLocalXiangyang(now: number, since: number) {
     resolveLocalPost(now)
-    for (const award of localAwards(now)) announceAward(grantLocalAward(award))
+    const awards = localAwards(now).map((award) => {
+      const { warId, skillId, reward } = grantLocalAward(award)
+      announceAward({ skillId, reward })
+      return { warId, skillId, reward }
+    })
+    const auto = Object.values(localXiangyang.value).flatMap(({ sorties }) => sorties.filter((sortie) => sortie.auto && sortie.at > since && sortie.at <= now))
+    return { awards, ...(auto.length ? { xiangyang: { sorties: auto.length, merit: auto.reduce((sum, { merit }) => sum + merit, 0) } } : {}) }
   }
 
   return {

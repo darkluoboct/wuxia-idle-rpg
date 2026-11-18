@@ -36,12 +36,12 @@ import {
   xiangyangDrumMerit, xiangyangFullOrders, xiangyangMerit, xiangyangNextAuto, xiangyangNextOrderAt, xiangyangOrdersAt, xiangyangReward, xiangyangSpendOrder,
   xiangyangWar, xiangyangWarOf, xiangyangWave, xiangyangWaveNeed, xiangyangWavesCleared, type XiangyangGateState, type XiangyangOrders, type XiangyangWar,
 } from '../../shared/xiangyang.ts'
-import { defenseMirror as freezeMirror, mirrorFighter, type DefenseMirror } from '../../shared/mirror.ts'
+import { defenseMirror as freezeMirror, mirrorFighter, RAID_LEND, raidLendQi, type DefenseMirror } from '../../shared/mirror.ts'
 import { gainReunionClues, newReunion, reunionCluesToday, reunionEncounter, reunionWaitTime, REUNION_INQUIRE_COST, REUNION_QUESTS, REUNION_WAIT_HOURS, type ClueSource, type ReunionQuestConfig } from '../../shared/reunion.ts'
 import type {
   ArtifactBoardDTO, ArtifactResult, AuctionBoardDTO, AuctionLotDTO, AuctionResult, AwakenResult, BattleReportDTO, BountyBoardDTO, BountyEntryDTO, ChapterOneStatueDTO, CoCultivationDTO, CoCultivationInviteDTO, CompanionState, CompanionWear, CultivationResult, DuelInviteDTO, FeastResult, ForgeInput, ForgeResult, FtueClaimResult, GachaResult, GameAction, HuashanBoardDTO, HuashanEntryDTO, HuashanResult, IdleGain, InnGiftResult, LibraryResult, LibraryStatusDTO, LoadoutPresetDTO, MapMoveResult, PersonalEquipSlot, PlayerDTO, PlayerSnapshot, StallBoardDTO, StallListingDTO, StallResult,
   MirrorRankEntryDTO, ReunionResult, RichSegment, SectChiefDTO, SectContestBoardDTO, SectContestResult, SectResult, SkillSlotType, SkillUpgradeResult, StoryAdventureResult, StoryChallengeResult, StorySnakeChoiceResult, TrialChallengeResult, TrialDropDTO, TrialPatrolStatusDTO, TrialReplayResult,
-  RaidId, RaidMirrorBoardDTO, RoomPlayerDTO, WsServerEvent, XiangyangAwardDTO, XiangyangBoardDTO, XiangyangGateDTO, XiangyangGateId, XiangyangResult,
+  AwayReportDTO, RaidId, RaidMirrorBoardDTO, RoomPlayerDTO, WsServerEvent, XiangyangAwardDTO, XiangyangBoardDTO, XiangyangGateDTO, XiangyangGateId, XiangyangResult,
 } from '../../shared/protocol.ts'
 import { requireSession } from './auth.ts'
 import { serverTime, transaction } from './db.ts'
@@ -672,7 +672,7 @@ const dividendPaysAt = (row: Pick<AuctionRow, 'day' | 'closes_at'>) => Math.max(
 async function settleAuctionDividends(client: PoolClient, character: Character, now: number) {
   const { player } = character
   const due = (player.auctionTickets ?? []).filter((day) => now >= auctionDividendAt(day))
-  if (!due.length) return
+  if (!due.length) return []
   const { rows } = await client.query<AuctionRow>('SELECT * FROM ghost_auctions WHERE day = ANY($1::integer[])', [due])
   const lots = new Map<number, AuctionTicketLot>()
   for (const row of rows) {
@@ -681,10 +681,10 @@ async function settleAuctionDividends(client: PoolClient, character: Character, 
     lots.set(row.day, { price: row.price, bids: row.bids, closesAt, ...tickets })
   }
   const before = player.auctionTickets!.length
-  for (const { day, ingot } of settleAuctionTickets(player, now, (day) => lots.get(day))) {
-    logIngot(character, ingot, 'auction-dividend', `auction-dividend:${day}`)
-  }
+  const settled = settleAuctionTickets(player, now, (day) => lots.get(day))
+  for (const { day, ingot } of settled) logIngot(character, ingot, 'auction-dividend', `auction-dividend:${day}`)
   if (player.auctionTickets!.length !== before) character.dirty = true
+  return settled
 }
 
 async function flushIngots(client: PoolClient, character: Character, now: number) {
@@ -910,6 +910,9 @@ function checkedLoadout(character: Character, idx: LoadoutPresetDTO['presetIdx']
   }
   return checked
 }
+
+/** 给不在线的侠客留帖共修：一天内有效 */
+const CO_CULTIVATION_NOTE_MS = 24 * 3_600_000
 
 const NO_IDLE_GAIN: IdleGain = { gainedQi: 0, gainedSilver: 0 }
 
@@ -1360,6 +1363,34 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
         due_at = EXCLUDED.due_at, due_war = EXCLUDED.due_war`, [character.player.id, gate, defenseMirror(character), now, due.at, due.warId])
   }
 
+  /** 江湖邸报（docs/21）：上次收功以来、你不在场时发生的事；助战真气与红封在这里到账 */
+  async function awayReport(client: PoolClient, character: Character, now: number): Promise<AwayReportDTO> {
+    const { player } = character
+    const since = player.lastReportAt ?? player.lastSettleAt
+    player.lastReportAt = now
+    character.dirty = true
+    await sweepXiangyangIfDue(client, now)
+    const window = [player.id, since, now]
+    const { rows: [xiangyang] } = await client.query<{ sorties: number; merit: number }>(`
+      SELECT count(*)::int AS sorties, COALESCE(sum(merit), 0)::int AS merit FROM xiangyang_sorties
+      WHERE player_id = $1 AND auto AND created_at > $2 AND created_at <= $3`, window)
+    const { rows: [sales] } = await client.query<{ count: number; silver: number }>(`
+      SELECT COALESCE(sum(qty), 0)::int AS count, COALESCE(sum(qty * unit_price - tax), 0)::int AS silver FROM stall_sales
+      WHERE seller_id = $1 AND created_at > $2 AND created_at <= $3`, window)
+    const { rows: [lent] } = await client.query<{ lends: number; lend_qi: string }>(`
+      WITH old AS (SELECT lends, lend_qi FROM raid_mirrors WHERE player_id = $1 AND lends > 0 FOR UPDATE)
+      UPDATE raid_mirrors m SET lends = 0, lend_qi = 0 FROM old WHERE m.player_id = $1 RETURNING old.lends, old.lend_qi`, [player.id])
+    if (lent) player.qiExp += Number(lent.lend_qi)
+    const dividends = await settleAuctionDividends(client, character, now)
+    return {
+      since,
+      ...(xiangyang.sorties ? { xiangyang } : {}),
+      ...(sales.count ? { stallSales: sales } : {}),
+      ...(dividends.length ? { dividends } : {}),
+      ...(lent ? { raidLends: { count: lent.lends, qiExp: Number(lent.lend_qi) } } : {}),
+    }
+  }
+
   /** 收功时顺带领已论功的襄阳封赏 */
   async function claimXiangyangAwards(client: PoolClient, character: Character, now: number) {
     const { rowCount } = await client.query('SELECT 1 FROM xiangyang_entries WHERE player_id = $1 AND NOT claimed AND war_id < $2 LIMIT 1',
@@ -1471,6 +1502,7 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
     if (feastIngredient) changed = true
     const contestIngot = await claimSectContestIngots(client, character, now)
     const xiangyang = await claimXiangyangAwards(client, character, now)
+    const away = await awayReport(client, character, now)
     const { defenseNotices } = character.player
     if (defenseNotices?.length) {
       delete character.player.defenseNotices
@@ -1492,6 +1524,7 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
         ...gain, drops: character.patrolDrops, forgeMaterials: character.patrolForgeMaterials, patrolCache: character.patrolCache, reunionClues,
         ...(feastIngredient ? { feastIngredient } : {}), ...(contestIngot ? { contestIngot } : {}), ...(xiangyang.length ? { xiangyang } : {}),
         ...(defenseNotices?.length ? { defenseNotices } : {}),
+        away,
       },
       changed,
     }
@@ -2559,12 +2592,13 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
     })
   })
 
+  /** 共修：两人停在同一张和平地图（按存档里的所在地，不必在线），都没在共修（docs/21） */
   function requireCoCultivationPartners(character: Character, partner: Character, mapId: string, now: number) {
     if (ONLINE_MAPS.find((map) => map.id === mapId)?.safety !== 'PEACE') {
       throw new GameError(409, 'CO_CULTIVATION_PEACE_ONLY', '到和平地图才能一起修行')
     }
-    if ([character, partner].some(({ player }) => player.currentMapId !== mapId || !rooms.isOnlineInMap(player.id, mapId))) {
-      throw new GameError(409, 'PARTNER_UNAVAILABLE', '两位侠客都在线、也在同一处，才能一起修行')
+    if ([character, partner].some(({ player }) => player.currentMapId !== mapId || player.mapJourney)) {
+      throw new GameError(409, 'PARTNER_UNAVAILABLE', '两位侠客要停在同一处，才能一起修行')
     }
     if (activePair(character, now) || activePair(partner, now)) {
       throw new GameError(409, 'CO_CULTIVATION_ACTIVE', '已有侠客正在共修，请先结束这一场')
@@ -2591,8 +2625,9 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
         throw new GameError(409, 'CO_CULTIVATION_INVITE_PENDING', '已有共修邀请在等答复')
       }
 
+      // 对方在线：一分钟内答复；不在线就是留帖，一天内上线、仍在此地即可应邀
       const invitation: CoCultivationInviteDTO = {
-        id: randomUUID(), mapId, expiresAt: now + 60_000,
+        id: randomUUID(), mapId, expiresAt: now + (rooms.isOnlineInMap(partner.player.id, mapId) ? 60_000 : CO_CULTIVATION_NOTE_MS),
         inviter: { id: character.player.id, nickname: character.player.nickname },
         invitee: { id: partner.player.id, nickname: partner.player.nickname },
       }
@@ -2611,11 +2646,16 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
       return endCoCultivation(character, pair, now, client, readRelated)
     }
 
-    if (input.action !== 'accept' && input.action !== 'decline') {
+    if (input.action !== 'accept' && input.action !== 'decline' && input.action !== 'cancel') {
       throw new GameError(400, 'INVALID_CO_CULTIVATION_ACTION', '共修操作有误')
     }
     const invitation = pendingInvite(character, now)
     if (!invitation || invitation.id !== input.invitationId) throw new GameError(409, 'CO_CULTIVATION_INVITE_EXPIRED', '这封共修邀请已经失效')
+    if (input.action === 'cancel') {
+      if (invitation.inviter.id !== character.player.id) throw new GameError(403, 'CO_CULTIVATION_INVITE_NOT_YOURS', '只有发帖的人能撤回')
+      const partner = await removeInvitation(character, invitation, client, readRelated)
+      return { result: NO_IDLE_GAIN, changed: true, related: [partner] }
+    }
     if (invitation.invitee.id !== character.player.id) throw new GameError(403, 'CO_CULTIVATION_INVITE_NOT_YOURS', '请等对方答复')
     if (input.action === 'decline') {
       const partner = await removeInvitation(character, invitation, client, readRelated)
@@ -2635,20 +2675,24 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
     return { result, changed: true, related: [partner] }
   }))
 
-  /** 停在本图却不在线、可以劫镖或追捕的侠客：押着镖车，或身负通缉。对他们出手由镜像应战（docs/21） */
+  /**
+   * 停在本图却不在线的侠客（docs/21）：纷争区列押着镖车或身负通缉的，出手由镜像应战；
+   * 和平地图列所有停在这里的（最近上线的在前），可以给他们留帖共修，也可追捕被通缉的。
+   */
   app.get('/api/v1/map/absent', async (request): Promise<RoomPlayerDTO[]> => {
     const { accountId } = await requireSession(request)
     return transaction(async (client) => {
       const { player } = await readCharacter(client, accountId)
       const now = await serverTime(client)
       const mapId = player.currentMapId
-      // ponytail: 单服内测每图最多列二十位，人多了再分页
+      const peace = ONLINE_MAPS.find((map) => map.id === mapId)?.safety === 'PEACE'
+      // ponytail: 单服内测每图最多列二十位（最近上线的在前），人多了再分页
       const { rows } = await client.query<CharacterRow>(`
-        SELECT * FROM players WHERE id <> $1 AND profile->>'currentMapId' = $2 AND NOT (profile ? 'mapJourney') AND (
-          (profile->'escortDart'->>'mapId' = $2 AND (profile->'escortDart'->>'endsAt')::bigint > $3
+        SELECT * FROM players WHERE id <> $1 AND profile->>'currentMapId' = $2 AND NOT (profile ? 'mapJourney') AND ($4
+          OR (profile->'escortDart'->>'mapId' = $2 AND (profile->'escortDart'->>'endsAt')::bigint > $3
             AND NOT COALESCE((profile->'escortDart'->>'robbed')::boolean, false))
           OR (profile->>'bountyUntil')::bigint > $3)
-        ORDER BY id LIMIT 20`, [player.id, mapId, now])
+        ORDER BY last_settle_at DESC, id LIMIT 20`, [player.id, mapId, now, peace])
       const absent = []
       for (const row of rows) {
         if (rooms.isOnlineInMap(row.id, mapId)) continue
@@ -2871,7 +2915,7 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
     const { rows } = await client.query<{ player_id: string; mirror: DefenseMirror }>(
       'SELECT player_id, mirror FROM raid_mirrors WHERE player_id = ANY($1::uuid[])', [picked])
     if (rows.length !== 2) throw new GameError(409, 'RAID_MIRROR_MISSING', '有一位侠客的结义镜像已不在，请重新挑选')
-    return picked.map((id) => rows.find((row) => row.player_id === id)!.mirror)
+    return picked.map((id) => ({ id, mirror: rows.find((row) => row.player_id === id)!.mirror }))
   }
 
   app.get('/api/v1/raid/mirrors', async (request): Promise<RaidMirrorBoardDTO> => {
@@ -2920,12 +2964,15 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
         let raidId: RaidId
         let party: Character[]
         let lineup: Parameters<typeof simulateCoopRaid>[2]
+        let lenders: string[] = []
         if (borrowing) {
           // 独自带两位侠客的结义镜像：奖励只发给自己，不必与谁同图
           if (typeof wanted !== 'string' || !Object.hasOwn(COOP_RAIDS, wanted)) throw new GameError(400, 'INVALID_RAID', '请选择有效的三人副本')
           if (raid.inTeam(leader.player.id)) throw new GameError(409, 'RAID_IN_TEAM', '已在队伍里：先离开队伍，再借镜像同闯')
           raidId = wanted as RaidId
-          const [first, second] = (await borrowedMirrors(client, leader.player.id, mirrorIds)).map(mirrorFighter)
+          const borrowed = await borrowedMirrors(client, leader.player.id, mirrorIds)
+          const [first, second] = borrowed.map(({ mirror }) => mirrorFighter(mirror))
+          lenders = borrowed.map(({ id }) => id)
           party = [leader]
           lineup = [fighter(leader), first, second]
         } else {
@@ -2944,6 +2991,15 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
         const clears = config.clearField
         const battle = simulateCoopRaid(raidId, randomUUID(), lineup, undefined, battleEnvironmentAt(config.mapId, new Date(now)))
         const won = battle.winner === 'ALLY'
+        if (won) {
+          // 镜像主人记助战真气，每天最多三次，下次收功时到账
+          const day = innVisitDay(now)
+          for (const id of lenders) {
+            await client.query(`UPDATE raid_mirrors SET lend_day = $2, lends_today = CASE WHEN lend_day = $2 THEN lends_today + 1 ELSE 1 END,
+              lends = lends + 1, lend_qi = lend_qi + $3 WHERE player_id = $1 AND (lend_day <> $2 OR lends_today < $4)`,
+            [id, day, raidLendQi(config.rewardQi), RAID_LEND.dailyCap])
+          }
+        }
         const lootRecipients = new Set<string>()
         for (const member of party) {
           const { player } = member

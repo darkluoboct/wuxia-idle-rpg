@@ -357,6 +357,13 @@ export function useWorld({ battle, actions, selectTab, cultivation, companions }
     })
   }
 
+  /** 撤回自己发出的共修邀请（留帖一天内有效，等不及可以撤回再邀别人） */
+  function cancelCoCultivationInvite() {
+    const invitation = coCultivationInvite.value
+    if (!invitation || invitation.inviter.id !== player.value.id) return
+    return actions.run('coCultivate', { action: 'cancel', invitationId: invitation.id }, () => showToast('已撤回共修邀请'))
+  }
+
   function endCoCultivation() {
     const pair = activeCoCultivation.value
     if (!pair) return
@@ -370,7 +377,9 @@ export function useWorld({ battle, actions, selectTab, cultivation, companions }
     if (action === 'CO_CULT') {
       return actions.run('coCultivate', {
         action: 'invite', targetPlayerId: target.id,
-      }, () => showToast(`已邀「${target.nickname}」一起修行`, 'gold'), () => {
+      }, () => showToast(target.offline
+        ? `已给「${target.nickname}」留帖：对方一天内上线、仍在此地就能应邀`
+        : `已邀「${target.nickname}」一起修行`, 'gold'), () => {
         player.value.coCultivatePartner = target.nickname
         appendLog('JIANGHU', [
           { type: 'tag', text: '双人共修', tone: 'jade' },
@@ -592,6 +601,7 @@ export function useWorld({ battle, actions, selectTab, cultivation, companions }
     libraryAction,
     readLibraryReport,
     replyCoCultivation,
+    cancelCoCultivationInvite,
     endCoCultivation,
     sendChatMessage,
     clearRoom,

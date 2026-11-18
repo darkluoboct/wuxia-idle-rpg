@@ -55,7 +55,7 @@ type SectAction =
 
 type CoCultivationAction =
   | { action: 'invite'; targetPlayerId: string }
-  | { action: 'accept' | 'decline'; invitationId: string }
+  | { action: 'accept' | 'decline' | 'cancel'; invitationId: string }
   | { action: 'end'; coCultivationId: string }
 
 type DuelAction =

@@ -3,6 +3,10 @@ import { ACUPOINTS, MEDICINES, getMapHerbs, COMPANIONS } from '@/config/gameData
 import { gaibangSilverGain } from '../../../shared/gaibang.ts'
 import { cultivatePlayer, cultivationRate, cultivationRates, idleQiNumerator, karmaAfterEvent } from '../../../shared/player.ts'
 import { IDLE_CAP_MS } from '../../../shared/trialStages.ts'
+
+/** 离开超过一个时辰（两小时）才弹江湖邸报；不在场时有事发生则随时弹 */
+const AWAY_REPORT_MS = 2 * 3_600_000
+import { shallowRef, watch } from 'vue'
 import { usePlayerStore } from './playerStore'
 import { storeToRefs } from 'pinia'
 import type { GameActions } from '@/network/gameActions'
@@ -18,10 +22,10 @@ export function useCultivation({
   logTrialDrop: (drop: TrialDropDTO) => void
   logForgeMaterials: (count: number) => void
   logPatrolCache: (reward: NonNullable<IdleGain['patrolCache']>) => void
-  mockSettlePatrol: (now?: number) => void
+  mockSettlePatrol: (now?: number) => Pick<IdleGain, 'drops' | 'forgeMaterials' | 'patrolCache'>
   /** 收功顺带领到的襄阳封赏 */
   announceXiangyangAward: (award: NonNullable<IdleGain['xiangyang']>[number]) => void
-  claimLocalXiangyang: (now: number) => void
+  claimLocalXiangyang: (now: number, since: number) => { awards: NonNullable<IdleGain['xiangyang']>; xiangyang?: NonNullable<IdleGain['away']>['xiangyang'] }
   companions: Pick<ReturnType<typeof useCompanions>, 'onOfflineSettled' | 'logFeastIngredient'>
 }) {
   const playerStore = usePlayerStore()
@@ -35,6 +39,7 @@ export function useCultivation({
     currentLoadout,
     currentRealm,
     pillInventory,
+    worldTime,
   } = storeToRefs(playerStore)
   const uiStore = useGameUiStore()
   const { showToast, appendLog } = uiStore
@@ -74,6 +79,21 @@ export function useCultivation({
     ])
   }
 
+  /** 江湖邸报（docs/21）：离开超过一个时辰，或不在场时有事发生，收功后弹出汇总 */
+  const awayReport = shallowRef<{ gain: IdleGain; at: number } | null>(null)
+  function openAwayReport(gain: IdleGain, now: number) {
+    const { away } = gain
+    if (!away) return
+    const happened = !!(away.xiangyang || away.stallSales || away.dividends?.length || away.raidLends ||
+      gain.defenseNotices?.length || gain.xiangyang?.length || gain.contestIngot)
+    if (happened || now - away.since >= AWAY_REPORT_MS) awayReport.value = { gain, at: now }
+  }
+  function closeAwayReport() {
+    awayReport.value = null
+  }
+  // 换了角色或存档，上一位的邸报不再弹
+  watch(() => player.value.id, closeAwayReport)
+
   // 1. 惰性离线挂机收益结算（对应后端 POST /api/v1/cultivate/settle）
   function settleOfflineQi() {
     return actions.run('settle', undefined, (result) => {
@@ -94,12 +114,21 @@ export function useCultivation({
       }
       for (const award of result.xiangyang ?? []) announceXiangyangAward(award)
       for (const notice of result.defenseNotices ?? []) logDefenseNotice(notice)
+      const lends = result.away?.raidLends
+      if (lends) {
+        appendLog('JIANGHU', [{ type: 'tag', text: '结义助战', tone: 'jade' },
+          { type: 'text', text: ` 你的结义镜像随人破阵 ${lends.count} 次，助战真气 +${lends.qiExp.toLocaleString()}。` }])
+      }
+      openAwayReport(result, worldTime.value)
     }, () => {
       const now = Date.now()
-      settleMockIdle(now, true)
-      mockSettlePatrol(now)
-      claimLocalXiangyang(now)
+      const since = player.value.lastReportAt ?? player.value.lastSettleAt
+      player.value.lastReportAt = now
+      const idle = settleMockIdle(now, true)
+      const patrol = mockSettlePatrol(now)
+      const { awards, xiangyang } = claimLocalXiangyang(now, since)
       markDaily('settle')
+      openAwayReport({ ...idle, ...patrol, ...(awards.length ? { xiangyang: awards } : {}), away: { since, ...(xiangyang ? { xiangyang } : {}) } }, now)
     })
   }
 
@@ -127,6 +156,7 @@ export function useCultivation({
       }
     }
     if (gainedQi || gainedSilver || gainedHerbList.length) showIdleGain({ gainedQi, gainedSilver }, gainedHerbList)
+    return { gainedQi, gainedSilver }
   }
 
   function settleMockBeforeLoadoutChange(next: LoadoutPresetDTO) {
@@ -220,6 +250,8 @@ export function useCultivation({
     showIdleGain,
     settleMockBeforeLoadoutChange,
     settleOfflineQi,
+    awayReport,
+    closeAwayReport,
     pierceAcupoint,
     useAcupointPill,
     getIdleRewards,

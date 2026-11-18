@@ -135,6 +135,7 @@ const coCultivationTimeLeft = computed(() => {
           <button class="btn btn-sm btn-gold" :disabled="store.onlineActionBusy || !store.roomConnected" @click="store.replyCoCultivation(true)">同意共修</button>
           <button class="btn btn-sm" :disabled="store.onlineActionBusy" @click="store.replyCoCultivation(false)">婉拒</button>
         </div>
+        <button v-else class="btn btn-sm" :disabled="store.onlineActionBusy" @click="store.cancelCoCultivationInvite()">撤回邀请</button>
       </template>
     </section>
 
@@ -335,8 +336,8 @@ const coCultivationTimeLeft = computed(() => {
             >邀请组队</button>
           </div>
         </li>
-        <template v-if="!IS_MOCK_MODE && store.featureOpen('HUASHAN') && store.absentPlayers.length">
-          <li class="pt-1 text-xs text-ink3">不在线、停在本图：出手由对方的镜像应战</li>
+        <template v-if="!IS_MOCK_MODE && (store.featureOpen('HUASHAN') || store.featureOpen('MAPS')) && store.absentPlayers.length">
+          <li class="pt-1 text-xs text-ink3">{{ store.currentMap.safety === 'PEACE' ? '不在线、停在本图：可以留帖邀他共修' : '不在线、停在本图：出手由对方的镜像应战' }}</li>
           <li v-for="pl in store.absentPlayers" :key="`absent-${pl.id}`" class="well space-y-2 p-2.5">
             <div class="flex items-start gap-2.5">
               <span class="seal h-9 w-9 text-xl opacity-70">{{ pl.nickname.replace(/^[^一-龥]*·?/, '').slice(0, 1) || pl.nickname.slice(0, 1) }}</span>
@@ -354,11 +355,18 @@ const coCultivationTimeLeft = computed(() => {
                 <div class="font-bold text-gold">{{ pl.combatPower.toLocaleString() }}</div>
               </div>
             </div>
-            <button
-              v-if="(store.currentMap.safety === 'CONTESTED' && pl.isEscortingDart) || pl.isBetrayerBounty"
-              class="btn btn-sm btn-danger w-full" :disabled="store.onlineActionBusy || !store.roomConnected || store.isBattlePlaying"
-              @click="store.interactNearbyPlayer(pl, 'AMBUSH')"
-            >{{ pl.isBetrayerBounty ? '追捕' : '劫镖' }}</button>
+            <div class="flex gap-1.5">
+              <button
+                v-if="store.currentMap.safety === 'PEACE' && store.featureOpen('MAPS')" class="btn btn-sm flex-1" :aria-label="`给${pl.nickname}留帖共修`"
+                :disabled="store.onlineActionBusy || !store.roomConnected || !!store.activeCoCultivation || !!store.coCultivationInvite"
+                @click="store.interactNearbyPlayer(pl, 'CO_CULT')"
+              >留帖共修</button>
+              <button
+                v-if="(store.currentMap.safety === 'CONTESTED' && pl.isEscortingDart) || pl.isBetrayerBounty"
+                class="btn btn-sm btn-danger flex-1" :disabled="store.onlineActionBusy || !store.roomConnected || store.isBattlePlaying"
+                @click="store.interactNearbyPlayer(pl, 'AMBUSH')"
+              >{{ pl.isBetrayerBounty ? '追捕' : '劫镖' }}</button>
+            </div>
           </li>
         </template>
       </ul>
