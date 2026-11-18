@@ -208,6 +208,26 @@
 }
 .wuxia-mobile-nav svg { width: 1.23rem; height: 1.23rem; }
 
+/* ==================== 江湖地图弹窗 ==================== */
+.map-dialog { display: grid; gap: .85rem; width: min(100%, 34rem); max-height: 90vh; overflow-y: auto; padding: 1.1rem 1.2rem 1rem; }
+.map-dialog-heading { margin-bottom: .45rem; color: var(--ink-3); font-size: .78rem; letter-spacing: .12em; }
+.map-spot {
+  position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .05rem;
+  min-width: 0; min-height: 5.1rem; padding: .45rem .35rem; border: 1px solid var(--line); border-radius: 3px;
+  background: var(--bg-1); text-align: center;
+}
+.map-spot b { max-width: 100%; overflow: hidden; font-size: .95rem; text-overflow: ellipsis; white-space: nowrap; }
+.map-spot small { color: var(--ink-3); font-size: .72rem; font-variant-numeric: tabular-nums; }
+/* 罗盘虚线在格子底下，高亮也要盖得住 */
+.map-spot:hover:not(:disabled) { border-color: var(--gold); background: linear-gradient(var(--gold-soft), var(--gold-soft)), var(--bg-1); }
+.map-spot.is-here { border-color: var(--gold); background: linear-gradient(var(--gold-soft), var(--gold-soft)), var(--bg-1); cursor: default; }
+.map-spot.is-here b { color: var(--gold); }
+.map-spot.is-locked { opacity: .55; cursor: not-allowed; }
+.map-spot:disabled:not(.is-here):not(.is-locked) { opacity: .7; cursor: wait; }
+.map-spot-dir { position: absolute; left: .35rem; top: .2rem; color: var(--ink-3); font-size: .68rem; }
+.map-spot-war { position: absolute; right: .35rem; top: .2rem; color: var(--cinnabar); font-size: .7rem; font-weight: 700; }
+.map-town { align-items: flex-start; min-height: 4.2rem; padding-inline: .7rem; text-align: left; }
+
 /* ==================== 江湖传音（docs/23） ==================== */
 .character-frame { display: flex; flex-direction: column; }
 .character-frame > .character-sheet { flex: 0 1 auto; height: auto; min-height: 0; }
@@ -365,7 +385,7 @@ details[open] > summary .quest-arrow { transform: rotate(90deg); }
 .rail-heading:focus-visible,
 .quest-row:focus-visible,
 .rail-tabs button:focus-visible,
-.map-plaque select:focus-visible { outline-offset: -3px; }
+.map-plaque > button:focus-visible { outline-offset: -3px; }
 summary { list-style: none; cursor: pointer; }
 summary::-webkit-details-marker { display: none; }
 
@@ -741,9 +761,9 @@ summary.quest-row:hover { background-color: var(--gold-faint); }
   background: linear-gradient(110deg, var(--frame-edge), var(--frame-light) 45%, var(--frame-edge));
   clip-path: polygon(0 50%, .93rem 0, calc(100% - .93rem) 0, 100% 50%, calc(100% - .93rem) 100%, .93rem 100%);
 }
-.map-plaque select {
+.map-plaque > button {
   display: block;
-  appearance: none;
+  overflow: hidden;
   max-width: 100%;
   min-height: 2.42rem;
   padding: .15rem 2.35rem .15rem 1.4rem;
@@ -760,8 +780,8 @@ summary.quest-row:hover { background-color: var(--gold-faint); }
   line-height: 1.25;
   cursor: pointer;
 }
-.map-plaque select:hover { color: var(--frame-light); }
-.map-plaque select option { color: var(--scene-ink); background: var(--scene-night); }
+.map-plaque > button:hover:not(:disabled) { color: var(--frame-light); }
+.map-plaque > button:disabled { cursor: not-allowed; opacity: .7; }
 .map-plaque > svg {
   position: absolute;
   pointer-events: none;
@@ -1037,7 +1057,7 @@ summary.quest-row:hover { background-color: var(--gold-faint); }
 @media (max-width: 767px) {
   .scenic-stage { gap: 9rem; padding-top: 1.05rem; }
   .map-picker > button { width: 1.95rem; }
-  .map-plaque select { padding-left: 1.2rem; }
+  .map-plaque > button { padding-left: 1.2rem; }
   .scenic-banner { top: 6rem; }
 }
 @media (max-width: 540px) {

@@ -19,6 +19,7 @@ const PrologueStage = defineAsyncComponent(() => import('@/components/PrologueSt
 const FeatureStoryCard = defineAsyncComponent(() => import('@/components/FeatureStoryCard.vue'))
 const AwayReport = defineAsyncComponent(() => import('@/components/AwayReport.vue'))
 const Mailbox = defineAsyncComponent(() => import('@/components/Mailbox.vue'))
+const MapPicker = defineAsyncComponent(() => import('@/components/MapPicker.vue'))
 const CultivateView = defineAsyncComponent(() => import('@/views/CultivateView.vue'))
 const JianghuView = defineAsyncComponent(() => import('@/views/JianghuView.vue'))
 const ArsenalView = defineAsyncComponent(() => import('@/views/ArsenalView.vue'))
@@ -311,6 +312,7 @@ const TOAST_GLYPH = { gold: '喜', danger: '警', info: '讯' } as const
     <FeatureStoryCard v-else-if="featureCardOpen" />
     <AwayReport v-else-if="awayReportOpen" />
     <Mailbox v-else-if="store.mailboxOpen && inJianghu && !store.activeBattle" />
+    <MapPicker v-else-if="store.mapPickerOpen && inJianghu && !store.activeBattle" />
 
     <!-- ==================== 开局选择 ==================== -->
     <div

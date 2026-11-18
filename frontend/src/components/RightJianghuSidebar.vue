@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { ChevronRight, Circle, CircleCheck, Diamond, Store, Swords } from 'lucide-vue-next'
 import { useGameStore } from '@/stores/gameStore'
-import { COOP_RAIDS, MAPS, ONLINE_STORY_CHAPTERS, STORY_CHAPTERS } from '@/config/gameData'
+import { COOP_RAIDS, ONLINE_STORY_CHAPTERS, STORY_CHAPTERS } from '@/config/gameData'
 import { IS_MOCK_MODE } from '@/network/apiClient'
 import RichLogStream from './RichLogStream.vue'
 import { featureRequirementText } from '../../../shared/features.ts'
@@ -31,27 +31,6 @@ const news = computed(() => {
   return [...groups]
 })
 
-
-type Dir = '北' | '西' | '东' | '南' | '西北' | '东北' | '东南'
-const COMPASS: { id: string; dir: Dir; cls: string }[] = [
-  { id: 'zhongnan_forest', dir: '北', cls: 'col-start-2 row-start-1' },
-  { id: 'damo_caravan', dir: '西', cls: 'col-start-1 row-start-2' },
-  { id: 'jiaxing_suburb', dir: '东', cls: 'col-start-3 row-start-2' },
-  { id: 'heizhao_swamp', dir: '南', cls: 'col-start-2 row-start-3' },
-  { id: 'huashan_peak', dir: '西北', cls: 'col-start-1 row-start-1' },
-  { id: 'guiyun_lake', dir: '东北', cls: 'col-start-3 row-start-1' },
-  { id: 'taohua_isle', dir: '东南', cls: 'col-start-3 row-start-3' },
-]
-const nodes = computed(() =>
-  COMPASS.map((c) => {
-    const map = MAPS.find((m) => m.id === c.id)!
-    return { ...c, map, locked: !store.canTravelTo(map) }
-  }).filter(({ map }) => IS_MOCK_MODE || map.reqCleared === undefined || map.onlineReqCleared !== undefined)
-)
-const SHORT: Record<string, string> = {
-  zhongnan_forest: '终南后山', damo_caravan: '大漠商道', jiaxing_suburb: '嘉兴烟雨', heizhao_swamp: '湘西黑沼',
-  huashan_peak: '华山绝顶', guiyun_lake: '太湖归云', taohua_isle: '桃花岛',
-}
 
 watch(() => store.activeBattle?.battleId, (id) => { if (id) pane.value = 'TASKS' })
 
@@ -196,48 +175,21 @@ const coCultivationTimeLeft = computed(() => {
     </div>
 
     <div v-else class="world-social flex min-h-0 flex-1 flex-col gap-3">
-      <!-- 九州驿路 -->
+      <!-- 江湖地图：一行概要，点「换地图」弹出选择 -->
       <p v-if="!store.featureOpen('MAPS')" class="hint shrink-0">江湖地图：{{ mapsHint }}</p>
-      <div v-else class="shrink-0">
-        <div class="sec-title mb-2 text-base">
-          江湖地图
-          <span class="chip" :class="store.currentMap.safety === 'PEACE' ? 'chip-jade' : 'chip-red'">
-            {{ store.currentMap.safety === 'PEACE' ? '和平区' : IS_MOCK_MODE ? '可劫镖' : '纷争区' }}
-          </span>
-          <span v-if="!IS_MOCK_MODE && store.roomConnected" class="ml-auto text-xs text-ink3">{{ store.roomCount }} 人在这里</span>
-        </div>
-
-        <div class="relative grid grid-cols-3 grid-rows-3 gap-1.5">
-          <!-- 十字连线 + 罗盘环 -->
-          <svg viewBox="0 0 3 3" preserveAspectRatio="none" class="pointer-events-none absolute inset-0 h-full w-full">
-            <path d="M1.5,0.45 V2.55 M0.45,1.5 H2.55" stroke="var(--gold)" stroke-opacity="0.45" stroke-width="0.014" stroke-dasharray="0.04 0.05" fill="none" />
-          </svg>
-
-          <button
-            v-for="n in nodes" :key="n.id"
-            class="well well-hover relative z-10 flex min-w-0 flex-col items-center justify-center px-1 py-1.5 text-center"
-            :class="[n.cls, store.player.currentMapId === n.id ? '!border-gold bg-[var(--gold-soft)]' : '']"
-            :title="n.locked ? (IS_MOCK_MODE ? n.map.unlockHint : n.map.onlineUnlockHint) : `前往「${n.map.name}」，每小时基础收益 ${n.map.baseQiPerHour.toLocaleString()} 真气${IS_MOCK_MODE ? `，${n.map.onlineCount} 人在线` : ''}`"
-            :disabled="store.onlineActionBusy || !!store.journeyMap"
-            @click="store.currentMap.id !== n.id && store.travelTo(n.id)"
-          >
-            <span class="absolute left-1 top-0.5 text-[0.68rem] leading-none text-ink3">{{ n.dir }}</span>
-            <span v-if="n.map.safety === 'CONTESTED'" class="absolute right-1 top-0.5 text-[0.68rem] leading-none text-cinnabar">争</span>
-            <span class="mt-1 truncate text-sm font-semibold leading-tight" :class="store.player.currentMapId === n.id ? 'text-gold' : ''">{{ SHORT[n.id] }}</span>
-            <span class="text-[0.7rem] tabular-nums leading-tight text-ink3">{{ n.map.baseQiPerHour.toLocaleString() }}/时</span>
-          </button>
-
-          <!-- 中心：当前 -->
-          <div class="relative z-10 col-start-2 row-start-2 flex items-center justify-center">
-            <div class="relative flex h-[3.6rem] w-[3.6rem] items-center justify-center rounded-full border border-gold bg-raised">
-              <svg viewBox="0 0 60 60" class="absolute inset-0 h-full w-full">
-                <circle cx="30" cy="30" r="26" fill="none" stroke="var(--gold)" stroke-width="0.8" stroke-dasharray="1 3" opacity="0.7" />
-                <path d="M30,5 L33,13 L27,13 Z" fill="var(--cinnabar)" />
-              </svg>
-              <span class="font-brush relative text-xs leading-tight text-gold">当前</span>
-            </div>
+      <div v-else class="well flex shrink-0 items-center gap-2 px-2.5 py-2">
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center gap-1.5">
+            <b class="truncate text-sm">{{ store.currentMap.name }}</b>
+            <span class="chip !py-0 !text-[0.68rem]" :class="store.currentMap.safety === 'PEACE' ? 'chip-jade' : 'chip-red'">
+              {{ store.currentMap.safety === 'PEACE' ? '和平区' : IS_MOCK_MODE ? '可劫镖' : '纷争区' }}
+            </span>
+          </div>
+          <div class="truncate text-xs tabular-nums text-ink3">
+            {{ store.currentMap.baseQiPerHour.toLocaleString() }} 真气/时<template v-if="!IS_MOCK_MODE && store.roomConnected"> · {{ store.roomCount }} 人在这里</template>
           </div>
         </div>
+        <button class="btn btn-sm btn-gold shrink-0" aria-haspopup="dialog" :disabled="!!store.journeyMap" @click="store.mapPickerOpen = true">换地图</button>
       </div>
 
       <!-- 同图侠客；聊天在左栏的江湖传音 -->

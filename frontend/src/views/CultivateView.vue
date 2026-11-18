@@ -43,13 +43,6 @@ function stepMap(direction: number) {
   const current = maps.value.findIndex((map) => map.id === store.currentMap.id)
   store.travelTo(maps.value[(current + direction + maps.value.length) % maps.value.length].id)
 }
-
-function selectMap(event: Event) {
-  const select = event.target as HTMLSelectElement
-  const mapId = select.value
-  select.value = store.currentMap.id
-  store.travelTo(mapId)
-}
 </script>
 
 <template>
@@ -63,12 +56,10 @@ function selectMap(event: Event) {
       <div class="map-picker">
         <button aria-label="上一张地图" :disabled="store.onlineActionBusy || !!store.journeyMap" @click="stepMap(-1)"><ChevronLeft /></button>
         <div class="map-plaque" :title="store.currentMap.ambientDesc">
-          <select
-            class="font-brush" aria-label="选择地图" :value="store.currentMap.id" :disabled="store.onlineActionBusy || !!store.journeyMap"
-            @change="selectMap"
-          >
-            <option v-for="map in maps" :key="map.id" :value="map.id">{{ map.name.replace(/（.*?）/, '') }}</option>
-          </select>
+          <button
+            class="font-brush" aria-label="选择地图" aria-haspopup="dialog" :disabled="store.onlineActionBusy || !!store.journeyMap"
+            @click="store.mapPickerOpen = true"
+          >{{ store.currentMap.name.replace(/（.*?）/, '') }}</button>
           <ChevronDown aria-hidden="true" />
         </div>
         <button aria-label="下一张地图" :disabled="store.onlineActionBusy || !!store.journeyMap" @click="stepMap(1)"><ChevronRight /></button>
