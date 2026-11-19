@@ -448,6 +448,8 @@ export interface GameLogEntry {
   timeLabel: string // 如 "辰时·08:12"
   channel: 'CULTIVATE' | 'ADVENTURE' | 'BATTLE' | 'JIANGHU'
   segments: RichSegment[]
+  /** 战报的第几回合：日志左列显示回合，代替时辰 */
+  round?: number
 }
 
 /** 待抉择江湖奇遇 DTO */

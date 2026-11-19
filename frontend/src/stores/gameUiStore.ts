@@ -100,12 +100,13 @@ export const useGameUiStore = defineStore('wuxiaUi', () => {
     if (accepted && d) d.onConfirm()
   }
 
-  function appendLog(channel: GameLogEntry['channel'], segments: RichSegment[]) {
+  function appendLog(channel: GameLogEntry['channel'], segments: RichSegment[], round?: number) {
     logs.value.unshift({
       id: `log_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       timeLabel: SHICHEN_LABELS[shichenIdx.value],
       channel,
       segments,
+      ...(round === undefined ? {} : { round }),
     })
     if (logs.value.length > 80) logs.value.pop()
   }

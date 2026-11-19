@@ -98,7 +98,7 @@ export function useBattlePlayback({ claimNodeFirstClear, onStoryNodeWon, playPen
       rageTarget.rage = Math.max(0, Math.min(100, rageTarget.rage + event.rageDelta))
     }
     if (actor && event.mpDelta) actor.mp = Math.max(0, Math.min(actor.maxMp, actor.mp + event.mpDelta))
-    appendLog('BATTLE', [{ type: 'tag', text: `第 ${event.round} 回合`, tone: 'red' }, { type: 'text', text: ' ' }, ...event.segments])
+    appendLog('BATTLE', event.segments, event.round)
   }
 
   function stepNextBattleEvent() {

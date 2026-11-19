@@ -690,23 +690,30 @@ summary.quest-row:hover { background-color: var(--gold-faint); }
 .log-tabs { margin-top: .6rem; }
 .log-tabs button { min-height: 1.54rem; font-size: .8rem; }
 .log-entries { min-height: 0; flex: 1; overflow-y: auto; margin-top: .26rem; padding: .12rem .26rem .22rem; }
+/* 日志读得多：字小一号、不加粗，正文用次一级的墨色，只给标签、人名、数值留一点淡色 */
 .log-entry {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: .42rem;
-  padding: .24rem .02rem;
-  font-size: .85rem;
-  line-height: 1.57;
+  grid-template-columns: 2.4rem minmax(0, 1fr);
+  gap: .3rem;
+  padding: .18rem 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 55%, transparent);
+  color: var(--ink-2);
+  font-size: .78rem;
+  line-height: 1.55;
 }
-.log-time,
-.log-empty { color: var(--ink-3); }
-.log-empty { padding: .55rem 0; text-align: center; font-size: .82rem; }
+.log-entry:last-child { border-bottom: 0; }
+.log-entry b { font-weight: 600; }
+.log-time { padding-top: .08rem; color: var(--ink-3); font-size: .68rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.log-empty { color: var(--ink-3); padding: .55rem 0; text-align: center; font-size: .78rem; }
 .log-entry p { overflow-wrap: anywhere; }
-.log-item { font-weight: 700; text-decoration: underline dotted; text-underline-offset: .12rem; }
-.log-tag { color: var(--gold); font-weight: 700; }
-.log-tag[data-tone="jade"] { color: var(--jade); }
-.log-tag[data-tone="red"] { color: var(--cinnabar-text); }
-.log-tag[data-tone="purple"] { color: var(--tier-purple); }
+.log-item { font-weight: 600; text-decoration: underline dotted; text-underline-offset: .12rem; }
+.log-tag { --log-tone: var(--gold); color: color-mix(in srgb, var(--log-tone) 72%, var(--ink-2)); }
+.log-tag[data-tone="jade"] { --log-tone: var(--jade); }
+.log-tag[data-tone="red"] { --log-tone: var(--cinnabar-text); }
+.log-tag[data-tone="purple"] { --log-tone: var(--tier-purple); }
+.log-entry .text-jade { color: color-mix(in srgb, var(--jade) 78%, var(--ink-2)); }
+.log-entry .text-cinnabar { color: color-mix(in srgb, var(--cinnabar-text) 78%, var(--ink-2)); }
+.log-entry .text-gold { color: color-mix(in srgb, var(--gold) 78%, var(--ink-2)); }
 .world-social { margin: .58rem .25rem 0; }
 
 /* 地图、题签与底部修行控制 */

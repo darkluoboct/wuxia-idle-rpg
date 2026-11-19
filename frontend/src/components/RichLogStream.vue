@@ -30,7 +30,8 @@ const DMG_LABEL = { phys: '外功', qi: '内力', true: '真伤', poison: '毒�
     <ol ref="list" class="log-entries">
       <li v-if="!filteredLogs.length" class="log-empty">暂无此类消息。</li>
       <li v-for="entry in filteredLogs" :key="entry.id" class="log-entry">
-        <span class="log-time" :title="entry.timeLabel">[{{ entry.timeLabel.split('·')[0] }}]</span>
+        <span v-if="entry.round" class="log-time" :title="`第 ${entry.round} 回合`">{{ entry.round }}回</span>
+        <span v-else class="log-time" :title="entry.timeLabel">{{ entry.timeLabel.split('·')[0] }}</span>
         <p>
           <template v-for="(seg, idx) in entry.segments" :key="idx">
             <span v-if="seg.type === 'text'">{{ seg.text }}</span>
