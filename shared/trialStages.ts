@@ -3,7 +3,7 @@
  * 数据来源：docs/13、docs/14、docs/17；数值按 30 级尺度重算。
  */
 import type { BattleEffect } from './battleEffects.ts'
-import { formatBattleStatBonuses, HUANG_YAOSHI_COMBAT, KE_POISON_DART, LIANG_SNAKE_GUARD, LIANG_ZIWENG_COMBAT, LINGZHI_COMBAT, OUYANG_FENG_FRENZY, PENG_LIANHU_COMBAT, QIU_QIANREN_COMBAT, QIU_QIANZHANG_COMBAT, SHA_TONGTIAN_COMBAT, SHEN_QINGGANG_COMBAT, STANCE_META, WANYAN_KANG_COMBAT, WU_QINGLIE_COMBAT, type BattleEnemyGuard, type BattleEnvironment, type BattleStatBonuses, type BattleStatusRule, type EnemyCombatConfig } from './combatMeta.ts'
+import { formatBattleStatBonuses, HUANG_YAOSHI_COMBAT, KE_POISON_DART, LIANG_SNAKE_GUARD, LIANG_ZIWENG_COMBAT, LINGZHI_COMBAT, OUYANG_FENG_FRENZY, PENG_LIANHU_COMBAT, QIU_QIANREN_COMBAT, QIU_QIANZHANG_COMBAT, SHA_TONGTIAN_COMBAT, SHEN_QINGGANG_COMBAT, STANCE_META, WANYAN_KANG_COMBAT, WU_QINGLIE_COMBAT, type BattleEnemyGuard, type BattleEnvironment, type BattleOpponent, type BattleStatBonuses, type BattleStatusRule, type EnemyCombatConfig } from './combatMeta.ts'
 import type { ItemConfig } from './gameData.ts'
 import type { BattleReportDTO, CombatUnitDTO, CompanionState, EquipSlotType, LoadoutPresetDTO, PlayerDTO, SixStats, StanceType, TierColor, TrialDropDTO, TrialStateDTO } from './protocol.ts'
 import { QUANZHEN_SEVEN_IDS } from './quanzhen.ts'
@@ -1342,36 +1342,136 @@ export function equippedGearSkill(loadout: Pick<LoadoutPresetDTO, 'weaponId' | '
 /** 打坐与巡历最多累计 24 小时未领：一天上线一次不吃亏（docs/21） */
 export const IDLE_CAP_MS = 24 * 3_600_000
 
-/** 每 30 分钟一次遭遇，25% 掉件，7 部位等概率 */
-export const PATROL_ENCOUNTER_MINUTES = 30
-export const PATROL_DROP_CHANCE = 0.25
+/**
+ * 巡历每分钟打一场，每 30 场一场精英（原先每 30 分钟一次的遭遇）。
+ * 装备与宝箱按场掷，几率摊到 30 场，每小时的产出与原先相同（docs/25）。
+ */
+export const PATROL_BATTLE_MS = 60_000
+export const PATROL_ELITE_EVERY = 30
+/** 每场 25% ÷ 30 掉 1 件，7 部位等概率 */
+export const PATROL_DROP_CHANCE = 0.25 / PATROL_ELITE_EVERY
 
 export function patrolEncounterRate(accessoryId: string | null) {
   return accessoryId === trialPartId('huanghe_sigui', 'ACC') ? 110 : 100
 }
 
+/** 本关打过的精英场数 */
 export function patrolEncounterCount(trial: TrialStateDTO, stageId: number) {
-  return trial.stageEncounters?.[String(stageId)] ?? Math.floor((trial.stageHours[String(stageId)] ?? 0) * 60 / PATROL_ENCOUNTER_MINUTES)
+  return trial.stageEncounters?.[String(stageId)] ??
+    Math.floor((trial.stageHours[String(stageId)] ?? 0) * 3_600_000 / (PATROL_BATTLE_MS * PATROL_ELITE_EVERY))
 }
 
-export function advancePatrol(trial: TrialStateDTO, now: number, encounterRate: number) {
+/** 本关打过的场数；按场计数之前的存档按精英场数折算 */
+export function patrolBattleCount(trial: TrialStateDTO, stageId: number) {
+  return trial.stageBattles?.[String(stageId)] ?? patrolEncounterCount(trial, stageId) * PATROL_ELITE_EVERY
+}
+
+export const isPatrolElite = (battle: number) => battle % PATROL_ELITE_EVERY === 0
+
+export interface PatrolRun {
+  battles: number
+  elites: number
+  /** 这段时间第一场在本关的场次号 */
+  firstBattle: number
+}
+
+export function advancePatrol(trial: TrialStateDTO, now: number, encounterRate: number): PatrolRun | undefined {
   const elapsed = now - Math.max(trial.lastPatrolAt, now - IDLE_CAP_MS)
   if (elapsed <= 0) return
   const stageId = trial.selectedStageId
   const key = String(stageId)
-  const previousEncounters = patrolEncounterCount(trial, stageId)
+  const before = patrolBattleCount(trial, stageId)
   const progress = (trial.encounterProgress ?? 0) + elapsed * encounterRate
-  const threshold = PATROL_ENCOUNTER_MINUTES * 60_000 * 100
-  const encounters = Math.floor(progress / threshold)
+  const threshold = PATROL_BATTLE_MS * 100
+  const battles = Math.floor(progress / threshold)
+  const elites = Math.floor((before + battles) / PATROL_ELITE_EVERY) - Math.floor(before / PATROL_ELITE_EVERY)
   trial.encounterProgress = progress % threshold
-  const stageEncounters = trial.stageEncounters ??= {}
-  stageEncounters[key] = previousEncounters + encounters
+  ;(trial.stageEncounters ??= {})[key] = patrolEncounterCount(trial, stageId) + elites
+  ;(trial.stageBattles ??= {})[key] = before + battles
   trial.lastPatrolAt = now
   trial.stageHours[key] = (trial.stageHours[key] ?? 0) + elapsed / 3_600_000
   if (trialStageOf(stageId)?.replayPartIds) {
     trial.replayHours[key] = Math.min(TRIAL_REPLAY_HOURS, (trial.replayHours[key] ?? 0) + elapsed / 3_600_000)
   }
-  return encounters
+  return { battles, elites, firstBattle: before + 1 }
+}
+
+/**
+ * 巡历画面用的时钟，按 advancePatrol 同一节奏推算、不改状态：
+ * 上次结算后已打完几场（待清点）、正在打的是本关第几场、这一场已过多久、一场多长。
+ */
+export function patrolClock(trial: TrialStateDTO, now: number, encounterRate: number) {
+  const elapsed = Math.max(0, now - Math.max(trial.lastPatrolAt, now - IDLE_CAP_MS))
+  const progress = (trial.encounterProgress ?? 0) + elapsed * encounterRate
+  const threshold = PATROL_BATTLE_MS * 100
+  const pending = Math.floor(progress / threshold)
+  return {
+    pending,
+    battle: patrolBattleCount(trial, trial.selectedStageId) + pending + 1,
+    intoBattleMs: (progress % threshold) / encounterRate,
+    battleMs: threshold / encounterRate,
+  }
+}
+
+/** 各关巡历的小怪与精英（第 01~30 关） */
+const PATROL_FOES: readonly (readonly [minion: string, elite: string, portrait: PortraitStyle])[] = [
+  ['荒山草贼', '草贼头目', 'bandit'], ['酒肆泼皮', '恶霸打手头', 'bandit'], ['护寺棍僧', '罗汉堂执棍僧', 'monk'],
+  ['嘉兴地痞', '南湖水匪头', 'bandit'], ['蒙古游骑', '神射百夫长', 'assassin'], ['盗墓贼', '双煞爪牙', 'bandit'],
+  ['黑风寨喽啰', '黑风寨头目', 'bandit'], ['截道响马', '黄河帮刀手头目', 'bandit'], ['王府家丁', '王府护院教头', 'assassin'],
+  ['黄河帮帮众', '黄河帮舵主', 'bandit'], ['绿林悍匪', '彭家寨大头目', 'bandit'], ['密宗喇嘛', '护坛金刚', 'monk'],
+  ['王府亲兵', '王府侍卫统领', 'assassin'], ['白驼山蛇奴', '白驼山护卫', 'assassin'], ['太湖水贼', '归云庄头领', 'bandit'],
+  ['庄上护院', '归云庄管事', 'bandit'], ['芦苇荡水寇', '黑风双煞旧部', 'bandit'], ['桃花岛哑仆', '哑仆舵手', 'monk'],
+  ['石阵木人', '九宫阵灵', 'monk'], ['洞口哑仆', '哑仆领班', 'monk'], ['桃花岛守林人', '碧海潮生幻影', 'daoist'],
+  ['火船蛇奴', '白驼蛇阵头目', 'assassin'], ['孤岛蛇奴', '白驼山驭蛇使', 'assassin'], ['金兵斥候', '金兵什长', 'assassin'],
+  ['黑沼山民', '铁掌帮巡山头目', 'bandit'], ['铁掌帮帮众', '铁掌帮香主', 'bandit'], ['花剌子模甲士', '花剌子模百夫长', 'assassin'],
+  ['烟雨楼杀手', '赵王府高手', 'assassin'], ['金国死士', '死士营百夫长', 'assassin'], ['华山伏兵', '白驼山死士首领', 'assassin'],
+]
+
+/** 巡历对手：按本关首领的气血、攻击折算，精英更强；只用于画面，胜负与收益无关 */
+export const PATROL_FOE_SCALE = { minion: { hp: 0.8, atk: 0.3 }, elite: { hp: 1.6, atk: 0.4 } } as const
+
+/** tune：画面按侠客强弱再调的倍数，让一场打得不太短也不太长、且一定能赢 */
+export function patrolFoe(stage: TrialStageConfig, battle: number, tune: { hp?: number; atk?: number } = {}): BattleOpponent & { elite: boolean } {
+  const elite = isPatrolElite(battle)
+  const [minion, leader, portrait] = PATROL_FOES[stage.id - 1] ?? PATROL_FOES[0]
+  const scale = PATROL_FOE_SCALE[elite ? 'elite' : 'minion']
+  const hp = Math.max(1, Math.round(stage.boss.hp * scale.hp * (tune.hp ?? 1)))
+  return {
+    name: elite ? leader : minion, title: elite ? '巡历精英' : '巡历小怪', portrait, elite,
+    hp, atk: Math.max(1, Math.round(stage.boss.atk * scale.atk * (tune.atk ?? 1))), mp: Math.round(hp * 0.45), stance: stage.boss.stance,
+  }
+}
+
+/** 巡历画面一场演几招合适 */
+export const PATROL_FIGHT_STEPS = { minion: [10, 24], elite: [18, 36] } as const
+
+/** 巡历画面只演看得见的交手：掉血、回血、反伤、闪避、护盾；开场的被动加成等只记在战报里 */
+export function patrolFightSteps(report: BattleReportDTO) {
+  return report.events.filter((event) => event.hpDelta || event.reflectDelta || event.shieldAbsorbed || event.hitResult === 'DODGE')
+}
+
+/**
+ * 巡历画面的一场：先按本关折算的小怪模拟一遍。侠客强弱差得远时可能一招就倒或久战不下，就按交手数调小怪气血；
+ * 打输了就削它的攻击和气血。最多试 6 次，取最后一场赢的；一场也赢不了返回 undefined。
+ */
+export function tunePatrolFight(stage: TrialStageConfig, battle: number, simulate: (foe: ReturnType<typeof patrolFoe>) => BattleReportDTO) {
+  const [low, high] = PATROL_FIGHT_STEPS[isPatrolElite(battle) ? 'elite' : 'minion']
+  const tune = { hp: 1, atk: 1 }
+  let best: { report: BattleReportDTO; foe: ReturnType<typeof patrolFoe> } | undefined
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const foe = patrolFoe(stage, battle, tune)
+    const report = simulate(foe)
+    if (report.winner !== 'ALLY') {
+      tune.atk *= 0.5
+      tune.hp *= 0.7
+      continue
+    }
+    best = { report, foe }
+    const steps = patrolFightSteps(report).length
+    if (steps >= low && steps <= high) break
+    tune.hp *= Math.min(6, Math.max(0.2, (low + high) / 2 / Math.max(2, steps)))
+  }
+  return best
 }
 
 export function switchPatrolStage(trial: TrialStateDTO, stageId: number) {
@@ -1476,9 +1576,20 @@ export function rollTrialDrop(stage: TrialStageConfig, source: 'PATROL' | 'REPLA
   return { id: item.id, name: item.name, tier: item.tier, affixRoll }
 }
 
+export type TrialRoll = NonNullable<ReturnType<typeof rollTrialDrop>> & Pick<TrialDropDTO, 'battle'>
+
+/** 巡历按场掷掉落，记下掉在本关第几场 */
+export function rollPatrolDrops(stage: TrialStageConfig, run: PatrolRun, rng = Math.random, dropPct = 0) {
+  const rolls: TrialRoll[] = []
+  for (let i = 0; i < run.battles; i++) {
+    const roll = rollTrialDrop(stage, 'PATROL', rng, dropPct)
+    if (roll) rolls.push({ ...roll, battle: run.firstBattle + i })
+  }
+  return rolls
+}
+
 export function collectTrialDrop(
-  player: Pick<PlayerDTO, 'trial' | 'equipmentAffixes'>, ownedItemIds: string[], stage: TrialStageConfig,
-  roll: NonNullable<ReturnType<typeof rollTrialDrop>>, at: number,
+  player: Pick<PlayerDTO, 'trial' | 'equipmentAffixes'>, ownedItemIds: string[], stage: TrialStageConfig, roll: TrialRoll, at: number,
 ) {
   const prior = player.equipmentAffixes?.[roll.id] ?? 0
   const outcome = !ownedItemIds.includes(roll.id) ? 'NEW' : roll.affixRoll > prior ? 'UPGRADED' : 'DUPLICATE'

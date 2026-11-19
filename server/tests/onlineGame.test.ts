@@ -1175,19 +1175,20 @@ describe('联机战斗', { skip: connection ? false : '请设置 GAME_TEST_DATAB
       const away = await hero.act<IdleGain>('/cultivate/settle')
       const trial = away.snapshot.player.trial
       assert.ok(Math.abs((trial.stageHours['1'] ?? 0) - (before.player.trial.stageHours['1'] ?? 0) - 24) < 1e-6)
-      assert.equal(away.result.forgeMaterials, 48)
+      assert.deepEqual([away.result.patrolBattles, away.result.forgeMaterials], [1440, 48])
+      assert.equal(trial.stageBattles?.['1'], 1440)
       assert.ok(Math.abs(away.result.gainedQi - before.soloQiPerHour * 24) <= 1)
 
-      // 遭遇必中时：掉件、开宝箱；宝箱元宝本周封顶 210，下周重新计
+      // 每场必中时：场场掉件、开宝箱，掉件记下场次；宝箱元宝本周封顶 210，下周重新计
       const week = sectContestWeek(now)
       await profile(hero.id, { patrolIngot: { week, got: 200 } })
-      const lucky = mock.method(Math, 'random', () => 0.01)
+      const lucky = mock.method(Math, 'random', () => 0.001)
       try {
         now += hour
         fixedServerTime = now
         const rich = await hero.act<IdleGain>('/cultivate/settle')
-        assert.ok((rich.result.drops?.length ?? 0) > 0)
-        assert.deepEqual([rich.result.patrolCache?.count, rich.result.patrolCache?.ingot], [2, 10])
+        assert.deepEqual(rich.result.drops?.map(({ battle }) => battle), Array.from({ length: 60 }, (_, i) => 1441 + i))
+        assert.deepEqual([rich.result.patrolCache?.count, rich.result.patrolCache?.ingot], [60, 10])
         now += hour
         fixedServerTime = now
         assert.equal((await hero.act<IdleGain>('/cultivate/settle')).result.patrolCache?.ingot, undefined)

@@ -7,7 +7,7 @@ import { gaibangAttributeBonus, gaibangSilverGain } from './gaibang.ts'
 import { huashanDay } from './huashan.ts'
 import { clampKarma, effectiveMartialStats, hasMartialFreedom, martialEffectiveness } from './martialSchools.ts'
 import { ORIGINS, originPerk } from './origins.ts'
-import { IDLE_CAP_MS, trialPartId } from './trialStages.ts'
+import { IDLE_CAP_MS, PATROL_ELITE_EVERY, trialPartId } from './trialStages.ts'
 import { activeSectEquipmentSets } from './sectEquipment.ts'
 
 export function createStarterCharacter(identity: Pick<PlayerDTO, 'id' | 'nickname' | 'avatarId'>, now: number) {
@@ -309,12 +309,13 @@ export function cultivationRates(player: PlayerDTO, preset: LoadoutPresetDTO, co
   }
 }
 
-export function settlePatrolCaches(player: PlayerDTO, preset: LoadoutPresetDTO, encounters: number, now: number, rng = Math.random) {
+/** 巡历宝箱按场掷：每 30 场的几率与原先每次遭遇相同（docs/25） */
+export function settlePatrolCaches(player: PlayerDTO, preset: LoadoutPresetDTO, battles: number, now: number, rng = Math.random) {
   const luck = effectiveMartialStats(player, preset).luck
   const baseChance = Math.min(30, 5 + Math.floor(Math.max(0, luck) / 20))
-  const chance = baseChance * (preset.accId === 'iron_bagua' ? 1.15 : 1)
+  const chance = baseChance * (preset.accId === 'iron_bagua' ? 1.15 : 1) / PATROL_ELITE_EVERY
   let count = 0
-  for (let encounter = 0; encounter < encounters; encounter++) {
+  for (let battle = 0; battle < battles; battle++) {
     if (rng() * 100 < chance) count++
   }
   if (!count) return

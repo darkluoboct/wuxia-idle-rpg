@@ -22,7 +22,7 @@ const capped = computed(() => report.value.at - away.value.since > IDLE_CAP_MS)
 
 /** 每段一行标题加若干句，没发生的不列 */
 const sections = computed(() => {
-  const { gainedQi, gainedSilver, drops = [], forgeMaterials, patrolCache, xiangyang = [], defenseNotices = [], contestIngot, reunionClues = {}, feastIngredient } = gain.value
+  const { gainedQi, gainedSilver, drops = [], patrolBattles, forgeMaterials, patrolCache, xiangyang = [], defenseNotices = [], contestIngot, reunionClues = {}, feastIngredient } = gain.value
   const { xiangyang: guard, stallSales, dividends = [], raidLends } = away.value
   const list: { title: string; lines: string[] }[] = []
   if (gainedQi || gainedSilver) list.push({ title: '修行', lines: [`真气 +${n(gainedQi)} · 纹银 +${n(gainedSilver)}${capped.value ? '（按最多 24 小时计）' : ''}`] })
@@ -30,7 +30,7 @@ const sections = computed(() => {
   for (const { name } of drops) counts.set(name, (counts.get(name) ?? 0) + 1)
   const named = [...counts].map(([name, count]) => `【${name}】${count > 1 ? `×${count}` : ''}`)
   const patrol = [
-    ...(forgeMaterials ? [`遭遇 ${forgeMaterials} 次，百炼玄铁、淬火石各 +${forgeMaterials}`] : []),
+    ...(patrolBattles ? [`打了 ${n(patrolBattles)} 场${forgeMaterials ? `，其中精英 ${forgeMaterials} 场，百炼玄铁、淬火石各 +${forgeMaterials}` : ''}`] : []),
     ...(drops.length ? [`掉落 ${drops.length} 件：${named.slice(0, 6).join('')}${named.length > 6 ? '……' : ''}`] : []),
     ...(patrolCache ? [`宝箱 ${patrolCache.count} 个：纹银 +${n(patrolCache.silver)}${patrolCache.ingot ? `，元宝 +${patrolCache.ingot}` : ''}`] : []),
   ]

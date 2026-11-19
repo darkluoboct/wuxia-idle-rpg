@@ -8,9 +8,9 @@ import { extractFurnaceResidue, FORAGE_QI_COST, gatherHerbs, pillDoubleRate, pil
 import { forgeEquipment, forgeMaterials } from '../../shared/equipmentForge.ts'
 import { activeJianghuTitle, activeSetBonuses, canEquipCompanionItem, companionView, COMPANIONS, COOP_RAIDS, GHOST_MARKET_LISTINGS, hiddenWeaponCapacity, INN_GIFT_COST, INN_TEA_COST, ITEMS, JIANGHU_TITLES, marketListingPrice, MEDICINES, meetsItemStatRequirement, ONLINE_MAPS, PILL_RECIPES, REALMS, SECTS, SKILLS, totalCompanionSetBonuses, trialRewardItems, unlockedHiddenWeapons } from '../../shared/gameData.ts'
 import {
-  advancePatrol, announceChapterOneTitle, CHAPTER_ONE_FINAL_STAGE, collectTrialDrop, equippedGearSkill, hasTrialPart, patrolEncounterCount, patrolEncounterRate, recruitTrialCompanions, rollTrialDrop,
+  advancePatrol, announceChapterOneTitle, CHAPTER_ONE_FINAL_STAGE, collectTrialDrop, equippedGearSkill, hasTrialPart, patrolBattleCount, patrolEncounterCount, patrolEncounterRate, recruitTrialCompanions, rollPatrolDrops, rollTrialDrop,
   IDLE_CAP_MS, switchPatrolStage, TRIAL_PATROL_HOURS, TRIAL_REPLAY_HOURS, TRIAL_STAGES, trialFirstClearKarma, trialItemOf, trialPartId, trialPuzzleOutcome,
-  trialStageOf, upgradesPatrolYield, type TrialStageConfig,
+  trialStageOf, upgradesPatrolYield, type TrialRoll, type TrialStageConfig,
 } from '../../shared/trialStages.ts'
 import { appraiseGhostCurio, autoEquipItem, averageBoostPct, autoEquipSkill, canEnterMap, canReceiveSnakeRecipe, cityInspectionDue, coCultivationRate, createNewGameCharacter, createStarterCharacter, cultivatePlayer, cultivationRate, cultivationRates, GHOST_APPRAISAL_SWORD, idleQiNumerator, innAffinityGain, innGiftsRemaining, innVisitDay, karmaAfterEvent, legacyAcupoints, planMapJourney, recipeForPlayer, resolveSeaVoyage, settlePatrolCaches, trialFirstClearSilver } from '../../shared/player.ts'
 import { HUASHAN_HONORS, HUASHAN_RESPECT_QI, huashanDay, huashanRankReward, huashanRatingSwing, huashanSeason, huashanSeasonEndsAt } from '../../shared/huashan.ts'
@@ -79,6 +79,7 @@ type Character = Omit<PlayerSnapshot, 'serverTime' | 'derivedStats' | 'idlePrevi
   qiRemainder: number
   silverRemainder: number
   patrolDrops?: TrialDropDTO[]
+  patrolBattles?: number
   patrolForgeMaterials?: number
   patrolCache?: IdleGain['patrolCache']
   patrolIdleGain?: IdleGain
@@ -384,23 +385,25 @@ function changeKarma(character: Character, delta: number, now: number) {
   return karma - prior
 }
 
-/** 惰性结算巡历：进度、章末复战进度与 30 分钟一次的小怪掉落 */
+/** 惰性结算巡历：进度、章末复战进度，每分钟一场的掉落与每 30 场一场精英的锻材（docs/25） */
 async function settlePatrol(character: Character, now: number, client: PoolClient) {
   const { player } = character
   const { trial } = player
   // 运营的掉落活动按这段巡历里活动时长的占比折算
   const dropPct = averageBoostPct(rateBoosts('DROP'), Math.max(trial.lastPatrolAt, now - IDLE_CAP_MS), now)
-  const encounters = advancePatrol(trial, now, patrolEncounterRate(activeLoadout(character).accId))
-  if (encounters === undefined) return false
+  const run = advancePatrol(trial, now, patrolEncounterRate(activeLoadout(character).accId))
+  if (!run) return false
   const stage = trialStageOf(trial.selectedStageId)
-  if (encounters > 0 && stage) {
-    forgeMaterials(player, encounters, encounters)
-    character.patrolForgeMaterials = encounters
-    for (let i = 0; i < encounters; i++) {
-      const roll = rollTrialDrop(stage, 'PATROL', Math.random, dropPct)
-      if (roll) (character.patrolDrops ??= []).push(await awardTrialDrop(character, stage, roll, now, client))
+  if (run.battles > 0 && stage) {
+    character.patrolBattles = run.battles
+    if (run.elites) {
+      forgeMaterials(player, run.elites, run.elites)
+      character.patrolForgeMaterials = run.elites
     }
-    const cache = settlePatrolCaches(player, activeLoadout(character), encounters, now)
+    for (const roll of rollPatrolDrops(stage, run, Math.random, dropPct)) {
+      (character.patrolDrops ??= []).push(await awardTrialDrop(character, stage, roll, now, client))
+    }
+    const cache = settlePatrolCaches(player, activeLoadout(character), run.battles, now)
     const ingot = cache ? patrolCacheIngot(player, cache.count, now) : 0
     if (cache && ingot) {
       cache.ingot = ingot
@@ -412,9 +415,7 @@ async function settlePatrol(character: Character, now: number, client: PoolClien
   return true
 }
 
-async function awardTrialDrop(
-  character: Character, stage: TrialStageConfig, roll: NonNullable<ReturnType<typeof rollTrialDrop>>, now: number, client: PoolClient,
-) {
+async function awardTrialDrop(character: Character, stage: TrialStageConfig, roll: TrialRoll, now: number, client: PoolClient) {
   const { player } = character
   if (!character.patrolIdleGain && upgradesPatrolYield(player, activeLoadout(character), roll)) {
     character.patrolIdleFrom = player.lastSettleAt
@@ -440,6 +441,7 @@ function patrolStatus(character: Character): TrialPatrolStatusDTO {
     hours,
     requiredHours: TRIAL_PATROL_HOURS[stageId] ?? 0,
     encounters: patrolEncounterCount(character.player.trial, stageId),
+    battles: patrolBattleCount(character.player.trial, stageId),
   }
 }
 
@@ -1576,7 +1578,8 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
     const gain = settle(character, now)
     return {
       result: {
-        ...gain, drops: character.patrolDrops, forgeMaterials: character.patrolForgeMaterials, patrolCache: character.patrolCache, reunionClues,
+        ...gain, drops: character.patrolDrops, patrolBattles: character.patrolBattles, forgeMaterials: character.patrolForgeMaterials,
+        patrolCache: character.patrolCache, reunionClues,
         ...(feastIngredient ? { feastIngredient } : {}), ...(contestIngot ? { contestIngot } : {}), ...(xiangyang.length ? { xiangyang } : {}),
         ...(defenseNotices?.length ? { defenseNotices } : {}),
         away,
@@ -3481,6 +3484,7 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
     trial.rewardedStageIds.push(stage.id)
     trial.stageHours[String(stage.id)] = 0
     delete trial.stageEncounters?.[String(stage.id)]
+    delete trial.stageBattles?.[String(stage.id)]
     const next = Math.min(TRIAL_STAGES.length, stage.id + 1)
     trial.maxStageId = Math.max(trial.maxStageId, next)
     switchPatrolStage(trial, next)

@@ -54,7 +54,7 @@ export function itemBonusLabels(item: ItemConfig) {
 
 export function trialDropLabel(drop: TrialDropDTO) {
   const outcome = drop.outcome === 'UPGRADED' ? '已提升' : drop.outcome === 'DUPLICATE' ? '重复' : '获得'
-  return [drop.name, trialAffixQuality(drop.id, drop.affixRoll), trialAffixLabel(drop.id, drop.affixRoll), outcome, drop.marksEarned && '印记 +1']
+  return [drop.battle && `第 ${drop.battle} 场`, drop.name, trialAffixQuality(drop.id, drop.affixRoll), trialAffixLabel(drop.id, drop.affixRoll), outcome, drop.marksEarned && '印记 +1']
     .filter(Boolean).join(' · ')
 }
 

@@ -66,7 +66,7 @@ export const useGameStore = defineStore('wuxiaGame', () => {
   const cultivation = useCultivation({
     actions, selectTab, companions,
     logTrialDrop: (drop) => trial.logTrialDrop(drop),
-    logForgeMaterials: (count) => trial.logForgeMaterials(count),
+    logPatrolBattles: (battles, elites) => trial.logPatrolBattles(battles, elites),
     logPatrolCache: (reward) => trial.logPatrolCache(reward),
     mockSettlePatrol: (now) => trial.mockSettlePatrol(now),
     announceXiangyangAward: (award) => xiangyang.announceAward(award),

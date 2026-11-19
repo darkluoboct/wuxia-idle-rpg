@@ -147,6 +147,8 @@ export interface TrialDropDTO {
   affixRoll?: number
   outcome?: 'NEW' | 'UPGRADED' | 'DUPLICATE'
   marksEarned?: 1
+  /** 巡历掉落：掉在本关第几场 */
+  battle?: number
 }
 
 export type SectResult =
@@ -170,8 +172,9 @@ export interface TrialStateDTO {
   stageHours: Record<string, number>   // 各关累计有效巡历小时
   replayHours: Record<string, number>  // 章末关复战进度
   lastPatrolAt: number             // 巡历结算锚点(毫秒)
-  encounterProgress?: number       // 下一次遭遇累积量，按毫秒乘频率百分数
-  stageEncounters?: Record<string, number>
+  encounterProgress?: number       // 下一场巡历战斗的累积量，按毫秒乘频率百分数
+  stageEncounters?: Record<string, number> // 各关打过的精英场数
+  stageBattles?: Record<string, number>    // 各关打过的巡历场数（docs/25）
   marks: Record<string, number>    // 巡历印记，4 枚换普通缺件
   recentDrops: (TrialDropDTO & { at: number })[]
   recentCache?: PatrolCacheReward & { at: number }
@@ -276,6 +279,8 @@ export interface IdleGain {
   gainedQi: number
   gainedSilver: number
   drops?: TrialDropDTO[]
+  /** 这次结算的巡历场数；精英场数即 forgeMaterials（每场精英玄铁、淬火石各 1） */
+  patrolBattles?: number
   forgeMaterials?: number
   patrolCache?: PatrolCacheReward
   reunionClues?: Record<string, number>
@@ -341,6 +346,7 @@ export interface TrialPatrolStatusDTO {
   hours: number
   requiredHours: number
   encounters: number
+  battles: number
 }
 
 export interface TrialChallengeResult {

@@ -1,10 +1,14 @@
 import { describe, expect, it, vi } from 'vitest'
 import { DISHES } from '@/config/questData'
+import { simulateServerBattle } from '@/network/mockEngine'
 import { forgeEquipment, forgeMaterials } from '../../shared/equipmentForge.ts'
 import { backpackCapacity, equipmentItem, ITEMS, LINAN_CITY_MAP, MAPS, PILL_RECIPES, SKILLS } from '../../shared/gameData.ts'
 import { appraiseGhostCurio, canEnterMap, cultivationRates, GHOST_APPRAISAL_SWORD, innVisitDay, karmaAfterEvent, mapTravelMilliseconds, planMapJourney, recipeForPlayer, settlePatrolCaches, SNAKE_FEEDING_RECIPE } from '../../shared/player.ts'
 import { QUSAN_CACHE_KEY, QUSAN_CACHE_STAGE, skillFragmentDiscount } from '../../shared/skillMastery.ts'
-import { collectTrialDrop, rollTrialDrop, TRIAL_ITEMS, trialAffixQuality, trialPartId, trialStageOf } from '../../shared/trialStages.ts'
+import {
+  advancePatrol, collectTrialDrop, PATROL_BATTLE_MS, PATROL_ELITE_EVERY, PATROL_FIGHT_STEPS, patrolClock, patrolFightSteps, rollPatrolDrops, rollTrialDrop,
+  TRIAL_ITEMS, TRIAL_STAGES, trialAffixQuality, trialPartId, trialStageOf, tunePatrolFight,
+} from '../../shared/trialStages.ts'
 import { boost, newStore, playNode, type Store } from './helpers'
 
 const DAY = 86400_000
@@ -262,33 +266,68 @@ describe('鬼市鉴宝与侠义装备', () => {
 })
 
 describe('巡历遭遇', () => {
-  it('保留短间隔结算余量，路引令只加快遭遇，换关清空旧池余量', () => {
+  it('每分钟一场、每 30 场一场精英：保留不足一场的余量，路引令只加快场次，换关清空旧池余量', () => {
     const t = clock()
     const store = newStore('NEW')
     const token = trialPartId('huanghe_sigui', 'ACC')
     store.ownedItemIds.push(token)
     store.trial.maxStageId = 2
-    vi.spyOn(Math, 'random').mockReturnValue(0)
-    t.add(15 * 60_000)
-    store.mockSettlePatrol()
-    expect(store.trialPatrolStatus().encounters).toBe(0)
+    vi.spyOn(Math, 'random').mockReturnValue(0.99)
+    t.add(15 * 60_000 + 30_000)
+    expect(store.mockSettlePatrol()).toMatchObject({ patrolBattles: 15 })
+    expect(store.trialPatrolStatus()).toMatchObject({ battles: 15, encounters: 0 })
     store.equipItem(token)
+    // 余下半分钟，再走 13 分钟按 110% 计：共 14.8 场的量
     t.add(13 * 60_000)
     store.mockSettlePatrol()
-    expect(store.trialPatrolStatus().encounters).toBe(0)
+    expect(store.trialPatrolStatus()).toMatchObject({ battles: 29, encounters: 0 })
+    expect(store.player.equipmentForge).toBeUndefined()
     t.add(60_000)
-    store.mockSettlePatrol()
-    expect(store.trialPatrolStatus().hours).toBeCloseTo(29 / 60)
-    expect(store.trialPatrolStatus().encounters).toBe(1)
-    expect(store.trial.recentDrops[0]?.id).toBe(trialPartId('pomiao_caomang', 'WEAPON'))
-    store.mockSettlePatrol()
-    expect(store.trial.recentDrops).toHaveLength(1)
+    expect(store.mockSettlePatrol()).toMatchObject({ patrolBattles: 1, forgeMaterials: 1 })
+    expect(store.trialPatrolStatus()).toMatchObject({ battles: 30, encounters: 1 })
+    expect(store.trialPatrolStatus().hours).toBeCloseTo(29.5 / 60)
+    expect(store.player.equipmentForge).toMatchObject({ iron: 1, stones: 1 })
+    expect(store.mockSettlePatrol()).toEqual({})
     t.add(20 * 60_000)
     store.setPatrolStage(2)
     t.add(9 * 60_000)
     store.mockSettlePatrol()
-    expect(store.trialPatrolStatus()).toMatchObject({ stageId: 2, hours: 9 / 60, encounters: 0 })
-    expect(store.trial.recentDrops).toHaveLength(1)
+    expect(store.trialPatrolStatus()).toMatchObject({ stageId: 2, hours: 9 / 60, battles: 9, encounters: 0 })
+    // 换关前那 20 分钟按 110% 记在第 1 关；换回来场次接着数
+    store.setPatrolStage(1)
+    expect(store.trialPatrolStatus()).toMatchObject({ battles: 52, encounters: 1 })
+  })
+
+  it('掉落按场掷，记下掉在第几场；巡历时钟与结算同一节奏，结算前后场次接得上', () => {
+    const stage = trialStageOf(7)!
+    const run = { battles: 3, elites: 0, firstBattle: 41 }
+    const rolls = [0.5, 0.001, 0, 0.5, 0.5, 0.9]
+    expect(rollPatrolDrops(stage, run, () => rolls.shift()!)).toEqual([expect.objectContaining({ battle: 42, affixRoll: 0 })])
+
+    const trial = { ...newStore('NEW').player.trial, lastPatrolAt: 0, encounterProgress: 0 }
+    const minute = PATROL_BATTLE_MS
+    const before = patrolClock(trial, 90.5 * minute, 100)
+    expect(before).toMatchObject({ pending: 90, battle: 91, battleMs: minute })
+    expect(before.intoBattleMs).toBeCloseTo(minute / 2)
+    expect(advancePatrol(trial, 90.5 * minute, 100)).toEqual({ battles: 90, elites: 3, firstBattle: 1 })
+    expect(patrolClock(trial, 90.5 * minute, 100)).toEqual({ ...before, pending: 0 })
+    expect(patrolClock(trial, 91 * minute, 110).battleMs).toBeCloseTo(minute / 1.1)
+  })
+
+  it('巡历画面：各关的小怪与精英都能打赢，一场在一分钟里演得完', () => {
+    const store = newStore('NEW')
+    const weak = { ...store.currentLoadout, leftCompanionId: null, rightCompanionId: null, weaponId: null, armorId: null }
+    for (const stage of TRIAL_STAGES) {
+      Object.assign(store.player, { level: Math.max(1, stage.id - 1) })
+      for (const battle of [1, PATROL_ELITE_EVERY]) {
+        const fight = tunePatrolFight(stage, battle, (foe) => simulateServerBattle({
+          sceneTitle: stage.title, mode: 'SOLO_STORY', player: store.player, loadout: weak, enemyMain: foe, rng: () => 0.5,
+        }))
+        expect(fight?.report.winner, `${stage.code} 第 ${battle} 场`).toBe('ALLY')
+        expect(patrolFightSteps(fight!.report).length).toBeLessThanOrEqual(PATROL_FIGHT_STEPS.elite[1])
+        expect(fight!.foe.elite).toBe(battle === PATROL_ELITE_EVERY)
+      }
+    }
   })
 
   it('掉落按来源分别掷部位和成色，特技款与极品可同时出现', () => {
@@ -402,7 +441,7 @@ function clock(start = Date.now()) {
 describe('装备淬炼与鬼市重铸', () => {
   const ghostHour = Date.UTC(2026, 10, 13, 15)
 
-  it('巡历材料按完整遭遇发放，分解扣装备且重复结算不会多发，读档保留星级', () => {
+  it('巡历材料按精英场发放，分解扣装备且重复结算不会多发，读档保留星级', () => {
     const t = clock()
     const store = newStore('NEW')
     const itemId = 'cloth_bracers'
@@ -525,13 +564,14 @@ describe('巡历与武学残页', () => {
     expect(store.player.qiExp - qi).toBe(before.qi + after.qi)
   })
 
-  it('铁八卦按巡历遭遇提高宝箱相对概率 15%，福缘读取真实配装', () => {
+  it('巡历宝箱按场掷，30 场合计与原先每次遭遇相同；铁八卦提高相对概率 15%，福缘读取真实配装', () => {
     const store = newStore('NEW')
     const { player } = store
     player.stats.luck = 0
     const none = { ...store.currentLoadout, accId: null }
     const bagua = { ...none, accId: 'iron_bagua' }
-    const roll = () => 0.055
+    // 福缘 0：每场 5% ÷ 30，铁八卦再 ×1.15
+    const roll = () => 0.0018
     expect(settlePatrolCaches(player, none, 2, Date.now(), roll)).toBeUndefined()
     const silver = player.silver
     expect(settlePatrolCaches(player, bagua, 2, Date.now(), roll)).toEqual({ count: 2, silver: 240 })
@@ -539,7 +579,7 @@ describe('巡历与武学残页', () => {
     expect(player.trial.recentCache).toMatchObject({ count: 2, silver: 240 })
     const lucky = { ...none, accId: trialPartId('niluan_jiuyin', 'ACC') }
     expect(settlePatrolCaches(player, lucky, 1, Date.now(), roll)).toEqual({ count: 1, silver: 120 })
-    expect(settlePatrolCaches(player, bagua, 1, Date.now(), () => 0.0576)).toBeUndefined()
+    expect(settlePatrolCaches(player, bagua, 1, Date.now(), () => 0.00192)).toBeUndefined()
   })
 
   it('曲三酒馆暗格需持钥巡历第 24 关，零点刷新且残页只在对应武学成功参悟时扣除', () => {

@@ -11,9 +11,11 @@ import {
   advancePatrol,
   collectTrialDrop,
   hasTrialPart,
+  patrolBattleCount,
   patrolEncounterCount,
   patrolEncounterRate,
   recruitTrialCompanions,
+  rollPatrolDrops,
   rollTrialDrop,
   switchPatrolStage,
   TRIAL_PATROL_HOURS,
@@ -27,6 +29,7 @@ import {
   trialPuzzleOutcome,
   trialStageOf,
   upgradesPatrolYield,
+  type TrialRoll,
 } from '../../../shared/trialStages.ts'
 import { QUSAN_CACHE_KEY, searchQusanCache } from '../../../shared/skillMastery.ts'
 import { usePlayerStore } from './playerStore'
@@ -58,35 +61,33 @@ export function useTrial({ actions, cultivation, battle }: {
       hours,
       requiredHours: TRIAL_PATROL_HOURS[stageId] ?? 0,
       encounters: patrolEncounterCount(player.value.trial, stageId),
+      battles: patrolBattleCount(player.value.trial, stageId),
     }
   }
 
-  /** 本地试玩版惰性巡历：进度、章末复战与 30 分钟一次的小怪掉落 */
-  /** 本地巡历结算；返回与联机收功同样的巡历字段，供江湖邸报汇总 */
-  function mockSettlePatrol(now = Date.now()): Pick<IdleGain, 'drops' | 'forgeMaterials' | 'patrolCache'> {
+  /** 本地试玩版惰性巡历：进度、章末复战，每分钟一场的掉落与每 30 场一场精英的锻材（docs/25）；
+   *  返回与联机收功同样的巡历字段，供江湖邸报汇总 */
+  function mockSettlePatrol(now = Date.now()): Pick<IdleGain, 'drops' | 'patrolBattles' | 'forgeMaterials' | 'patrolCache'> {
     if (!IS_MOCK_MODE) return {}
     const t = player.value.trial
-    const encounters = advancePatrol(t, now, patrolEncounterRate(currentLoadout.value.accId))
-    if (!encounters) return {}
+    const run = advancePatrol(t, now, patrolEncounterRate(currentLoadout.value.accId))
     const stage = trialStageOf(t.selectedStageId)
-    if (!stage) return {}
-    forgeMaterials(player.value, encounters, encounters)
+    if (!run?.battles || !stage) return {}
+    if (run.elites) forgeMaterials(player.value, run.elites, run.elites)
     const drops: TrialDropDTO[] = []
-    for (let i = 0; i < encounters; i++) {
-      const roll = rollTrialDrop(stage, 'PATROL')
-      if (!roll) continue
+    for (const roll of rollPatrolDrops(stage, run)) {
       const drop = awardMockTrialDrop(stage, roll, now)
       drops.push(drop)
       logTrialDrop(drop)
     }
-    const cache = settlePatrolCaches(player.value, currentLoadout.value, encounters, now)
+    const cache = settlePatrolCaches(player.value, currentLoadout.value, run.battles, now)
     if (cache) {
       const ingot = patrolCacheIngot(player.value, cache.count, now)
       if (ingot) cache.ingot = ingot
       logPatrolCache(cache)
     }
-    logForgeMaterials(encounters)
-    return { drops, forgeMaterials: encounters, ...(cache ? { patrolCache: cache } : {}) }
+    logPatrolBattles(run.battles, run.elites)
+    return { drops, patrolBattles: run.battles, ...(run.elites ? { forgeMaterials: run.elites } : {}), ...(cache ? { patrolCache: cache } : {}) }
   }
 
   function logPatrolCache(reward: NonNullable<IdleGain['patrolCache']>) {
@@ -110,14 +111,12 @@ export function useTrial({ actions, cultivation, battle }: {
     })
   }
 
-  function logForgeMaterials(count: number) {
-    appendLog('CULTIVATE', [{ type: 'tag', text: '巡历材料', tone: 'gold' },
-      { type: 'text', text: ` 获得${forgeMaterialLabel(count, count)}。` }])
+  function logPatrolBattles(battles: number, elites = 0) {
+    appendLog('CULTIVATE', [{ type: 'tag', text: '巡历', tone: 'gold' },
+      { type: 'text', text: ` 打了 ${battles} 场${elites ? `，其中精英 ${elites} 场，获得${forgeMaterialLabel(elites, elites)}` : ''}。` }])
   }
 
-  function awardMockTrialDrop(
-    stage: NonNullable<ReturnType<typeof trialStageOf>>, roll: NonNullable<ReturnType<typeof rollTrialDrop>>, now: number,
-  ) {
+  function awardMockTrialDrop(stage: NonNullable<ReturnType<typeof trialStageOf>>, roll: TrialRoll, now: number) {
     if (now > player.value.lastSettleAt && upgradesPatrolYield(player.value, currentLoadout.value, roll)) settleMockIdle(now)
     return collectTrialDrop(player.value, ownedItemIds.value, stage, roll, now)
   }
@@ -202,6 +201,7 @@ export function useTrial({ actions, cultivation, battle }: {
           mockSettlePatrol()
           t.stageHours[String(stageId)] = 0
           delete t.stageEncounters?.[String(stageId)]
+          delete t.stageBattles?.[String(stageId)]
           const next = Math.min(TRIAL_STAGES.length, stageId + 1)
           t.maxStageId = Math.max(t.maxStageId, next)
           switchPatrolStage(t, next)
@@ -285,7 +285,7 @@ export function useTrial({ actions, cultivation, battle }: {
 
   return {
     logTrialDrop,
-    logForgeMaterials,
+    logPatrolBattles,
     logPatrolCache,
     mockSettlePatrol,
     trial,

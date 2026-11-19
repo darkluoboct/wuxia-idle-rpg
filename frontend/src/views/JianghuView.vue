@@ -132,12 +132,12 @@ const mapWeather = (mapId: string) => {
             </div>
             <div class="mt-1 flex flex-wrap gap-1.5 text-xs">
               <span class="chip chip-gold tabular-nums">{{ fmtHours(currentPatrol.hours) }} / {{ fmtHours(currentPatrol.requiredHours) }}</span>
-              <span class="chip">遭遇 {{ currentPatrol.encounters }} 次</span>
+              <span class="chip tabular-nums">已打 {{ currentPatrol.battles.toLocaleString() }} 场 · 精英 {{ currentPatrol.encounters }}</span>
               <span class="chip">印记 {{ trial.marks[String(currentStage.id)] ?? 0 }} 枚</span>
             </div>
           </div>
           <div class="text-right text-xs text-ink3">
-            <div>{{ encounterBonus ? `路引令 · 遭遇频率 +${encounterBonus}%` : '挂机每 30 分钟一次遭遇' }}</div>
+            <div>{{ encounterBonus ? `路引令 · 巡历快 ${encounterBonus}%` : '每分钟一场，每 30 场一场精英' }}</div>
             <div>首胜得普通套装件，未集齐时重复掉落可得印记</div>
             <div v-if="trial.recentCache">最近秘境宝箱 {{ trial.recentCache.count }} 个 · 纹银 +{{ trial.recentCache.silver }}</div>
           </div>

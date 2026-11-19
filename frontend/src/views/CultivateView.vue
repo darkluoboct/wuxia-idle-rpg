@@ -10,6 +10,7 @@ import { CHAPTER_ONE_STATUE_MAP, CHAPTER_ONE_TITLE } from '../../../shared/trial
 import SceneBackdrop from '@/components/SceneBackdrop.vue'
 import StageHeaderArena from '@/components/StageHeaderArena.vue'
 import CultivateConsole from '@/components/CultivateConsole.vue'
+import PatrolSkirmish from '@/components/PatrolSkirmish.vue'
 import PortraitCard from '@/components/PortraitCard.vue'
 
 const store = useGameStore()
@@ -80,6 +81,7 @@ function stepMap(direction: number) {
       <PortraitCard v-if="statue" bare :name="statue.nickname" :subtitle="CHAPTER_ONE_TITLE" style-type="hero_sword" :avatar-id="statue.avatarId" />
       <p v-else class="hint">{{ statueError ? '暂时无法读取立像记录。' : statue === null ? '石台空着，等待首位战胜华山之巅的侠客。' : '正在查看立像记录。' }}</p>
     </section>
+    <PatrolSkirmish v-else />
     <CultivateConsole />
   </div>
 </template>

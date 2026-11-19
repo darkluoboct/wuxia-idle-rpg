@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest'
 import { checkShopGoods, mailAttachmentText } from '../../shared/admin.ts'
 import { averageBoostPct, idleQiNumerator } from '../../shared/player.ts'
-import { rollTrialDrop, TRIAL_STAGES } from '../../shared/trialStages.ts'
+import { PATROL_DROP_CHANCE, rollTrialDrop, TRIAL_STAGES } from '../../shared/trialStages.ts'
 
 const HOUR = 3_600_000
 
@@ -19,12 +19,14 @@ it('倍率活动按时段折算挂机收益：同时段同类取最高，与共�
   expect(averageBoostPct(boosts, 2 * HOUR, 2 * HOUR)).toBe(100)
 })
 
-it('掉落活动提高巡历掉件几率，封顶必掉', () => {
+it('掉落活动按倍数提高巡历每场的掉件几率', () => {
   const stage = TRIAL_STAGES[0]
-  const roll = 0.4
+  expect(PATROL_DROP_CHANCE).toBeCloseTo(0.25 / 30)
+  const roll = 0.01
   expect(rollTrialDrop(stage, 'PATROL', () => roll)).toBeUndefined()
   expect(rollTrialDrop(stage, 'PATROL', () => roll, 100)).toBeDefined()
-  expect(rollTrialDrop(stage, 'PATROL', () => 0.99, 400)).toBeDefined()
+  expect(rollTrialDrop(stage, 'PATROL', () => 0.04, 400)).toBeDefined()
+  expect(rollTrialDrop(stage, 'PATROL', () => 0.042, 400)).toBeUndefined()
 })
 
 it('商店不卖元宝，丹药按枚数列出', () => {

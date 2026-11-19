@@ -15,14 +15,14 @@ import type { useCompanions } from './companions'
 import { type MainTab, type ToastTone } from './gameUiStore'
 
 export function useCultivation({
-  actions, selectTab, logTrialDrop, logForgeMaterials, logPatrolCache, mockSettlePatrol, announceXiangyangAward, claimLocalXiangyang, companions,
+  actions, selectTab, logTrialDrop, logPatrolBattles, logPatrolCache, mockSettlePatrol, announceXiangyangAward, claimLocalXiangyang, companions,
 }: {
   actions: GameActions
   selectTab: (tab: MainTab) => void
   logTrialDrop: (drop: TrialDropDTO) => void
-  logForgeMaterials: (count: number) => void
+  logPatrolBattles: (battles: number, elites?: number) => void
   logPatrolCache: (reward: NonNullable<IdleGain['patrolCache']>) => void
-  mockSettlePatrol: (now?: number) => Pick<IdleGain, 'drops' | 'forgeMaterials' | 'patrolCache'>
+  mockSettlePatrol: (now?: number) => Pick<IdleGain, 'drops' | 'patrolBattles' | 'forgeMaterials' | 'patrolCache'>
   /** 收功顺带领到的襄阳封赏 */
   announceXiangyangAward: (award: NonNullable<IdleGain['xiangyang']>[number]) => void
   claimLocalXiangyang: (now: number, since: number) => { awards: NonNullable<IdleGain['xiangyang']>; xiangyang?: NonNullable<IdleGain['away']>['xiangyang'] }
@@ -100,9 +100,9 @@ export function useCultivation({
   function settleOfflineQi() {
     return actions.run('settle', undefined, (result) => {
       if (result.gainedQi || result.gainedSilver) showIdleGain(result)
-      else if (!result.drops?.length && !result.forgeMaterials && !result.patrolCache) showToast('还没攒够可领的收益')
+      else if (!result.drops?.length && !result.patrolBattles && !result.patrolCache) showToast('还没攒够可领的收益')
       for (const drop of result.drops ?? []) logTrialDrop(drop)
-      if (result.forgeMaterials) logForgeMaterials(result.forgeMaterials)
+      if (result.patrolBattles) logPatrolBattles(result.patrolBattles, result.forgeMaterials)
       if (result.patrolCache) logPatrolCache(result.patrolCache)
       for (const [id, gain] of Object.entries(result.reunionClues ?? {})) {
         appendLog('ADVENTURE', [
