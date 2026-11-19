@@ -99,7 +99,7 @@ function inspectReward(id: string) {
               :name="u.name" :subtitle="enemyPerspective && u.id === store.player.id ? `你 · ${u.title}` : u.title" :style-type="u.portraitStyle" :avatar-id="u.avatarId"
               :hp="store.liveUnitStates[u.slot]?.hp ?? u.hp" :max-hp="u.maxHp"
               :rage="store.liveUnitStates[u.slot]?.rage ?? u.rage"
-              :anim="store.liveUnitStates[u.slot]?.anim ?? 'NONE'"
+              :anim="store.liveUnitStates[u.slot]?.anim ?? 'NONE'" :anim-key="store.battleEventCursor"
               :popup="store.floatingPopups[u.slot] ?? null"
               :is-main="u.slot === 'ENEMY_MAIN'" size="md" :is-enemy="!enemyPerspective"
               :class="u.slot === 'ENEMY_MAIN' ? '' : 'scale-[0.92] origin-bottom'"
@@ -122,7 +122,7 @@ function inspectReward(id: string) {
               :name="u.name" :subtitle="store.activeBattle.mode === 'COOP_3P' && u.id === store.player.id ? `你 · ${u.title}` : u.title" :style-type="u.portraitStyle" :avatar-id="u.avatarId"
               :hp="store.liveUnitStates[u.slot]?.hp ?? u.hp" :max-hp="u.maxHp"
               :rage="store.liveUnitStates[u.slot]?.rage ?? u.rage"
-              :anim="store.liveUnitStates[u.slot]?.anim ?? 'NONE'"
+              :anim="store.liveUnitStates[u.slot]?.anim ?? 'NONE'" :anim-key="store.battleEventCursor"
               :popup="store.floatingPopups[u.slot] ?? null"
               :is-main="u.slot === 'ALLY_MAIN'" size="md" :is-enemy="enemyPerspective"
               :class="u.slot === 'ALLY_MAIN' ? '' : 'scale-[0.92] origin-bottom'"
@@ -133,7 +133,7 @@ function inspectReward(id: string) {
               v-for="u in escortUnits" :key="u.slot"
               :name="u.name" :subtitle="u.title" :style-type="u.portraitStyle"
               :hp="store.liveUnitStates[u.slot]?.hp ?? u.hp" :max-hp="u.maxHp"
-              :anim="store.liveUnitStates[u.slot]?.anim ?? 'NONE'" :popup="store.floatingPopups[u.slot] ?? null"
+              :anim="store.liveUnitStates[u.slot]?.anim ?? 'NONE'" :anim-key="store.battleEventCursor" :popup="store.floatingPopups[u.slot] ?? null"
               size="sm"
             />
           </div>

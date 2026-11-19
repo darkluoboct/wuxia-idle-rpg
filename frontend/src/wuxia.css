@@ -1068,7 +1068,7 @@ summary.quest-row:hover { background-color: var(--gold-faint); }
   align-self: center;
   display: grid;
   gap: .25rem;
-  width: min(100%, 30rem);
+  width: min(100%, 34rem);
   padding: .3rem .7rem .45rem;
   color: var(--scene-ink);
   background: linear-gradient(180deg, #17151399, #171513d9);
@@ -1108,16 +1108,214 @@ summary.quest-row:hover { background-color: var(--gold-faint); }
 }
 .patrol-toggle:hover { border-color: #e8b96a; }
 .patrol-field {
+  position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1.4fr) auto minmax(0, 1fr);
   align-items: end;
   gap: .8rem;
+  padding-top: 1.5rem;
+  --fx-steel: #f4ead2;
 }
-.patrol-side { display: flex; align-items: flex-end; gap: .2rem; }
-.patrol-side:first-child { justify-content: flex-end; }
-.patrol-side > * { width: 6rem; }
-.patrol-companion { width: 5rem !important; opacity: .9; }
-.patrol-seal { align-self: center; width: 2rem; height: 2rem; font-size: 1rem; }
+.patrol-side { position: relative; grid-row: 1; display: flex; align-items: flex-end; gap: .2rem; }
+.patrol-side.is-ally { grid-column: 1; justify-content: flex-end; }
+.patrol-side.is-foe { grid-column: 3; }
+.patrol-unit { position: relative; width: 6rem; transition: opacity .3s; }
+.patrol-unit.is-companion { width: 5rem; }
+.patrol-side.is-foe .patrol-unit { animation: patrolFoeIn .7s cubic-bezier(.2, .7, .2, 1) backwards; }
+.patrol-unit.is-gone { opacity: 0; }
+.patrol-seal { position: relative; z-index: 1; grid-row: 1; grid-column: 2; align-self: center; width: 2rem; height: 2rem; font-size: 1rem; }
+
+/* 远山与路：打完上路时往后退 */
+.patrol-road {
+  position: absolute;
+  inset: 0 -.7rem;
+  overflow: hidden;
+  pointer-events: none;
+  mask-image: linear-gradient(90deg, transparent, #000 14%, #000 86%, transparent);
+}
+.patrol-road i {
+  position: absolute;
+  left: 0;
+  bottom: 2.55rem;
+  width: calc(100% + 240px);
+  height: 3rem;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='48'%3E%3Cpath d='M0 40Q22 22 44 34T92 28Q118 12 146 30T200 26Q222 18 240 40Z' fill='%23e8dcc0' fill-opacity='.13'/%3E%3Cpath d='M0 46.5H240' stroke='%23e8dcc0' stroke-opacity='.3'/%3E%3Cpath d='M30 46l2-5 1 5M34 46l2-4M150 46l2-6 2 6M196 46l1-4 2 4' stroke='%23e8dcc0' stroke-opacity='.4' fill='none'/%3E%3C/svg%3E") repeat-x left bottom / 240px 3rem;
+  animation: patrolRoad 3.2s linear infinite paused;
+}
+.patrol-field.is-travel .patrol-road i { animation-play-state: running; }
+.patrol-field.is-travel .patrol-side.is-ally .patrol-unit { animation: patrolWalk .42s ease-in-out infinite alternate; }
+.patrol-field.is-travel .patrol-side.is-ally .patrol-unit:nth-child(2) { animation-delay: -.21s; }
+
+/* 一招：招式名、受击红闪、特效、飘字；都在 --impact 那一刻落下 */
+.patrol-callout {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% - .5rem);
+  z-index: 4;
+  display: grid;
+  justify-items: center;
+  white-space: nowrap;
+  color: var(--tc, #f3dcaa);
+  font-size: 1.05rem;
+  line-height: 1.1;
+  text-shadow: 0 0 6px #000, 0 1px 2px #000;
+  pointer-events: none;
+  animation: patrolCallout .9s ease-out both;
+  --shift: -50%;
+}
+.patrol-side.is-ally .patrol-unit:first-child:not(:last-child) .patrol-callout { --shift: -24%; }
+.patrol-callout small { color: #e8d9bd; font-family: var(--font-body); font-size: .66rem; }
+.patrol-flash {
+  position: absolute;
+  inset: 0 0 2.4rem;
+  z-index: 2;
+  background: radial-gradient(circle at 50% 55%, #e0453a99, transparent 65%);
+  pointer-events: none;
+  animation: patrolHitFlash .4s ease-out var(--impact) both;
+}
+.patrol-flash.is-crit { background: radial-gradient(circle at 50% 55%, #fff1c8cc, #e0453a55 40%, transparent 70%); }
+.patrol-fx {
+  --fx: var(--fx-steel);
+  position: absolute;
+  left: 50%;
+  top: 1.2rem;
+  z-index: 3;
+  width: 5.5rem;
+  height: 5.5rem;
+  margin-left: -2.75rem;
+  filter: drop-shadow(0 0 3px var(--fx));
+  pointer-events: none;
+  animation: patrolFxFade .62s ease-out var(--impact) both;
+}
+.patrol-fx.tone-gold { --fx: #ffd27a; }
+.patrol-fx.tone-jade, .patrol-fx.is-guard { --fx: #8fe0b4; }
+.patrol-fx.tone-venom { --fx: #a4e070; }
+.patrol-fx.tone-blood { --fx: #ff6b5a; }
+.patrol-fx.tone-frost { --fx: #a6e1ff; }
+.patrol-fx.tone-flame { --fx: #ffa24a; }
+.patrol-fx.is-dodge { --fx: #c4f2da; }
+.patrol-fx svg { width: 100%; height: 100%; overflow: visible; }
+.patrol-fx.is-mirror svg { transform: scaleX(-1); }
+.patrol-fx :is(path, circle) { fill: none; stroke: var(--fx); stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; }
+.patrol-fx.is-slash path:first-child, .patrol-fx.is-thrust path { stroke-width: 5; }
+.patrol-fx.is-dodge path { stroke-width: 2.5; }
+.patrol-fx [pathLength] { stroke-dasharray: 1; stroke-dashoffset: 1; animation: patrolDraw .26s cubic-bezier(.3, .7, .2, 1) var(--impact) both; }
+.patrol-fx circle:not([pathLength]) { transform-box: fill-box; transform-origin: center; animation: patrolRing .45s ease-out var(--impact) both; }
+.patrol-fx.is-ripple circle { animation-duration: .6s; }
+.patrol-fx .is-late { animation-delay: calc(var(--impact) + 80ms); }
+.patrol-fx .is-later { animation-delay: calc(var(--impact) + 160ms); }
+.patrol-fx circle.is-mote { fill: var(--fx); stroke: none; animation: patrolMote .7s ease-out calc(var(--impact) + var(--n) * 50ms) both; }
+.patrol-pop {
+  position: absolute;
+  left: 50%;
+  top: .6rem;
+  z-index: 5;
+  white-space: nowrap;
+  color: #ff8a6e;
+  font-size: 1.1rem;
+  font-weight: 700;
+  text-shadow: 0 2px 6px #000d;
+  pointer-events: none;
+  animation: dmgFloat .9s ease-out var(--impact) both;
+}
+.patrol-pop.is-crit { color: #ffd27a; font-size: 1.5rem; }
+.patrol-pop.is-qi { color: #f5cf78; }
+.patrol-pop.is-venom { color: #a4e070; }
+.patrol-pop.is-heal, .patrol-pop.is-dodge { color: #8fe0b4; }
+
+/* 暴击白闪、绝技压暗、横幅 */
+.patrol-flare, .patrol-dim { position: absolute; pointer-events: none; }
+.patrol-flare {
+  inset: 0;
+  z-index: 2;
+  background: radial-gradient(circle at 50% 45%, #fff6dcbb, transparent 60%);
+  animation: patrolHitFlash .35s ease-out var(--impact) both;
+}
+.patrol-dim {
+  inset: -.3rem -.7rem -.45rem;
+  z-index: 0;
+  border-radius: .35rem;
+  background: radial-gradient(ellipse at 50% 60%, transparent 25%, #0b0a09d0 100%);
+  animation: patrolDim .9s ease-out both;
+}
+.patrol-banner {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  z-index: 6;
+  display: grid;
+  justify-items: center;
+  padding: .2rem 2rem .25rem;
+  white-space: nowrap;
+  background: linear-gradient(90deg, transparent, #0b0a09e6 14%, #0b0a09e6 86%, transparent);
+  border-block: 1px solid;
+  border-image: linear-gradient(90deg, transparent, #e8b96a, transparent) 1;
+  pointer-events: none;
+  animation: patrolBanner .88s cubic-bezier(.16, 1, .3, 1) both;
+}
+.patrol-banner b { color: #ffd27a; font-size: 1.6rem; font-weight: 400; line-height: 1.1; }
+.patrol-banner small { color: #cfc4b1; font-size: .7rem; letter-spacing: .2em; }
+.patrol-banner.is-elite { border-image-source: linear-gradient(90deg, transparent, #d0745c, transparent); animation-duration: 1.8s; }
+.patrol-banner.is-elite b { color: #f0a48e; }
+
+/* 战利品从倒下的地方冒出来 */
+.patrol-loot {
+  position: absolute;
+  left: 50%;
+  bottom: 3rem;
+  z-index: 4;
+  display: grid;
+  justify-items: center;
+  gap: .15rem;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+.patrol-loot span {
+  padding: 0 .45rem;
+  white-space: nowrap;
+  color: #f3dcaa;
+  font-size: .8rem;
+  background: #171513b3;
+  border: 1px solid #e8b96a66;
+  border-radius: .2rem;
+  animation: patrolLoot 2.4s ease-out calc(.3s + var(--i) * .22s) both;
+}
+
+@keyframes patrolFoeIn { from { opacity: 0; transform: translateX(3rem); filter: blur(3px); } }
+@keyframes patrolRoad { to { transform: translateX(-240px); } }
+@keyframes patrolWalk { to { transform: translateY(-3px); } }
+@keyframes patrolCallout {
+  0% { opacity: 0; transform: translate(var(--shift), 6px) scale(.9); }
+  18% { opacity: 1; transform: translate(var(--shift), 0) scale(1); }
+  75% { opacity: 1; transform: translate(var(--shift), 0); }
+  100% { opacity: 0; transform: translate(var(--shift), -4px); }
+}
+@keyframes patrolHitFlash { 0% { opacity: 0; } 15% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes patrolFxFade { 0% { opacity: 0; } 1%, 65% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes patrolDraw { to { stroke-dashoffset: 0; } }
+@keyframes patrolRing {
+  0% { opacity: 0; transform: scale(.2); stroke-width: 10; }
+  15% { opacity: 1; }
+  100% { opacity: 0; transform: scale(1.35); stroke-width: .5; }
+}
+@keyframes patrolMote { 0% { opacity: 0; transform: translateY(8px); } 30% { opacity: 1; } 100% { opacity: 0; transform: translateY(-30px); } }
+@keyframes patrolDim { 0% { opacity: 0; } 25%, 60% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes patrolBanner {
+  0% { opacity: 0; clip-path: inset(0 100% 0 0); transform: translate(-50%, 0) scale(1.1); }
+  20% { opacity: 1; clip-path: inset(0); transform: translate(-50%, 0) scale(1); }
+  80% { opacity: 1; clip-path: inset(0); transform: translate(-50%, 0); }
+  100% { opacity: 0; clip-path: inset(0); transform: translate(-50%, -.3rem); }
+}
+@keyframes patrolLoot {
+  0% { opacity: 0; transform: translateY(14px) scale(.85); }
+  15% { opacity: 1; transform: none; }
+  75% { opacity: 1; transform: translateY(-14px); }
+  100% { opacity: 0; transform: translateY(-26px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .patrol-fx, .patrol-flash, .patrol-flare, .patrol-dim { display: none; }
+  .patrol-road i, .patrol-side .patrol-unit { animation: none !important; }
+}
 .patrol-note { flex-direction: column; gap: 0; min-height: 2.7rem; font-size: .9rem; }
 .patrol-note.is-won { color: oklch(89% .11 75); }
 .patrol-note small { color: #cfc4b1; font-size: .74rem; }

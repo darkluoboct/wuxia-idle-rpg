@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type { PortraitStyle } from '@/config/typesHelper'
 import type { PlayerAvatarId } from '@/network/protocol'
 import { PLAYER_AVATARS } from '@/config/uiMeta'
@@ -16,6 +16,10 @@ const props = defineProps<{
   isMain?: boolean
   isEnemy?: boolean
   anim?: 'NONE' | 'LUNGE_ALLY' | 'LUNGE_ENEMY' | 'HIT'
+  /** 每一招换一个值：同一个动作连着两招时也要重播 */
+  animKey?: number
+  /** 倒下时不变灰、不盖「力竭」，由外面自己演（巡历的击飞） */
+  hideDown?: boolean
   size?: 'sm' | 'md' | 'lg'
   pose?: 'stand' | 'sit'
   /** 打坐场景里不需要卡片底板，只要人物 + 名牌 */
@@ -27,7 +31,7 @@ const hpPercent = computed(() => {
   if (props.hp === undefined || !props.maxHp) return 100
   return Math.max(0, Math.min(100, Math.round((props.hp / props.maxHp) * 100)))
 })
-const isDown = computed(() => props.hp !== undefined && props.hp <= 0)
+const isDown = computed(() => props.hp !== undefined && props.hp <= 0 && !props.hideDown)
 const rageFull = computed(() => (props.rage ?? 0) >= 100 && !isDown.value)
 
 const figureBox = computed(() => {
@@ -42,6 +46,16 @@ const animClass = computed(() => {
   if (props.anim === 'HIT') return 'anim-hit'
   return ''
 })
+
+// 样式没变时浏览器不会重播动画，先摘掉动画、强制排版一次再还回去
+const animEl = ref<HTMLElement>()
+watch(() => props.animKey, () => {
+  const el = animEl.value
+  if (!el || !animClass.value) return
+  el.style.animation = 'none'
+  void el.offsetWidth
+  el.style.animation = ''
+}, { flush: 'post' })
 
 const popupClass = computed(() => {
   if (!props.popup) return ''
@@ -80,7 +94,7 @@ const verticalName = computed(() => {
     </div>
 
     <!-- 人物舞台 -->
-    <div class="relative overflow-hidden" :class="[figureBox, bare ? '' : 'rounded-[1px]']">
+    <div class="relative overflow-hidden" :class="[figureBox, bare ? '' : 'rounded-[1px]']" data-figure>
       <template v-if="!bare">
         <div
           class="absolute inset-0"
@@ -96,7 +110,7 @@ const verticalName = computed(() => {
         </svg>
       </template>
 
-      <div class="relative flex h-full items-end justify-center" :class="animClass">
+      <div ref="animEl" class="relative flex h-full items-end justify-center" :class="animClass">
         <div class="h-full" :class="[isEnemy ? '[transform:scaleX(-1)]' : '', pose === 'sit' ? 'anim-breathe' : '']">
           <img v-if="avatarId" :src="PLAYER_AVATARS[avatarId].image" alt="" class="h-full w-auto object-contain" />
           <InkFigure v-else :style-type="styleType" :pose="pose ?? 'stand'" />
@@ -106,6 +120,7 @@ const verticalName = computed(() => {
       <!-- 受击红闪 -->
       <div
         v-if="anim === 'HIT'"
+        :key="animKey"
         class="pointer-events-none absolute inset-0 [animation:hitFlash_0.4s_ease-out_forwards]"
         style="background: radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--cinnabar) 70%, transparent), transparent 70%)"
       />

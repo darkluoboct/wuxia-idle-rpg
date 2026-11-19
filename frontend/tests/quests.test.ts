@@ -9,6 +9,8 @@ import {
   advancePatrol, collectTrialDrop, PATROL_BATTLE_MS, PATROL_ELITE_EVERY, PATROL_FIGHT_STEPS, patrolClock, patrolFightSteps, rollPatrolDrops, rollTrialDrop,
   TRIAL_ITEMS, TRIAL_STAGES, trialAffixQuality, trialPartId, trialStageOf, tunePatrolFight,
 } from '../../shared/trialStages.ts'
+import { patrolBeat } from '@/config/patrolBeat'
+import type { BattleEventDTO, CombatUnitDTO } from '@/network/protocol'
 import { boost, newStore, playNode, type Store } from './helpers'
 
 const DAY = 86400_000
@@ -328,6 +330,39 @@ describe('巡历遭遇', () => {
         expect(fight!.foe.elite).toBe(battle === PATROL_ELITE_EVERY)
       }
     }
+  })
+
+  it('巡历画面的一招：按招式兵器出特效，绝技打横幅，小怪按画像出招，闪避由对面主将冲上来', () => {
+    const units = [
+      { slot: 'ALLY_MAIN', name: '陆小鱼', portraitStyle: 'hero_sword' }, { slot: 'ALLY_LEFT', name: '郭靖', portraitStyle: 'guojing' },
+      { slot: 'ENEMY_MAIN', name: '荒山草贼', portraitStyle: 'bandit' },
+    ] as CombatUnitDTO[]
+    const beat = (patch: Partial<BattleEventDTO>) => patrolBeat({ round: 1, type: 'SKILL_CAST', actorSlot: 'ALLY_MAIN', targetSlot: 'ENEMY_MAIN', segments: [], ...patch }, units)
+
+    expect(beat({ skillId: 'quanzhen_jianfa', skillName: '全真剑法', skillTier: 'blue', hitResult: 'HIT', hpDelta: -387 })).toMatchObject({
+      attacker: 'ALLY_MAIN', target: 'ENEMY_MAIN', fx: 'slash', tone: 'steel', hit: true, crit: false,
+      callout: { text: '全真剑法', tier: 'blue' }, popups: { ENEMY_MAIN: { text: '-387', tone: 'hurt' } },
+    })
+    expect(beat({ type: 'ASSIST_ATTACK', actorSlot: 'ALLY_LEFT', skillId: 'xianglong_18', skillName: '双龙取水', hitResult: 'CRIT', hpDelta: -904,
+      segments: [{ type: 'damage', value: 904, category: 'qi' }] })).toMatchObject({
+      attacker: 'ALLY_LEFT', fx: 'palm', tone: 'gold', crit: true, callout: { text: '双龙取水', sub: '追击' }, popups: { ENEMY_MAIN: { text: '暴击 -904', tone: 'crit' } },
+    })
+    const ult = beat({ skillId: 'tonggui_jianfa', skillName: '全真·同归剑法', isUlt: true, hpDelta: -858 })
+    expect(ult.ult).toEqual({ text: '全真·同归剑法', sub: '陆小鱼 · 使出绝技' })
+    expect(ult.callout).toBeUndefined()
+    const foe = beat({ actorSlot: 'ENEMY_MAIN', targetSlot: 'ALLY_MAIN', hpDelta: -70 })
+    expect(foe).toMatchObject({ attacker: 'ENEMY_MAIN', fx: 'slash', hit: true })
+    expect(foe.callout).toBeUndefined()
+    expect(beat({ type: 'DODGE', targetSlot: 'ALLY_MAIN', hitResult: 'DODGE' })).toMatchObject({
+      attacker: 'ENEMY_MAIN', target: 'ALLY_MAIN', fx: 'dodge', hit: false, popups: { ALLY_MAIN: { text: '闪避', tone: 'dodge' } },
+    })
+    const heal = beat({ type: 'EFFECT', targetSlot: 'ALLY_MAIN', hpDelta: 120 })
+    expect(heal).toMatchObject({ fx: 'heal', tone: 'jade', hit: false, popups: { ALLY_MAIN: { text: '+120', tone: 'heal' } } })
+    expect(heal.attacker).toBeUndefined()
+    expect(beat({ type: 'DOT_TICK', hpDelta: -30, segments: [{ type: 'damage', value: 30, category: 'poison' }] })).toMatchObject({
+      fx: 'burst', tone: 'venom', popups: { ENEMY_MAIN: { text: '毒伤 -30', tone: 'venom' } },
+    })
+    expect(beat({ hpDelta: -50, reflectDelta: -12 }).popups.ALLY_MAIN).toEqual({ text: '反伤 -12', tone: 'hurt' })
   })
 
   it('掉落按来源分别掷部位和成色，特技款与极品可同时出现', () => {
