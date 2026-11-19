@@ -4,7 +4,7 @@ import { simulateServerBattle } from '@/network/mockEngine'
 import { ACUPOINTS, MAPS, REALMS } from '../../shared/gameData.ts'
 import { effectiveMartialStats } from '../../shared/martialSchools.ts'
 import { acupointCost, createStarterCharacter, cultivatePlayer, cultivationRates, legacyAcupoints, realmBreakChance } from '../../shared/player.ts'
-import { trialPartId } from '../../shared/trialStages.ts'
+import { patrolBattleCount, trialPartId } from '../../shared/trialStages.ts'
 import { boost, newStore, playNode, resolvePending } from './helpers'
 
 describe('冲穴药的永久属性', () => {
@@ -261,6 +261,43 @@ describe('佩饰参悟和修行词条', () => {
 })
 
 describe('新游戏：开局与新手引导', () => {
+  it('点「开始挂机」才累计打坐与巡历；停止先收功，停着的那段开始后也不补', () => {
+    vi.useFakeTimers()
+    try {
+      const hour = 3_600_000
+      const time = Date.parse('2026-11-19T10:00:00+08:00')
+      vi.setSystemTime(time)
+      const store = newStore('NEW', { gated: true })
+      expect(store.player.idleOff).toBe(true)
+      const { qiExp, silver } = store.player
+      vi.setSystemTime(time + hour)
+      expect(store.getIdleRewards()).toEqual({ gainedQi: 0, gainedSilver: 0 })
+      store.settleOfflineQi()
+      expect([store.player.qiExp, store.player.silver, patrolBattleCount(store.player.trial, 1)]).toEqual([qiExp, silver, 0])
+
+      store.setIdle(true)
+      expect(store.player.idleOff).toBeUndefined()
+      expect([store.player.lastSettleAt, store.player.trial.lastPatrolAt]).toEqual([time + hour, time + hour])
+      vi.setSystemTime(time + 2 * hour)
+      const hourly = store.getIdleRewards()
+      expect(hourly.gainedQi).toBeGreaterThan(0)
+      store.setIdle(false)
+      expect(store.player.idleOff).toBe(true)
+      expect(store.player.qiExp).toBe(qiExp + hourly.gainedQi)
+      expect(patrolBattleCount(store.player.trial, 1)).toBe(60)
+
+      vi.setSystemTime(time + 5 * hour)
+      expect(store.getIdleRewards()).toEqual({ gainedQi: 0, gainedSilver: 0 })
+      store.setIdle(true)
+      vi.setSystemTime(time + 6 * hour)
+      expect(store.getIdleRewards()).toEqual(hourly)
+      store.settleOfflineQi()
+      expect(patrolBattleCount(store.player.trial, 1)).toBe(120)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('Lv.1、0 伙伴、无武学，只有青钢剑', () => {
     const s = newStore('NEW')
     expect(s.gameMode).toBe('NEW')

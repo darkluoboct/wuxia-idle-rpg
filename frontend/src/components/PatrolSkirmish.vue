@@ -59,9 +59,11 @@ onUnmounted(() => clearTimeout(timer))
 const serverNow = computed(() => now.value + store.worldTime - playerStore.nowTick)
 
 const stage = computed(() => featureUnlocked(store.player, 'TRIAL') ? trialStageOf(store.player.trial.selectedStageId) : undefined)
+/** 没在挂机：不打、不记场次，等玩家点「开始挂机」 */
+const idleOff = computed(() => !!store.player.idleOff)
 const rate = computed(() => patrolEncounterRate(store.currentLoadout.accId))
 const clock = computed(() => patrolClock(store.player.trial, serverNow.value, rate.value))
-const full = computed(() => serverNow.value - store.player.trial.lastPatrolAt >= IDLE_CAP_MS)
+const full = computed(() => !idleOff.value && serverNow.value - store.player.trial.lastPatrolAt >= IDLE_CAP_MS)
 const battleNo = computed(() => clock.value.battle)
 
 /** 同一场每次算出来一样：种子取角色、关卡与场次 */
@@ -78,7 +80,7 @@ function seeded(...parts: (string | number)[]) {
 
 const fight = computed(() => {
   const current = stage.value
-  if (!current || !shown.value) return undefined
+  if (!current || !shown.value || idleOff.value) return undefined
   const player = { ...store.player, battleMedicines: undefined }
   const environment = { ...store.mapEnvironment(store.player.currentMapId), ...current.environment }
   try {
@@ -196,14 +198,21 @@ const nextIn = computed(() => Math.max(1, Math.ceil((clock.value.battleMs - cloc
   <section v-if="stage" class="patrol-skirmish" :class="{ 'is-folded': !shown }" aria-label="巡历战斗">
     <header class="patrol-bar">
       <span class="patrol-place font-brush"><b>{{ stage.code }}</b> {{ stage.title.split(' · ')[0] }}</span>
-      <span class="tabular-nums">第 {{ battleNo.toLocaleString() }} 场</span>
-      <span v-if="fight?.foe.elite" class="patrol-elite">精英</span>
-      <span class="patrol-pending tabular-nums" title="上次结算后打完的场次，装备与宝箱在领取收益时清点">待清点 {{ clock.pending.toLocaleString() }} 场</span>
+      <span v-if="idleOff" class="patrol-pending">未在挂机</span>
+      <template v-else>
+        <span class="tabular-nums">第 {{ battleNo.toLocaleString() }} 场</span>
+        <span v-if="fight?.foe.elite" class="patrol-elite">精英</span>
+        <span class="patrol-pending tabular-nums" title="上次结算后打完的场次，装备与宝箱在领取收益时清点">待清点 {{ clock.pending.toLocaleString() }} 场</span>
+      </template>
       <button class="patrol-toggle" :aria-expanded="shown" @click="toggle">{{ shown ? '收起画面' : '展开画面' }}</button>
     </header>
 
     <template v-if="shown">
-      <p v-if="full" class="patrol-note">巡历已攒满 24 小时，领取收益后接着打。</p>
+      <p v-if="idleOff" class="patrol-note is-idle">
+        还没开始挂机。开始后侠客在本关巡历，每分钟一场，下线也照常累计。
+        <button class="patrol-start font-brush" :disabled="store.onlineActionBusy" @click="store.setIdle(true)">开始挂机</button>
+      </p>
+      <p v-else-if="full" class="patrol-note">巡历已攒满 24 小时，领取收益后接着打。</p>
       <template v-else-if="fight">
         <div ref="fieldEl" class="patrol-field" :class="{ 'is-travel': traveling }" :style="{ '--impact': `${beat?.impact ?? 0}ms` }">
           <div class="patrol-road" aria-hidden="true"><i /></div>

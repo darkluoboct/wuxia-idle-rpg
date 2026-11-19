@@ -68,7 +68,7 @@ export function useTrial({ actions, cultivation, battle }: {
   /** 本地试玩版惰性巡历：进度、章末复战，每分钟一场的掉落与每 30 场一场精英的锻材（docs/25）；
    *  返回与联机收功同样的巡历字段，供江湖邸报汇总 */
   function mockSettlePatrol(now = Date.now()): Pick<IdleGain, 'drops' | 'patrolBattles' | 'forgeMaterials' | 'patrolCache'> {
-    if (!IS_MOCK_MODE) return {}
+    if (!IS_MOCK_MODE || player.value.idleOff) return {}
     const t = player.value.trial
     const run = advancePatrol(t, now, patrolEncounterRate(currentLoadout.value.accId))
     const stage = trialStageOf(t.selectedStageId)

@@ -13,6 +13,8 @@ const usePill = ref(false)
 const usingPill = computed(() => usePill.value && store.pillCount > 0)
 
 const p = computed(() => store.player)
+/** 新角色、停止挂机后：打坐与巡历都不累计，点「开始挂机」才起算 */
+const idleOff = computed(() => !!p.value.idleOff)
 const partner = computed(() => IS_MOCK_MODE ? p.value.coCultivatePartner : store.activeCoCultivation?.partner.nickname)
 const nextRealm = computed(() => nextCultivationRealm(p.value.realmTier))
 const breakRate = computed(() => nextRealm.value
@@ -66,9 +68,14 @@ function openSkill(id: string | null) {
 
 <template>
   <div class="cultivate-hud">
-    <p class="cultivate-status font-brush" :title="partner ? `与「${partner}」一起修行，真气收益 +15%` : undefined">
+    <p class="cultivate-status font-brush" :class="{ 'is-off': idleOff }" :title="!idleOff && partner ? `与「${partner}」一起修行，真气收益 +15%` : undefined">
       <Wind aria-hidden="true" />
-      {{ partner ? '双人共修中' : '正在修行' }}<span aria-hidden="true">…</span>
+      <template v-if="idleOff">尚未挂机</template>
+      <template v-else>{{ partner ? '双人共修中' : '正在修行' }}<span aria-hidden="true">…</span></template>
+      <button
+        v-if="!idleOff" class="idle-stop" title="先领取已攒的收益，再停止累计打坐与巡历"
+        :disabled="store.onlineActionBusy" @click="store.setIdle(false)"
+      >停止挂机</button>
     </p>
     <p v-if="activeBoosts.length" class="cultivate-boosts" aria-label="进行中的活动">
       <span v-for="boost in activeBoosts" :key="boost.id" :title="boost.title">{{ boostLabel(boost) }} · 至 {{ until.format(boost.endsAt) }}</span>
@@ -92,7 +99,14 @@ function openSkill(id: string | null) {
           <div><b>{{ boosted(store.effectiveQiPerHour, 'QI').toLocaleString() }}</b><small>真气 / 小时</small></div>
         </div>
         <button
-          class="claim-reward" aria-label="领取修行收益" :title="`可领 ${pending.gainedQi.toLocaleString()} 真气和 ${pending.gainedSilver.toLocaleString()} 纹银`"
+          v-if="idleOff" class="claim-reward is-start" title="打坐与巡历从此刻起算，下线也照常累计，最多攒 24 小时"
+          :disabled="store.onlineActionBusy" @click="store.setIdle(true)"
+        >
+          <i class="art art-inner" aria-hidden="true" />
+          <span><strong class="font-brush">开始挂机</strong><small>打坐 · 巡历</small></span>
+        </button>
+        <button
+          v-else class="claim-reward" aria-label="领取修行收益" :title="`可领 ${pending.gainedQi.toLocaleString()} 真气和 ${pending.gainedSilver.toLocaleString()} 纹银`"
           :disabled="store.onlineActionBusy" @click="store.settleOfflineQi()"
         >
           <i class="art art-chest" aria-hidden="true" />

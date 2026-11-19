@@ -13,7 +13,8 @@ afterEach(() => {
 
 /**
  * 新建一个隔离的 store；可直接选择开局模式。
- * 新游戏默认按老角色处理（玩法全部开放），专门验证各玩法本身；gated 时按新手序章逐步开放（shared/features.ts）。
+ * 新游戏默认按老角色处理（玩法全部开放、一直在挂机），专门验证各玩法本身；
+ * gated 时按真正的新角色：玩法随新手序章逐步开放（shared/features.ts），点「开始挂机」才累计打坐与巡历。
  * origin 给新游戏选家世（shared/origins.ts），不给就是没有家世的老式开局。
  */
 export function newStore(mode?: 'NEW' | 'DEMO', { gated = false, origin }: { gated?: boolean; origin?: OriginId } = {}): Store {
@@ -22,7 +23,10 @@ export function newStore(mode?: 'NEW' | 'DEMO', { gated = false, origin }: { gat
   activeGames.push(pinia)
   const s = useGameStore(pinia)
   if (mode) s.startGame(mode, origin)
-  if (mode === 'NEW' && !gated) delete s.player.featureGate
+  if (mode === 'NEW' && !gated) {
+    delete s.player.featureGate
+    delete s.player.idleOff
+  }
   return s
 }
 

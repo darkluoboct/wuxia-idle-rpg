@@ -888,6 +888,18 @@ summary.quest-row:hover { background-color: var(--gold-faint); }
   line-height: 1.15;
 }
 .cultivate-status svg { width: 1.2em; height: 1.2em; color: oklch(89% .121 70); }
+.cultivate-status.is-off { color: #cfc4b1; text-shadow: 0 1px 2px #000; }
+.cultivate-status.is-off svg { color: #9d927f; }
+.idle-stop {
+  padding: .05rem .45rem;
+  border: 1px solid #e8b96a66;
+  border-radius: .2rem;
+  color: #e8d2a6;
+  font-family: var(--font-body);
+  font-size: .72rem;
+  text-shadow: none;
+}
+.idle-stop:hover { border-color: #e8b96a; }
 .cultivate-boosts {
   display: flex;
   flex-wrap: wrap;
@@ -968,6 +980,7 @@ summary.quest-row:hover { background-color: var(--gold-faint); }
   line-height: 1.13;
 }
 .claim-reward:hover { border-color: var(--frame-light); background-color: #342e27; }
+.claim-reward.is-start { border-color: #e8b96acc; box-shadow: 0 0 .6rem #e8b96a55; }
 .claim-reward .art { width: clamp(2.25rem, 5.7vh, 3.45rem); aspect-ratio: 1; border-radius: .35rem; }
 .claim-reward span { display: grid; gap: .18rem; justify-items: start; }
 .claim-reward strong { font-size: 1.04rem; color: var(--frame-light); white-space: nowrap; }
@@ -1107,6 +1120,17 @@ summary.quest-row:hover { background-color: var(--gold-faint); }
   font-size: .72rem;
 }
 .patrol-toggle:hover { border-color: #e8b96a; }
+.patrol-note.is-idle { gap: .45rem; padding-block: 1.6rem; color: #cfc4b1; text-align: center; }
+.patrol-start {
+  padding: .2rem 1.1rem;
+  border: 1px solid #e8b96acc;
+  border-radius: .25rem;
+  color: #f3dcaa;
+  font-size: 1.1rem;
+  background: #2b2620;
+  box-shadow: 0 0 .6rem #e8b96a55;
+}
+.patrol-start:hover { background: #3a3128; }
 .patrol-field {
   position: relative;
   display: grid;

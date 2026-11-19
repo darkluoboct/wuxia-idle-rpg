@@ -130,6 +130,14 @@ test('联机注册、创角、同图聊天、私聊、领取收益、换装读�
     await expect(bob.game.getByText('借一步说话', { exact: true })).toBeVisible()
     await contexts[1].close()
     await expect(nearby(alice.game).getByText(bob.nickname, { exact: true })).toHaveCount(0)
+    // 新角色先点「开始挂机」才累计打坐与巡历，之后才有收益可领
+    await expect(alice.game.getByRole('button', { name: '领取修行收益' })).toHaveCount(0)
+    const started = alice.page.waitForResponse(
+      (response) => response.url().endsWith('/api/v1/cultivate/idle') && response.request().method() === 'POST',
+    )
+    await alice.game.locator('.income-tray').getByRole('button', { name: '开始挂机' }).click()
+    expect((await started).ok()).toBe(true)
+    await expect(alice.game.getByRole('button', { name: '停止挂机' })).toBeVisible()
     const settlement = alice.page.waitForResponse(
       (response) =>
         response.url().endsWith('/api/v1/cultivate/settle') &&

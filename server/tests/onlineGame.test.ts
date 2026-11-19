@@ -111,7 +111,7 @@ describe('联机战斗', { skip: connection ? false : '请设置 GAME_TEST_DATAB
       [id, JSON.stringify(Object.values(starter.presets))])
   }
 
-  /** fresh：联机新角色；gated 时保留新手序章的玩法开放顺序，否则按老角色处理（玩法全部开放） */
+  /** fresh：联机新角色；gated 时保留新手序章的玩法开放顺序、点「开始挂机」才累计，否则按老角色处理（玩法全部开放、一直在挂机） */
   async function register(name: string, fresh: boolean, gated = false, origin: OriginId = 'xuanmen') {
     const loginName = `story_${name}`
     const password = randomUUID()
@@ -124,7 +124,7 @@ describe('联机战斗', { skip: connection ? false : '请设置 GAME_TEST_DATAB
     let snapshot = creation.json<PlayerSnapshot>()
     const id = snapshot.player.id
     if (!fresh) await veteran(id, snapshot)
-    else if (!gated) await db.query("UPDATE players SET profile = profile - 'featureGate' WHERE id = $1", [id])
+    else if (!gated) await db.query("UPDATE players SET profile = profile - 'featureGate' - 'idleOff' WHERE id = $1", [id])
     const write = (method: 'POST' | 'PUT', path: string, payload?: Record<string, unknown>, requestId: string = randomUUID()) =>
       app.inject({ method, url: `/api/v1${path}`, headers: { ...headers, 'idempotency-key': requestId }, payload })
     const post = (path: string, payload?: Record<string, unknown>, key?: string) => write('POST', path, payload, key)
@@ -1005,6 +1005,34 @@ describe('联机战斗', { skip: connection ? false : '请设置 GAME_TEST_DATAB
     const rows = await ledger(rookie.id)
     assert.deepEqual(rows.map(({ ref }) => ref), ['start', 'trial:1', 'trial:7', 'realm:2'])
     assert.equal(rows.at(-1)?.balance, again.snapshot.player.goldIngot)
+  })
+
+  it('新角色点「开始挂机」才累计打坐与巡历；停止先收功，停着的那段不补', async () => {
+    const hero = await createNewcomer('idleon')
+    assert.equal(hero.snapshot.player.idleOff, true)
+    /** 把收功与巡历的起算点往前拨，当作过了这么久 */
+    const rewind = (ms: number) => db.query(`UPDATE players SET last_settle_at = last_settle_at - $2,
+      profile = jsonb_set(profile, '{trial,lastPatrolAt}', to_jsonb((profile->'trial'->>'lastPatrolAt')::bigint - $2)) WHERE id = $1`, [hero.id, ms])
+    const hours = 2 * 3_600_000
+
+    await rewind(hours)
+    const before = await hero.act<IdleGain>('/cultivate/settle')
+    assert.deepEqual([before.result.gainedQi, before.result.gainedSilver, before.result.patrolBattles], [0, 0, undefined])
+    assert.equal(before.snapshot.idlePreview.pendingQi, 0)
+
+    const started = await hero.act<IdleGain>('/cultivate/idle', { on: true })
+    assert.equal(started.snapshot.player.idleOff, undefined)
+    await rewind(hours)
+    const stopped = await hero.act<IdleGain>('/cultivate/idle', { on: false })
+    assert.equal(stopped.snapshot.player.idleOff, true)
+    assert.ok(stopped.result.gainedQi >= 2 * started.snapshot.soloQiPerHour, `${stopped.result.gainedQi}`)
+    assert.equal(stopped.result.patrolBattles, 120)
+    assert.equal(stopped.snapshot.player.qiExp, before.snapshot.player.qiExp + stopped.result.gainedQi)
+
+    await rewind(hours)
+    const paused = await hero.act<IdleGain>('/cultivate/settle')
+    assert.deepEqual([paused.result.gainedQi, paused.result.patrolBattles], [0, undefined])
+    assert.equal((await hero.post('/cultivate/idle', { on: 'yes' })).json().code, 'INVALID_IDLE')
   })
 
   it('建角须选家世；同一账号重复建角只认原来的家世', async () => {

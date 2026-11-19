@@ -331,9 +331,9 @@ export function useLocalGame({ battle, companions, world, market, artifacts, sta
     if (mode === 'NEW') {
       const now = Date.now()
       const { id, nickname, avatarId } = player.value
-      // 与联机新角色同一套开局；首次收功能看到几分钟的打坐收益
+      // 与联机新角色同一套开局：点「开始挂机」后才累计打坐与巡历
       const start = createNewGameCharacter({ id, nickname, avatarId }, now, origin)
-      player.value = { ...start.player, lastSettleAt: now - 5 * 60_000 }
+      player.value = start.player
       learnedSkills.value = start.learnedSkills
       ownedItemIds.value = start.ownedItemIds
       openedAcupointIds.value = start.openedAcupointIds

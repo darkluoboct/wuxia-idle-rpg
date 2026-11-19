@@ -214,6 +214,7 @@ export function createNewGameCharacter(identity: Pick<PlayerDTO, 'id' | 'nicknam
       recentDrops: [],
     },
     featureGate: true,
+    idleOff: true,
     ...(origin ? { origin: origin.id } : {}),
   }
   const kin = origin ? COMPANIONS[origin.companionId] : undefined
@@ -583,6 +584,15 @@ export function averageBoostPct(boosts: readonly BoostWindow[], from: number, to
   if (to <= from) return boostPctOver(boosts, to, to)
   const weighted = idleSegments(from, to, boosts).reduce((total, [start, end]) => total + (end - start) * boostPctOver(boosts, start, end), 0)
   return weighted / (to - from)
+}
+
+/** 开始挂机：打坐与巡历都从这一刻起算，停着的那段不补。已在挂机返回 false */
+export function startIdle(player: Pick<PlayerDTO, 'idleOff' | 'lastSettleAt' | 'trial'>, now: number) {
+  if (!player.idleOff) return false
+  delete player.idleOff
+  player.lastSettleAt = Math.max(now, player.lastSettleAt)
+  player.trial.lastPatrolAt = now
+  return true
 }
 
 export function idleQiNumerator(

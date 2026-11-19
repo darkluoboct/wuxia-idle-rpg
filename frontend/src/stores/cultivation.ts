@@ -1,7 +1,7 @@
 import type { CultivationResult, IdleGain, LoadoutPresetDTO, RateBoostKind, TrialDropDTO } from '@/network/protocol'
 import { ACUPOINTS, MEDICINES, getMapHerbs, COMPANIONS } from '@/config/gameData'
 import { gaibangSilverGain } from '../../../shared/gaibang.ts'
-import { cultivatePlayer, cultivationRate, cultivationRates, idleQiNumerator, karmaAfterEvent } from '../../../shared/player.ts'
+import { cultivatePlayer, cultivationRate, cultivationRates, idleQiNumerator, karmaAfterEvent, startIdle } from '../../../shared/player.ts'
 import { IDLE_CAP_MS } from '../../../shared/trialStages.ts'
 
 /** 离开超过一个时辰（两小时）才弹江湖邸报；不在场时有事发生则随时弹 */
@@ -48,6 +48,7 @@ export function useCultivation({
 
   function getIdleRewards(now = Date.now()) {
     const live = onlineState.value
+    if ((live?.snapshot.player ?? player.value).idleOff) return { gainedQi: 0, gainedSilver: 0 }
     if (live) {
       const { snapshot, receivedAt } = live
       const current = snapshot.serverTime + Math.max(0, now - receivedAt)
@@ -98,43 +99,72 @@ export function useCultivation({
 
   // 1. 惰性离线挂机收益结算（对应后端 POST /api/v1/cultivate/settle）
   function settleOfflineQi() {
-    return actions.run('settle', undefined, (result) => {
-      if (result.gainedQi || result.gainedSilver) showIdleGain(result)
-      else if (!result.drops?.length && !result.patrolBattles && !result.patrolCache) showToast('还没攒够可领的收益')
-      for (const drop of result.drops ?? []) logTrialDrop(drop)
-      if (result.patrolBattles) logPatrolBattles(result.patrolBattles, result.forgeMaterials)
-      if (result.patrolCache) logPatrolCache(result.patrolCache)
-      for (const [id, gain] of Object.entries(result.reunionClues ?? {})) {
-        appendLog('ADVENTURE', [
-          { type: 'tag', text: '闭关打听', tone: 'jade' },
-          { type: 'text', text: ` 得到${COMPANIONS[id].name}的寻访线索 +${gain}` },
-        ])
-      }
-      if (result.feastIngredient) logFeastIngredient(result.feastIngredient)
-      if (result.contestIngot) {
-        appendLog('JIANGHU', [{ type: 'tag', text: '门派演武', tone: 'gold' }, { type: 'text', text: ` 上周演武论功，领得 ${result.contestIngot} 元宝。` }])
-      }
-      for (const award of result.xiangyang ?? []) announceXiangyangAward(award)
-      for (const notice of result.defenseNotices ?? []) logDefenseNotice(notice)
-      const lends = result.away?.raidLends
-      if (lends) {
-        appendLog('JIANGHU', [{ type: 'tag', text: '结义助战', tone: 'jade' },
-          { type: 'text', text: ` 你的结义镜像随人破阵 ${lends.count} 次，助战真气 +${lends.qiExp.toLocaleString()}。` }])
-      }
-      openAwayReport(result, worldTime.value)
+    return actions.run('settle', undefined, (result) => onSettled(result), settleLocally)
+  }
+
+  /** 开始挂机从这一刻起算；停止挂机先收功再停 */
+  function setIdle(on: boolean) {
+    const announce = () => {
+      appendLog('CULTIVATE', [{ type: 'tag', text: on ? '开始挂机' : '停止挂机', tone: 'jade' },
+        { type: 'text', text: on ? ' 打坐与巡历从此刻起算，下线也照常累计，最多攒 24 小时。' : ' 已收功，打坐与巡历暂停累计。' }])
+      showToast(on ? '开始挂机' : '已停止挂机', 'info')
+    }
+    return actions.run('idle', { on }, (result) => {
+      if (!on) onSettled(result, true)
+      announce()
     }, () => {
-      const now = Date.now()
-      const since = player.value.lastReportAt ?? player.value.lastSettleAt
-      player.value.lastReportAt = now
-      const idle = settleMockIdle(now, true)
-      const patrol = mockSettlePatrol(now)
-      const { awards, xiangyang } = claimLocalXiangyang(now, since)
-      markDaily('settle')
-      openAwayReport({ ...idle, ...patrol, ...(awards.length ? { xiangyang: awards } : {}), away: { since, ...(xiangyang ? { xiangyang } : {}) } }, now)
+      if (on ? !startIdle(player.value, Date.now()) : player.value.idleOff) return
+      if (!on) {
+        settleLocally()
+        player.value.idleOff = true
+      }
+      announce()
     })
   }
 
+  /** 收功的战果：toast、日志、江湖邸报；停止挂机时没攒到东西就不另提示 */
+  function onSettled(result: IdleGain, stopping = false) {
+    if (result.gainedQi || result.gainedSilver) showIdleGain(result)
+    else if (!stopping && !result.drops?.length && !result.patrolBattles && !result.patrolCache) showToast('还没攒够可领的收益')
+    for (const drop of result.drops ?? []) logTrialDrop(drop)
+    if (result.patrolBattles) logPatrolBattles(result.patrolBattles, result.forgeMaterials)
+    if (result.patrolCache) logPatrolCache(result.patrolCache)
+    for (const [id, gain] of Object.entries(result.reunionClues ?? {})) {
+      appendLog('ADVENTURE', [
+        { type: 'tag', text: '闭关打听', tone: 'jade' },
+        { type: 'text', text: ` 得到${COMPANIONS[id].name}的寻访线索 +${gain}` },
+      ])
+    }
+    if (result.feastIngredient) logFeastIngredient(result.feastIngredient)
+    if (result.contestIngot) {
+      appendLog('JIANGHU', [{ type: 'tag', text: '门派演武', tone: 'gold' }, { type: 'text', text: ` 上周演武论功，领得 ${result.contestIngot} 元宝。` }])
+    }
+    for (const award of result.xiangyang ?? []) announceXiangyangAward(award)
+    for (const notice of result.defenseNotices ?? []) logDefenseNotice(notice)
+    const lends = result.away?.raidLends
+    if (lends) {
+      appendLog('JIANGHU', [{ type: 'tag', text: '结义助战', tone: 'jade' },
+        { type: 'text', text: ` 你的结义镜像随人破阵 ${lends.count} 次，助战真气 +${lends.qiExp.toLocaleString()}。` }])
+    }
+    openAwayReport(result, worldTime.value)
+  }
+
+  function settleLocally() {
+    const now = Date.now()
+    const since = player.value.lastReportAt ?? player.value.lastSettleAt
+    player.value.lastReportAt = now
+    const idle = settleMockIdle(now, true)
+    const patrol = mockSettlePatrol(now)
+    const { awards, xiangyang } = claimLocalXiangyang(now, since)
+    markDaily('settle')
+    openAwayReport({ ...idle, ...patrol, ...(awards.length ? { xiangyang: awards } : {}), away: { since, ...(xiangyang ? { xiangyang } : {}) } }, now)
+  }
+
   function settleMockIdle(now: number, claim = false) {
+    if (player.value.idleOff) {
+      player.value.lastSettleAt = now
+      return { gainedQi: 0, gainedSilver: 0 }
+    }
     const elapsedSec = Math.max(0, Math.floor((now - player.value.lastSettleAt) / 1000))
     const hours = Math.min(IDLE_CAP_MS / 3_600_000, elapsedSec / 3600)
     const { gainedQi, gainedSilver } = claim ? getIdleRewards(now) : {
@@ -252,6 +282,7 @@ export function useCultivation({
     showIdleGain,
     settleMockBeforeLoadoutChange,
     settleOfflineQi,
+    setIdle,
     awayReport,
     closeAwayReport,
     pierceAcupoint,

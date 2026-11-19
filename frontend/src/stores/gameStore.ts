@@ -309,6 +309,7 @@ export const useGameStore = defineStore('wuxiaGame', () => {
     inspectById: uiStore.inspectById,
     getIdleRewards: cultivation.getIdleRewards,
     settleOfflineQi: cultivation.settleOfflineQi,
+    setIdle: cultivation.setIdle,
     awayReport: cultivation.awayReport,
     closeAwayReport: cultivation.closeAwayReport,
     upgradeLevel: cultivation.upgradeLevel,

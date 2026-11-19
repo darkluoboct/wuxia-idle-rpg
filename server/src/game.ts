@@ -12,7 +12,7 @@ import {
   IDLE_CAP_MS, switchPatrolStage, TRIAL_PATROL_HOURS, TRIAL_REPLAY_HOURS, TRIAL_STAGES, trialFirstClearKarma, trialItemOf, trialPartId, trialPuzzleOutcome,
   trialStageOf, upgradesPatrolYield, type TrialRoll, type TrialStageConfig,
 } from '../../shared/trialStages.ts'
-import { appraiseGhostCurio, autoEquipItem, averageBoostPct, autoEquipSkill, canEnterMap, canReceiveSnakeRecipe, cityInspectionDue, coCultivationRate, createNewGameCharacter, createStarterCharacter, cultivatePlayer, cultivationRate, cultivationRates, GHOST_APPRAISAL_SWORD, idleQiNumerator, innAffinityGain, innGiftsRemaining, innVisitDay, karmaAfterEvent, legacyAcupoints, planMapJourney, recipeForPlayer, resolveSeaVoyage, settlePatrolCaches, trialFirstClearSilver } from '../../shared/player.ts'
+import { appraiseGhostCurio, autoEquipItem, averageBoostPct, autoEquipSkill, canEnterMap, canReceiveSnakeRecipe, cityInspectionDue, coCultivationRate, createNewGameCharacter, createStarterCharacter, cultivatePlayer, cultivationRate, cultivationRates, GHOST_APPRAISAL_SWORD, idleQiNumerator, innAffinityGain, startIdle, innGiftsRemaining, innVisitDay, karmaAfterEvent, legacyAcupoints, planMapJourney, recipeForPlayer, resolveSeaVoyage, settlePatrolCaches, trialFirstClearSilver } from '../../shared/player.ts'
 import { HUASHAN_HONORS, HUASHAN_RESPECT_QI, huashanDay, huashanRankReward, huashanRatingSwing, huashanSeason, huashanSeasonEndsAt } from '../../shared/huashan.ts'
 import { GAIBANG_DEBATE, GAIBANG_FINAL_DISHES, gaibangDishFlag, gaibangDishPrepared, gaibangSilverGain } from '../../shared/gaibang.ts'
 import { BETRAYAL_BOUNTY, SECT_CHIEF_SALUTE_QI, SECT_CONTEST_MIN_RANK, SECT_SALUTE_QI, sectContestEndsAt, sectContestWeek, sectContributionGain, sectExamBlockReason, sectPromotion, sectPromotionRewards, simulateSectTrial } from '../../shared/sectProgress.ts'
@@ -341,8 +341,9 @@ async function lockHuashanSeason(client: PoolClient, seasonId: number, current: 
 }
 
 function idleRewards(character: Character, now: number, rate: ReturnType<typeof cultivationRates>) {
-  const earned = (hourly: number, kind: 'QI' | 'SILVER') =>
-    idleQiNumerator(character.player.lastSettleAt, now, hourly, character.coCultivation, rateBoosts(kind))
+  // 没在挂机时不累计；开始挂机把起算点挪到那一刻
+  const earned = (hourly: number, kind: 'QI' | 'SILVER') => character.player.idleOff ? 0n
+    : idleQiNumerator(character.player.lastSettleAt, now, hourly, character.coCultivation, rateBoosts(kind))
   const qi = BigInt(character.qiRemainder) + earned(rate.qi, 'QI')
   const silver = BigInt(character.silverRemainder) + earned(gaibangSilverGain(character.player, rate.silverBasis), 'SILVER') * 28n
   return {
@@ -389,6 +390,7 @@ function changeKarma(character: Character, delta: number, now: number) {
 async function settlePatrol(character: Character, now: number, client: PoolClient) {
   const { player } = character
   const { trial } = player
+  if (player.idleOff) return false
   // 运营的掉落活动按这段巡历里活动时长的占比折算
   const dropPct = averageBoostPct(rateBoosts('DROP'), Math.max(trial.lastPatrolAt, now - IDLE_CAP_MS), now)
   const run = advancePatrol(trial, now, patrolEncounterRate(activeLoadout(character).accId))
@@ -1548,11 +1550,13 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
     return { result: { action: 'sortie', drum, ...sortie }, changed: true }
   }))
 
-  app.post('/api/v1/cultivate/settle', (request) => respond(request, async (character, now, client) => {
+  /** 收功：打坐与巡历的收益、掉落，连同江湖邸报和各处顺带领的东西 */
+  async function collectIdle(character: Character, now: number, client: PoolClient) {
     let changed = now > character.player.lastSettleAt || !!(character.coCultivation && character.coCultivation.endsAt <= now)
     markDaily(character, 'settle', now)
     const reunionClues: NonNullable<IdleGain['reunionClues']> = {}
-    const elapsed = now - (character.patrolIdleFrom ?? character.player.lastSettleAt)
+    // 采办食材、闭关打听按挂机时长算，停着的那段不算
+    const elapsed = character.player.idleOff ? 0 : now - (character.patrolIdleFrom ?? character.player.lastSettleAt)
     const flags = storyProgressFlags(character.rewardedChapters, character.player.storyFlags)
     const feastIngredient = feastActive(character.companionAffinity.hongqigong, flags)
       ? gatherFeastIngredient(character.player, elapsed / 1000)?.id : undefined
@@ -1583,9 +1587,23 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
         ...(feastIngredient ? { feastIngredient } : {}), ...(contestIngot ? { contestIngot } : {}), ...(xiangyang.length ? { xiangyang } : {}),
         ...(defenseNotices?.length ? { defenseNotices } : {}),
         away,
-      },
+      } satisfies IdleGain,
       changed,
     }
+  }
+
+  app.post('/api/v1/cultivate/settle', (request) => respond(request, collectIdle))
+
+  /** 开始挂机从这一刻起算；停止挂机先收功再停，停着时打坐与巡历都不累计 */
+  app.post('/api/v1/cultivate/idle', (request) => respond(request, async (character, now, client) => {
+    const { on } = objectBody(request.body)
+    if (typeof on !== 'boolean') throw new GameError(400, 'INVALID_IDLE', '请选择开始还是停止挂机')
+    const { player } = character
+    if (on) return { result: NO_IDLE_GAIN, changed: startIdle(player, now) }
+    if (player.idleOff) return { result: NO_IDLE_GAIN, changed: false }
+    const { result } = await collectIdle(character, now, client)
+    player.idleOff = true
+    return { result, changed: true }
   }))
 
   /** 门派演武：已结榜的往周按参与 / 首席发元宝，每周一次 */

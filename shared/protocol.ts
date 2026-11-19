@@ -122,6 +122,7 @@ export interface PlayerDTO {
   gacha?: { pulls: number; pity: number }
   feast?: { ingredients: string[]; cooked: string[]; lastCookDay: number }
   featureGate?: true                // 新手序章之后建的角色：玩法随剧情开放（老角色没有，全部开放）
+  idleOff?: true                    // 没在挂机：新角色建好时、停止挂机后；打坐与巡历都不累计（老角色没有，一直在挂）
   featuresSeen?: FeatureId[]        // 已看过开放剧情的玩法
   origin?: OriginId                 // 创角时选的家世（shared/origins.ts），老角色没有
 }

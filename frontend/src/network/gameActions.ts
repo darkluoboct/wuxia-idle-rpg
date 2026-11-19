@@ -69,6 +69,7 @@ type TrialBattle = { stageId: number; answer?: string; retreat?: boolean }
 
 interface Actions {
   settle: [undefined, IdleGain]
+  idle: [{ on: boolean }, IdleGain]
   cultivate: [Parameters<typeof cultivatePlayer>[3] & { expectedTier: number }, CultivationResult]
   forage: [undefined, { herbs: ReturnType<typeof gatherHerbs> }]
   refine: [{ recipeId: string }, { medicineId: string; count: number }]
@@ -125,6 +126,7 @@ const trialBody = ({ answer, retreat }: TrialBattle) =>
 
 const requests: { [K in keyof Actions]: (input: Actions[K][0]) => Request | undefined } = {
   settle: () => ['POST', '/cultivate/settle'],
+  idle: (body) => ['POST', '/cultivate/idle', body],
   cultivate: (body) => ['POST', '/cultivate/progress', body],
   forage: () => ['POST', '/alchemy/forage'],
   refine: (body) => ['POST', '/alchemy/refine', body],
