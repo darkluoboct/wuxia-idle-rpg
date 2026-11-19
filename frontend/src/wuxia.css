@@ -1312,10 +1312,24 @@ summary.quest-row:hover { background-color: var(--gold-faint); }
   75% { opacity: 1; transform: translateY(-14px); }
   100% { opacity: 0; transform: translateY(-26px); }
 }
+/* 系统设了「减少动态效果」：style.css 把动画都压成一瞬，招式名、飘字、特效会一闪就没。
+   这里改成原地淡入淡出：不冲、不划、不震、不走路，但看得见 */
 @media (prefers-reduced-motion: reduce) {
-  .patrol-fx, .patrol-flash, .patrol-flare, .patrol-dim { display: none; }
+  .patrol-callout { transform: translateX(var(--shift)); }
+  .patrol-pop, .patrol-banner { transform: translateX(-50%); }
+  .patrol-callout, .patrol-pop, .patrol-banner, .patrol-loot span { animation-name: patrolFadeHold !important; }
+  .patrol-callout, .patrol-pop { animation-duration: 1s !important; }
+  .patrol-banner { animation-duration: 1.2s !important; }
+  .patrol-banner.is-elite { animation-duration: 1.8s !important; }
+  .patrol-loot span { animation-duration: 2.4s !important; }
+  .patrol-fx { animation-duration: .8s !important; }
+  .patrol-flash, .patrol-flare { animation-duration: .4s !important; }
+  .patrol-dim { animation-duration: .9s !important; }
+  .patrol-fx [pathLength] { stroke-dashoffset: 0; animation: none !important; }
+  .patrol-fx circle { animation: none !important; }
   .patrol-road i, .patrol-side .patrol-unit { animation: none !important; }
 }
+@keyframes patrolFadeHold { 0% { opacity: 0; } 12%, 75% { opacity: 1; } 100% { opacity: 0; } }
 .patrol-note { flex-direction: column; gap: 0; min-height: 2.7rem; font-size: .9rem; }
 .patrol-note.is-won { color: oklch(89% .11 75); }
 .patrol-note small { color: #cfc4b1; font-size: .74rem; }

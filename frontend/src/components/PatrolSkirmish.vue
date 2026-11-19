@@ -19,8 +19,11 @@ import PortraitCard from './PortraitCard.vue'
 const store = useGameStore()
 const playerStore = usePlayerStore()
 
-/** 打完留给战果与赶路的时间；战斗太长时直接跳到结果 */
+/** 打完至少留给战果的时间；战斗太长时直接跳到结果 */
 const RESULT_MS = 6_000
+/** 打完留给清点与赶路的时间；一招的拍子在 0.92~1.5 秒之间放宽，让交手占满一分钟的其余时间 */
+const TAIL_MS = 8_000
+const BEAT_MAX_MS = 1_500
 /** 打完多久收起战果、上路赶往下一场 */
 const LOOT_MS = 2_600
 /** 冲到跟前、招式落下的时刻；绝技先蓄一口气 */
@@ -48,7 +51,7 @@ function tick() {
   const { intoBattleMs, battleMs } = clock.value
   const left = battleMs - intoBattleMs
   const wait = full.value ? 10_000 : !shown.value || !fight.value ? left
-    : done.value ? left % 1000 || 1000 : BATTLE_STEP_MS - intoBattleMs % BATTLE_STEP_MS
+    : done.value ? left % 1000 || 1000 : beatMs.value - intoBattleMs % beatMs.value
   timer = setTimeout(tick, Math.min(wait, left) + 5)
 }
 onMounted(tick)
@@ -89,15 +92,16 @@ const fight = computed(() => {
 })
 
 const steps = computed(() => fight.value ? patrolFightSteps(fight.value.report) : [])
-const maxSteps = computed(() => Math.max(1, Math.floor((clock.value.battleMs - RESULT_MS) / BATTLE_STEP_MS)))
 /** 开场留一拍给对手登场，精英两拍 */
 const intro = computed(() => fight.value?.foe.elite ? 2 : 1)
+const beatMs = computed(() => Math.min(BEAT_MAX_MS, Math.max(BATTLE_STEP_MS, (clock.value.battleMs - TAIL_MS) / (steps.value.length + intro.value))))
+const maxSteps = computed(() => Math.max(1, Math.floor((clock.value.battleMs - RESULT_MS) / beatMs.value)))
 /** 0 为登场，1~N 为第几招，再往后是打完 */
-const beatNo = computed(() => Math.max(0, Math.floor(clock.value.intoBattleMs / BATTLE_STEP_MS) - intro.value + 1))
+const beatNo = computed(() => Math.max(0, Math.floor(clock.value.intoBattleMs / beatMs.value) - intro.value + 1))
 /** 已演到第几招；超出可演的招数就一次演完 */
 const step = computed(() => beatNo.value >= maxSteps.value ? steps.value.length : Math.min(beatNo.value, steps.value.length))
 const done = computed(() => !!fight.value && (beatNo.value > steps.value.length || beatNo.value >= maxSteps.value))
-const doneAtMs = computed(() => (Math.min(steps.value.length + 1, maxSteps.value) + intro.value - 1) * BATTLE_STEP_MS)
+const doneAtMs = computed(() => (Math.min(steps.value.length + 1, maxSteps.value) + intro.value - 1) * beatMs.value)
 const traveling = computed(() => done.value && clock.value.intoBattleMs - doneAtMs.value >= LOOT_MS)
 
 const hpNow = computed(() => {

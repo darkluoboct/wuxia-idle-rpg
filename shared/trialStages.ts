@@ -1442,8 +1442,8 @@ export function patrolFoe(stage: TrialStageConfig, battle: number, tune: { hp?: 
   }
 }
 
-/** 巡历画面一场演几招合适 */
-export const PATROL_FIGHT_STEPS = { minion: [10, 24], elite: [18, 36] } as const
+/** 巡历画面一场演几招合适：一分钟里大半在交手，只留几秒清点、赶路 */
+export const PATROL_FIGHT_STEPS = { minion: [26, 34], elite: [32, 40] } as const
 
 /** 巡历画面只演看得见的交手：掉血、回血、反伤、闪避、护盾；开场的被动加成等只记在战报里 */
 export function patrolFightSteps(report: BattleReportDTO) {
