@@ -139,7 +139,7 @@ const coCultivationTimeLeft = computed(() => {
         <div class="min-w-0 flex-1">
           <div class="flex items-center gap-1.5">
             <b class="truncate text-sm">{{ store.currentMap.name }}</b>
-            <span class="chip !py-0 !text-[0.68rem]" :class="store.currentMap.safety === 'PEACE' ? 'chip-jade' : 'chip-red'">
+            <span class="chip !py-0 !text-[0.75rem]" :class="store.currentMap.safety === 'PEACE' ? 'chip-jade' : 'chip-red'">
               {{ store.currentMap.safety === 'PEACE' ? '和平区' : IS_MOCK_MODE ? '可劫镖' : '纷争区' }}
             </span>
           </div>
@@ -163,8 +163,8 @@ const coCultivationTimeLeft = computed(() => {
             <div class="min-w-0 flex-1">
               <div class="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
                 <b class="truncate text-sm" :class="pl.isBetrayerBounty ? 'text-cinnabar' : ''">{{ pl.nickname }}</b>
-                <span v-if="pl.isBetrayerBounty" class="chip chip-red !py-0 !text-[0.68rem]">被通缉</span>
-                <span v-if="pl.isEscortingDart" class="chip chip-gold !py-0 !text-[0.68rem]">押镖</span>
+                <span v-if="pl.isBetrayerBounty" class="chip chip-red !py-0 !text-[0.75rem]">被通缉</span>
+                <span v-if="pl.isEscortingDart" class="chip chip-gold !py-0 !text-[0.75rem]">押镖</span>
               </div>
               <div class="truncate text-xs text-ink3">{{ pl.sectName }} · {{ pl.realmName }}</div>
             </div>
@@ -223,9 +223,9 @@ const coCultivationTimeLeft = computed(() => {
               <div class="min-w-0 flex-1">
                 <div class="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
                   <b class="truncate text-sm" :class="pl.isBetrayerBounty ? 'text-cinnabar' : ''">{{ pl.nickname }}</b>
-                  <span class="chip !py-0 !text-[0.68rem]">离线</span>
-                  <span v-if="pl.isBetrayerBounty" class="chip chip-red !py-0 !text-[0.68rem]">被通缉</span>
-                  <span v-if="pl.isEscortingDart" class="chip chip-gold !py-0 !text-[0.68rem]">押镖</span>
+                  <span class="chip !py-0 !text-[0.75rem]">离线</span>
+                  <span v-if="pl.isBetrayerBounty" class="chip chip-red !py-0 !text-[0.75rem]">被通缉</span>
+                  <span v-if="pl.isEscortingDart" class="chip chip-gold !py-0 !text-[0.75rem]">押镖</span>
                 </div>
                 <div class="truncate text-xs text-ink3">{{ pl.sectName }} · {{ pl.realmName }}</div>
               </div>

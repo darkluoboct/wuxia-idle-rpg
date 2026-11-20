@@ -138,7 +138,7 @@ function openSkill(id: string | null) {
           <b>{{ store.pillCount }}</b>
         </button>
         <button class="hotbar-command" aria-label="升级角色" :title="levelHint" :disabled="!canLevel || store.onlineActionBusy" @click="store.upgradeLevel()">
-          <span class="font-brush">升级</span><small>{{ atCap ? '已达上限' : `Lv.${p.level + 1}` }}</small>
+          <span class="font-brush">升级</span><small>{{ atCap ? '待突破' : `Lv.${p.level + 1}` }}</small>
         </button>
         <button
           class="hotbar-command hotbar-break" aria-label="突破境界"

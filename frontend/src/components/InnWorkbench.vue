@@ -150,14 +150,14 @@ const questReady = computed(() => (hasFeast.value && !cookedToday.value && DISHE
                 </ul>
               </section>
             </div>
-            <p class="text-[0.7rem] text-ink3">以上为单抽基础概率；演示版由本地模拟，正式版以服务端结果为准。</p>
+            <p class="text-[0.75rem] text-ink3">以上为单抽基础概率；演示版由本地模拟，正式版以服务端结果为准。</p>
           </WorkbenchDialog>
           <WorkbenchDialog title="结缘记录" label="结缘记录">
             <ol class="space-y-1 text-sm">
               <li v-if="!store.gacha.history.length" class="py-2 text-center text-ink3">尚未结缘。</li>
               <li v-for="h in store.gacha.history" :key="h.draw.pullNo" class="flex items-center gap-2" :class="TIER_META[h.draw.tier].cls">
                 <span class="w-12 shrink-0 tabular-nums text-ink3">第{{ h.draw.pullNo }}抽</span>
-                <span class="chip tier-chip !py-0 !text-[0.62rem]">{{ TIER_META[h.draw.tier].label }}</span>
+                <span class="chip tier-chip !py-0 !text-[0.75rem]">{{ TIER_META[h.draw.tier].label }}</span>
                 <b class="truncate">{{ h.name }}</b>
                 <span class="truncate text-ink3">{{ h.detail }}</span>
               </li>
@@ -185,7 +185,7 @@ const questReady = computed(() => (hasFeast.value && !cookedToday.value && DISHE
               </button>
             </div>
             <!-- 四步进度 -->
-            <ol class="grid grid-cols-4 gap-1 text-center text-[0.7rem]">
+            <ol class="grid grid-cols-4 gap-1 text-center text-[0.75rem]">
               <li
                 v-for="(s, i) in REUNION_STEPS" :key="s.k" class="rounded-sm border px-1 py-1"
                 :class="stepIdx(id) > i ? 'border-jade text-jade' : stepIdx(id) === i ? 'border-gold text-gold' : 'border-line text-ink3'"
@@ -198,7 +198,7 @@ const questReady = computed(() => (hasFeast.value && !cookedToday.value && DISHE
                 <span class="tabular-nums text-ink2">线索 <b class="text-gold">{{ store.reunionView(id).clues }}</b> / {{ REUNION_CLUE_TARGET }} · 约还需 {{ daysLeft(id) }} 天</span>
                 <span class="flex flex-wrap gap-1">
                   <span
-                    v-for="(src, k) in REUNION_CLUE_SOURCES" :key="k" class="chip !py-0 !text-[0.65rem] tabular-nums"
+                    v-for="(src, k) in REUNION_CLUE_SOURCES" :key="k" class="chip !py-0 !text-[0.75rem] tabular-nums"
                     :class="store.reunionView(id).got[k] >= src.dailyCap ? 'chip-jade' : ''" :title="src.hint"
                   >{{ src.label }} {{ store.reunionView(id).got[k] }}/{{ src.dailyCap }}</span>
                 </span>
@@ -209,7 +209,7 @@ const questReady = computed(() => (hasFeast.value && !cookedToday.value && DISHE
               >
                 向掌柜打听 · {{ REUNION_INQUIRE_COST }} 两（今日 {{ store.reunionView(id).got.inn }}/{{ REUNION_CLUE_SOURCES.inn.dailyCap }}）
               </button>
-              <p class="text-[0.7rem] text-ink3">其余线索：离线 ≥1 小时后收功（闭关打听）；再次历练 {{ REUNION_QUESTS[id].replayNodeIds.map((n) => STORY_CHAPTERS[n - 1].code).join('、') }} 并获胜（旧地重游）。</p>
+              <p class="text-[0.75rem] text-ink3">其余线索：离线 ≥1 小时后收功（闭关打听）；再次历练 {{ REUNION_QUESTS[id].replayNodeIds.map((n) => STORY_CHAPTERS[n - 1].code).join('、') }} 并获胜（旧地重游）。</p>
             </template>
             <!-- 2 故地相候 -->
             <template v-else-if="store.reunionView(id).step === 'WAIT'">
@@ -296,8 +296,8 @@ const questReady = computed(() => (hasFeast.value && !cookedToday.value && DISHE
               <div class="flex items-baseline justify-between gap-2">
                 <h4 class="font-brush truncate text-xl leading-none">{{ c.name }}<span class="ml-1.5 font-sans text-xs tracking-normal text-ink3">{{ view(c.id).title }}</span></h4>
                 <span class="flex shrink-0 items-center gap-1">
-                  <span v-if="view(c.id).grade" class="chip !py-0 !text-[0.68rem]" :title="`橙品资质：属性系数 ×${GRADE_MULT[view(c.id).grade!]}`">橙·{{ view(c.id).grade }}</span>
-                  <span v-if="view(c.id).form === 'awakened'" class="chip chip-red !py-0 !text-[0.68rem]">觉醒</span>
+                  <span v-if="view(c.id).grade" class="chip !py-0 !text-[0.75rem]" :title="`橙品资质：属性系数 ×${GRADE_MULT[view(c.id).grade!]}`">橙·{{ view(c.id).grade }}</span>
+                  <span v-if="view(c.id).form === 'awakened'" class="chip chip-red !py-0 !text-[0.75rem]">觉醒</span>
                   <span v-if="store.companionAffinity[c.id]?.taught" class="chip chip-gold">已传功</span>
                 </span>
               </div>
@@ -310,7 +310,7 @@ const questReady = computed(() => (hasFeast.value && !cookedToday.value && DISHE
                   <i class="absolute -top-0.5 left-[10%] h-2.5 w-px bg-ink3" /><i class="absolute -top-0.5 left-[60%] h-2.5 w-px bg-gold" />
                   <i v-if="store.limitsEnabled && store.affinityCap < 1000" class="absolute -top-1 h-3.5 w-0.5 bg-cinnabar" :style="{ left: `${store.affinityCap / 10}%` }" :title="`当前章节好感上限 ${store.affinityCap}`" />
                 </div>
-                <div class="relative mt-0.5 flex justify-between text-[0.7rem] tabular-nums leading-none text-ink3">
+                <div class="relative mt-0.5 flex justify-between text-[0.75rem] tabular-nums leading-none text-ink3">
                   <b class="text-gold">{{ store.companionAffinity[c.id]?.affinity ?? 0 }} / 1000</b>
                   <span>编入 100 · 传功 600<template v-if="store.limitsEnabled && store.affinityCap < 1000"> · <b class="text-cinnabar">上限 {{ store.affinityCap }}</b></template></span>
                 </div>
@@ -318,7 +318,7 @@ const questReady = computed(() => (hasFeast.value && !cookedToday.value && DISHE
 
               <div class="text-xs leading-snug text-jade">
                 喜欢「{{ c.favGift }}」· 好感到 600 教<button class="underline" @click="store.inspectById('skill', c.teachSkillId)">《{{ SKILLS[c.teachSkillId]?.name }}》</button>
-                <span class="tier-chip chip ml-1 !py-0 !text-[0.68rem]" :class="TIER_META[SKILLS[c.teachSkillId].tier].cls">{{ TIER_META[SKILLS[c.teachSkillId].tier].label }}</span>
+                <span class="tier-chip chip ml-1 !py-0 !text-[0.75rem]" :class="TIER_META[SKILLS[c.teachSkillId].tier].cls">{{ TIER_META[SKILLS[c.teachSkillId].tier].label }}</span>
               </div>
               <p v-if="willTrigger(c.id)" class="text-xs font-bold text-gold">本次送礼可获传武学。</p>
               <p v-if="c.recruitFlag && !store.companionAffinity[c.id]?.recruited && !store.storyFlags.includes(c.recruitFlag)" class="text-xs text-cinnabar">
@@ -329,14 +329,16 @@ const questReady = computed(() => (hasFeast.value && !cookedToday.value && DISHE
       </div>
       <footer v-if="store.companionAffinity[c.id]?.met" class="workbench-actions">
                 <button class="btn btn-sm !min-h-[2.4rem] flex-col !gap-0" :disabled="giftDisabled(c.id, false)" @click="store.giftCompanionInInn(c.id, false)">
-                  <span>清茶</span><span class="text-[0.7rem] text-ink3">{{ INN_TEA_COST }} 两 · +{{ store.innGiftGain(c.id, false) }} {{ leftLabel(store.giftsLeft(c.id).tea) }}</span>
+                  <span>清茶</span><span class="whitespace-nowrap text-[0.75rem] text-ink3">{{ INN_TEA_COST }}两 · +{{ store.innGiftGain(c.id, false) }}</span>
+                  <span v-if="leftLabel(store.giftsLeft(c.id).tea)" class="text-[0.75rem] text-ink3">{{ leftLabel(store.giftsLeft(c.id).tea) }}</span>
                 </button>
                 <button
                   class="btn btn-sm btn-gold !min-h-[2.4rem] flex-col !gap-0" :class="willTrigger(c.id) ? 'anim-pulse-glow' : ''"
                   :disabled="giftDisabled(c.id, true)" @click="store.giftCompanionInInn(c.id, true)"
                 >
                   <span class="flex max-w-full items-center gap-1.5"><ItemIcon item-id="world-gift" class="[--item-icon-size:1.4rem]" /><span class="truncate">{{ c.favGift }}</span></span>
-                  <span class="text-[0.7rem] opacity-80">{{ INN_GIFT_COST }} 两 · +{{ store.innGiftGain(c.id, true) }} {{ leftLabel(store.giftsLeft(c.id).gift) }}</span>
+                  <span class="whitespace-nowrap text-[0.75rem] opacity-80">{{ INN_GIFT_COST }}两 · +{{ store.innGiftGain(c.id, true) }}</span>
+                  <span v-if="leftLabel(store.giftsLeft(c.id).gift)" class="text-[0.75rem] opacity-80">{{ leftLabel(store.giftsLeft(c.id).gift) }}</span>
                 </button>
               <button
                 v-if="c.awakened && store.companionAffinity[c.id]?.form === 'base'"
@@ -344,7 +346,7 @@ const questReady = computed(() => (hasFeast.value && !cookedToday.value && DISHE
                 :disabled="store.onlineActionBusy || !canAwaken(c.id)" :title="`觉醒为「${c.awakened.title}」：好感 ≥${awakenAffinityOf(c)}，消耗${tokenName(c)} ${c.awakenTokens ?? 30}${c.route === 'FAMILY' ? '（家事所得）' : ''}`" @click="store.awakenCompanion(c.id)"
               >
                 <span>觉醒 · {{ c.awakened.title }}</span>
-                <span class="text-[0.7rem] opacity-80">{{ tokenName(c) }} {{ store.companionAffinity[c.id]?.tokens ?? 0 }} / {{ c.awakenTokens ?? 30 }} · 需好感 {{ awakenAffinityOf(c) }}</span>
+                <span class="text-[0.75rem] opacity-80">{{ tokenName(c) }} {{ store.companionAffinity[c.id]?.tokens ?? 0 }} / {{ c.awakenTokens ?? 30 }} · 需好感 {{ awakenAffinityOf(c) }}</span>
               </button>
       </footer>
     </article>

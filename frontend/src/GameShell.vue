@@ -236,7 +236,7 @@ const TOAST_GLYPH = { gold: '喜', danger: '警', info: '讯' } as const
           aria-haspopup="dialog" :disabled="inBattle" @click="openMail()"
         >
           <Mail />
-          <b v-if="store.unreadMail" class="absolute -right-0.5 -top-0.5 min-w-4 rounded-full bg-[var(--cinnabar)] px-1 text-[0.62rem] leading-4 text-white tabular-nums">{{ store.unreadMail }}</b>
+          <b v-if="store.unreadMail" class="absolute -right-0.5 -top-0.5 min-w-4 rounded-full bg-[var(--cinnabar)] px-1 text-[0.75rem] leading-4 text-white tabular-nums">{{ store.unreadMail }}</b>
         </button>
         <button class="wuxia-icon" :aria-label="journalReturn ? '返回任务与玩法' : '任务与玩法'" :title="journalReturn ? '返回任务与玩法' : '任务与玩法'"
           aria-haspopup="dialog" :disabled="inBattle" @click="openTasks"><ScrollText /></button>
@@ -245,7 +245,7 @@ const TOAST_GLYPH = { gold: '喜', danger: '警', info: '讯' } as const
           aria-controls="chat-sheet" :aria-expanded="store.mobileDrawer === 'CHAT'" @click="toggleDrawer('CHAT')"
         >
           <MessageCircle />
-          <b v-if="store.chatPrivateUnread" class="absolute -right-0.5 -top-0.5 min-w-4 rounded-full bg-[var(--cinnabar)] px-1 text-[0.62rem] leading-4 text-white tabular-nums">{{ store.chatPrivateUnread }}</b>
+          <b v-if="store.chatPrivateUnread" class="absolute -right-0.5 -top-0.5 min-w-4 rounded-full bg-[var(--cinnabar)] px-1 text-[0.75rem] leading-4 text-white tabular-nums">{{ store.chatPrivateUnread }}</b>
           <i v-else-if="store.chatPublicUnread" class="absolute right-0.5 top-0.5 h-2 w-2 rounded-full bg-[var(--cinnabar)]" aria-hidden="true" />
         </button>
         <button class="wuxia-icon" aria-label="选择角色" title="选择角色" @click="chooseCharacter"><UserRound /></button>

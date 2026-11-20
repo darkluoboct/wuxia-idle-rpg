@@ -91,6 +91,12 @@
     /* 16px 起步（text-xs ≥ 12px）；大屏平滑放大，但受视口高度约束，避免矮屏下内容溢出 */
     font-size: clamp(16px, min(0.5vw + 9px, 1.78vh), 19px);
     -webkit-text-size-adjust: 100%;
+    /* 文楷、马善政只有常规一档：加粗处不让浏览器描粗（笔画会糊成一团），靠颜色和字号区分 */
+    font-synthesis-weight: none;
+  }
+  /* 楷体小于 12px 就看不清：<small> 默认缩到八成，这里兜个底 */
+  small {
+    font-size: max(0.75rem, 80%);
   }
   html {
     background-color: var(--bg-0);

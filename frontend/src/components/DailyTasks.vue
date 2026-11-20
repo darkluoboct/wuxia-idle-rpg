@@ -17,7 +17,7 @@ const ready = computed(() => !store.daily.claimed && doneCount.value === store.d
         <span class="flex shrink-0 gap-0.5" aria-hidden="true">
           <i v-for="task in store.daily.tasks" :key="task.id" class="h-1.5 w-3 rounded-sm" :class="task.done ? 'bg-[var(--jade)]' : 'bg-[var(--line-strong)]'" />
         </span>
-        <span class="truncate text-[0.7rem] tabular-nums text-ink3" title="子时（23:00）刷新">{{ doneCount }}/{{ store.daily.tasks.length }}</span>
+        <span class="truncate text-[0.75rem] tabular-nums text-ink3" title="子时（23:00）刷新">{{ doneCount }}/{{ store.daily.tasks.length }}</span>
         <ChevronRight :size="14" class="ml-auto shrink-0 text-ink3" aria-hidden="true" />
       </button>
       <span v-if="store.daily.claimed" class="chip chip-jade shrink-0">已领</span>

@@ -82,7 +82,7 @@ function inspectReward(id: string) {
           <button class="btn btn-sm !text-[#e8e2d6] xl:hidden" @click="store.mobileDrawer = 'WORLD'">战报</button>
           <button v-if="store.isBattlePlaying" class="btn btn-sm btn-gold" @click="store.skipBattleToEnd()">跳过回放</button>
           <button v-else class="btn btn-sm btn-seal" @click="store.closeBattleStage()">
-            返回 <kbd class="hidden font-sans text-[0.7rem] opacity-70 md:inline">Space</kbd>
+            返回 <kbd class="hidden font-sans text-[0.75rem] opacity-70 md:inline">Space</kbd>
           </button>
         </div>
       </div>

@@ -67,7 +67,7 @@ const kin = computed(() => chosen.value && COMPANIONS[chosen.value.companionId])
 .origin-option:not(.is-selected) .origin-glyph { filter: saturate(.35) brightness(.85); }
 .origin-name { display: flex; flex-direction: column; line-height: 1.2; }
 .origin-name b { font-size: 1.15rem; font-weight: 400; }
-.origin-name small { font-size: .68rem; color: var(--o-muted); white-space: nowrap; }
+.origin-name small { font-size: .75rem; color: var(--o-muted); white-space: nowrap; }
 .origin-picker:disabled .origin-option { cursor: not-allowed; opacity: .6; }
 
 .origin-detail { display: flex; gap: .75rem; min-height: 8.2rem; margin-top: .6rem; padding: .6rem .7rem; border: 1px solid var(--o-line); border-radius: 2px; background: var(--o-fill); }

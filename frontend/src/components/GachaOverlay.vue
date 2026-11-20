@@ -232,7 +232,7 @@ const STICKS = [
           </div>
           <!-- 卡面 -->
           <div class="gacha-face gacha-front panel flex flex-col items-center overflow-hidden p-1.5 text-center" :class="isRare(r) ? 'glow-border' : ''">
-            <span class="chip tier-chip !px-1.5 !py-0 !text-[0.62rem]">{{ TIER_META[r.draw.tier].label }}</span>
+            <span class="chip tier-chip !px-1.5 !py-0 !text-[0.75rem]">{{ TIER_META[r.draw.tier].label }}</span>
             <div class="relative flex min-h-0 w-full flex-1 justify-center" :class="r.portrait ? 'items-end' : 'items-center'">
               <img v-if="r.portrait && r.draw.refId && GACHA_ASSETS.portraits[r.draw.refId]" :src="GACHA_ASSETS.portraits[r.draw.refId]" :alt="r.name" class="h-full object-contain" />
               <InkFigure v-else-if="r.portrait" :style-type="r.portrait" />
@@ -240,7 +240,7 @@ const STICKS = [
               <span v-else class="seal h-14 w-14 text-3xl" :style="{ background: 'var(--tc)', boxShadow: '0 0 0 0.14rem var(--tc)' }">{{ r.glyph }}</span>
             </div>
             <b class="font-brush mt-0.5 w-full truncate text-base leading-tight" :style="{ color: 'var(--tc)' }">{{ r.name }}</b>
-            <span class="line-clamp-2 text-[0.62rem] leading-tight text-ink3">{{ r.detail }}</span>
+            <span class="line-clamp-2 text-[0.75rem] leading-tight text-ink3">{{ r.detail }}</span>
             <span v-if="r.isNew" class="seal anim-stamp absolute right-1 top-5 h-6 w-6 text-sm">新</span>
           </div>
         </li>

@@ -84,7 +84,7 @@ function herbBlocked(herb: HerbConfig) {
               <ItemIcon :item-id="herb.id" class="[--item-icon-size:2.4rem]" />
               <div class="min-w-0">
                 <span class="block font-bold tier-text text-sm">{{ herb.name }}</span>
-                <span class="chip tier-chip !py-0 !text-[0.65rem]">{{ TIER_META[herb.tier].label }}</span>
+                <span class="chip tier-chip !py-0 !text-[0.75rem]">{{ TIER_META[herb.tier].label }}</span>
               </div>
             </div>
             <div class="mt-1 flex items-baseline justify-between text-xs">
@@ -93,10 +93,10 @@ function herbBlocked(herb: HerbConfig) {
                 {{ store.herbInventory[herb.id] ?? 0 }}
               </b>
             </div>
-            <div class="mt-1 text-[0.7rem] text-ink3 truncate">
+            <div class="mt-1 text-[0.75rem] text-ink3 truncate">
               产地：{{ herb.mapName }}
             </div>
-            <p class="mt-1 text-[0.68rem] leading-tight text-ink3/80 line-clamp-2">
+            <p class="mt-1 text-[0.75rem] leading-tight text-ink3/80 line-clamp-2">
               {{ herb.desc }}
             </p>
           </div>
@@ -150,7 +150,7 @@ function herbBlocked(herb: HerbConfig) {
           <div class="text-ink3 italic">
             “{{ selectedRecipe.desc }}”
           </div>
-          <div class="text-gold text-[0.72rem]">
+          <div class="text-gold text-[0.75rem]">
             火候提点：{{ selectedRecipe.flameHint }}
           </div>
         </div>
@@ -173,7 +173,7 @@ function herbBlocked(herb: HerbConfig) {
                 <div class="font-bold truncate" :class="TIER_META[HERBS[req.herbId]?.tier ?? 'green'].cls">
                   {{ HERBS[req.herbId]?.name }}
                 </div>
-                <div class="text-[0.68rem] text-ink3 truncate">
+                <div class="text-[0.75rem] text-ink3 truncate">
                   产地：{{ HERBS[req.herbId]?.mapName }}
                 </div>
               </div>
@@ -225,7 +225,7 @@ function herbBlocked(herb: HerbConfig) {
           <div class="bar bar-gold">
             <i :style="{ width: `${calcCraftRate(selectedRecipe)}%` }" />
           </div>
-          <div class="flex flex-wrap items-center justify-between text-[0.7rem] text-ink3">
+          <div class="flex flex-wrap items-center justify-between text-[0.75rem] text-ink3">
             <span>基础 {{ selectedRecipe.baseRate }}% · 悟性加成 +{{ Math.max(0, (store.martialStats.intStat - selectedRecipe.minInsight) * 1.5).toFixed(0) }}% · 福缘 +{{ (store.martialStats.luck * 0.4).toFixed(0) }}%<template v-if="(store.alchemyPity[selectedRecipe.id] ?? 0) > 0"> · 保底 +{{ store.alchemyPity[selectedRecipe.id] }}%</template></span>
             <span class="text-gold font-bold">双丹暴击率：{{ calcDoubleRate() }}%</span>
           </div>

@@ -667,7 +667,7 @@ function onEscape(event: KeyboardEvent) {
 }
 .partner-portrait { position: relative; align-self: center; width: min(100%, 12rem); aspect-ratio: 1; overflow: hidden; }
 .equip-portrait strong { display: block; color: var(--gold); font-size: 1.35rem; }
-.equip-portrait small, .worn-copy small { display: block; color: var(--ink-3); font-size: .74rem; }
+.equip-portrait small, .worn-copy small { display: block; color: var(--ink-3); font-size: .75rem; }
 .worn-slot, .bag-tile {
   min-width: 0;
   border: 1px solid var(--line-strong);
@@ -686,7 +686,7 @@ function onEscape(event: KeyboardEvent) {
 .bag-tile { position: relative; display: grid; justify-items: center; gap: .3rem; padding-top: .35rem; text-align: center; background: radial-gradient(ellipse, var(--bg-2), var(--bg-0) 85%); }
 .bag-tile .gear-icon { --item-icon-size: clamp(3.5rem, 10vh, 5.5rem); border: 0; background: transparent; }
 .bag-tile b { width: 100%; padding: .3rem; border-top: 1px solid var(--line); background: var(--bg-2); }
-.tile-count, .worn-tag { position: absolute; padding-inline: .25rem; background: var(--bg-0); font-size: .74rem; }
+.tile-count, .worn-tag { position: absolute; padding-inline: .25rem; background: var(--bg-0); font-size: .75rem; }
 .tile-count { bottom: 2rem; right: .2rem; }.worn-tag { top: .2rem; left: .2rem; color: var(--jade); }
 .equip-empty { margin: .35rem 0 .65rem; color: var(--ink-3); font-size: .86rem; }
 .detail-pane .equip-heading { flex: none; min-height: 1.85rem; padding-bottom: .45rem; border-bottom: 1px solid var(--line); }

@@ -135,7 +135,7 @@ onScopeDispose(() => {
           <div class="bar bar-thin bar-gold" role="progressbar" :aria-label="`${gateName(gate.id)}本波战功`" :aria-valuenow="gate.progress" :aria-valuemax="gate.need">
             <i :style="{ width: `${Math.min(100, gate.progress / gate.need * 100)}%` }" />
           </div>
-          <p class="text-right text-[0.7rem] tabular-nums text-ink3">本波 {{ gate.progress }} / {{ gate.need }}</p>
+          <p class="text-right text-[0.75rem] tabular-nums text-ink3">本波 {{ gate.progress }} / {{ gate.need }}</p>
         </div>
         <div class="mt-auto flex gap-2">
           <button

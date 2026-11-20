@@ -232,7 +232,7 @@ function leader({ anchor: [x, y], label: [lx, ly] }: Placement) {
 .map-panel { display: flex; flex-direction: column; align-items: center; }
 .meridian-heading { width: 100%; padding-bottom: .45rem; border-bottom: 1px solid var(--line); }
 .meridian-heading .sec-title { flex: 1 1 auto; margin: 0; font-size: 1.08rem; }
-.point-legend { display: flex; flex-wrap: wrap; gap: .25rem .7rem; color: var(--ink-3); font-size: .73rem; }
+.point-legend { display: flex; flex-wrap: wrap; gap: .25rem .7rem; color: var(--ink-3); font-size: .75rem; }
 .point-legend span { display: inline-flex; align-items: center; gap: .3rem; white-space: nowrap; }
 .point-legend i { width: .48rem; aspect-ratio: 1; border: 1px solid var(--point-ink); border-radius: 50%; }
 .point-legend [data-state="open"] i { background: var(--jade); }
@@ -259,7 +259,7 @@ function leader({ anchor: [x, y], label: [lx, ly] }: Placement) {
 }
 .point-dot {
   display: grid; place-items: center; width: 1.14rem; aspect-ratio: 1; border-radius: 50%;
-  border: 1px solid currentColor; background: var(--bg-0); font-size: .68rem; font-variant-numeric: tabular-nums;
+  border: 1px solid currentColor; background: var(--bg-0); font-size: .75rem; font-variant-numeric: tabular-nums;
 }
 .point-caption {
   position: absolute; left: calc(50% + var(--label-x)); top: calc(50% + var(--label-y));

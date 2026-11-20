@@ -275,7 +275,7 @@ function changeWeapon(id: string, event: Event) {
   background: var(--bg-3);
 }
 .squad-thumbnail :deep(img) { object-fit: cover; object-position: center 5%; }
-.squad-wing { color: var(--jade); font-size: .72rem; }
+.squad-wing { color: var(--jade); font-size: .75rem; }
 .squad-profile {
   display: grid;
   grid-template-columns: minmax(0, .59fr) minmax(0, 1fr);
