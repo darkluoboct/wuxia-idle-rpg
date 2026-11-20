@@ -1,10 +1,10 @@
 <script setup lang="ts">
 /**
- * 水墨半身 / 全身人物（纯 SVG，零美术资源）
- * 10 种人物各有发式、衣冠与随身兵器；pose=sit 为盘膝打坐，stand 为抱拳而立。
+ * 有独立立绘的角色优先显示成品。通用人像和打坐姿势使用水墨图形。
  */
 import { computed, useId } from 'vue'
 import type { PortraitStyle } from '@/config/typesHelper'
+import { CHARACTER_PORTRAITS, portraitByName } from '@/config/characterPortraits'
 
 type Hair = 'bun' | 'ribbons' | 'messy' | 'long' | 'cap' | 'beard' | 'bald' | 'wrap'
 type Item = 'sword' | 'staff' | 'spear' | 'gourd' | 'flute' | 'snake' | 'claw' | 'taiji' | 'beads' | 'crutch' | 'palm'
@@ -59,11 +59,18 @@ const props = withDefaults(
   defineProps<{
     styleType: PortraitStyle
     pose?: 'stand' | 'sit'
+    portraitId?: string
+    name?: string
   }>(),
   { pose: 'stand' }
 )
 
 const uid = useId().replace(/[^a-zA-Z0-9]/g, '')
+const picture = computed(() => {
+  if (props.pose === 'sit') return undefined
+  if (props.portraitId) return CHARACTER_PORTRAITS[props.portraitId]
+  return props.name ? portraitByName(props.name) : undefined
+})
 const look = computed(() => LOOKS[props.styleType] ?? LOOKS.hero_sword)
 const skin = '#dcc6a8'
 const skinShade = '#bfa588'
@@ -77,7 +84,8 @@ const beltX = computed(() => (look.value.broad ? 28 : 32))
 </script>
 
 <template>
-  <svg viewBox="0 0 120 150" class="h-full w-auto overflow-visible" preserveAspectRatio="xMidYMax meet" aria-hidden="true">
+  <img v-if="picture" :src="picture" alt="" class="h-full w-full object-contain object-bottom" loading="lazy" decoding="async" />
+  <svg v-else viewBox="0 0 120 150" class="h-full w-auto overflow-visible" preserveAspectRatio="xMidYMax meet" aria-hidden="true">
     <defs>
       <linearGradient :id="`robe-${uid}`" x1="0" y1="0" x2="0" y2="1">
         <stop offset="0" :stop-color="look.robe" />

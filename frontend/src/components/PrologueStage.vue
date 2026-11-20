@@ -85,14 +85,14 @@ async function fight() {
     <article v-else class="prologue-scroll prologue-duel">
       <h2 id="prologue-title" class="font-brush">{{ attempted ? '再来一次' : '拔剑' }}</h2>
       <div class="prologue-foe">
-        <div class="prologue-figure"><InkFigure :style-type="node.bossPortrait" /></div>
+        <div class="prologue-figure"><InkFigure :style-type="node.bossPortrait" :name="node.bossName" /></div>
         <div>
           <b>{{ node.bossName }}</b>
           <p>{{ attempted ? '刺客的刀光逼得你连连后退。老者在神龛后喘息：「别硬拼……看准他的身法。」' : `为首的刺客身法诡谲，出手全走${STANCE_META[foe].name}路数。` }}</p>
         </div>
       </div>
       <div v-if="origin && ally" class="prologue-foe prologue-ally">
-        <div class="prologue-figure"><InkFigure :style-type="ally.portraitStyle" /></div>
+        <div class="prologue-figure"><InkFigure :style-type="ally.portraitStyle" :portrait-id="ally.id" /></div>
         <div>
           <b>{{ origin.kin }} {{ ally.name }}</b>
           <p>与你并肩。「{{ ally.assistSkillName }}」{{ ally.assistDesc }}</p>

@@ -22,7 +22,7 @@ async function playPrologue(game: FrameLocator, family: { title: string; kin: st
   await expect(card).toHaveCount(0)
 }
 
-test('游客进入演武，切换五个页签并从浏览器读档', async ({ page }) => {
+test('游客进入演武，切换五个页签，完成横版武库换装和升重后读档', async ({ page }) => {
   const scripts = new Set<string>()
   const illustrations = new Set<string>()
   page.on('request', (request) => {
@@ -52,14 +52,75 @@ test('游客进入演武，切换五个页签并从浏览器读档', async ({ pa
     ['市井', 'MarketView'],
     ['修行', 'CultivateView'],
   ] as const
+  const stage = game.getByRole('region', { name: '江湖舞台' })
   for (const [name, chunk] of tabs) {
     await tab(game, name).click()
     await expect(tab(game, name)).toHaveAttribute('aria-selected', 'true')
     await expect.poll(() => [...scripts].some((path) => path.includes(`/${chunk}-`))).toBe(true)
-    await expect(
-      game.getByRole('region', { name: '江湖舞台' }).locator(':scope > *').first(),
-    ).toBeVisible()
+    await expect(stage.locator(':scope > *').first()).toBeVisible()
   }
+
+  await tab(game, '武库').click()
+  const characterRail = game.getByRole('complementary', { name: '人物卷', exact: true })
+  const worldRail = game.getByRole('complementary', { name: '江湖卷', exact: true })
+  const companionTab = stage.getByRole('tab', { name: '伙伴', exact: true })
+  await companionTab.click()
+  await expect(companionTab).toHaveAttribute('aria-selected', 'true')
+  await expect(characterRail).toBeHidden()
+  await expect(worldRail).toBeHidden()
+  const roster = stage.getByRole('list', { name: '伙伴列表' })
+  const companion = stage.getByRole('article', { name: '伙伴详情' })
+  await expect(companion.getByRole('heading', { name: '郭靖', exact: true })).toBeVisible()
+  await roster.getByRole('button', { name: '黄药师', exact: true }).click()
+  const portrait = companion.getByRole('img', { name: '黄药师立绘' }).locator('img')
+  await expect(portrait).toHaveAttribute('src', /huangyaoshi-.*\.webp$/)
+  await expect.poll(() => portrait.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(800)
+  await expect(companion.getByRole('region', { name: '伙伴属性' })).toContainText('7,800')
+  await expect(companion.getByRole('heading', { name: '弹指神通', exact: true })).toBeVisible()
+  await expect(companion.getByRole('button', { name: '上阵右翼' })).toBeEnabled()
+  await expect(roster.getByRole('button', { name: '黄蓉', exact: true })).toContainText('右翼')
+
+  const meridianTab = stage.getByRole('tab', { name: '经脉冲穴', exact: true })
+  await meridianTab.click()
+  await expect(meridianTab).toHaveAttribute('aria-selected', 'true')
+  await expect(characterRail).toBeHidden()
+  await expect(worldRail).toBeHidden()
+  const meridianMap = stage.getByRole('group', { name: '人体穴位图', exact: true })
+  const pointDetail = stage.getByRole('complementary', { name: '穴位说明', exact: true })
+  await meridianMap.getByRole('button', { name: '阳交穴', exact: true }).click()
+  await expect(pointDetail.getByRole('heading', { name: '阳交穴', exact: true })).toBeVisible()
+  await expect(pointDetail).toContainText('需先贯通')
+  await expect(pointDetail).toContainText('金门穴')
+  await meridianMap.getByRole('button', { name: '金门穴', exact: true }).click()
+  await expect(pointDetail.getByRole('button', { name: '运功冲穴', exact: true })).toBeEnabled()
+
+  await stage.getByRole('tab', { name: '角色', exact: true }).click()
+  await stage.getByRole('button', { name: '查看已穿戴的牛家村玄铁匕首', exact: true }).click()
+  const weapon = stage.getByRole('complementary', { name: '武器详情', exact: true })
+  await expect(weapon.getByRole('heading', { name: '牛家村玄铁匕首' })).toBeVisible()
+  await weapon.getByRole('button', { name: '更换装备', exact: true }).click()
+  await expect(stage.getByRole('combobox', { name: '装备部位' })).toHaveValue('WEAPON')
+  await stage.getByRole('button', { name: '青钢长剑', exact: true }).click()
+  const comparison = stage.getByRole('group', { name: '同部位装备对比' })
+  await expect(comparison).toContainText('牛家村玄铁匕首')
+  await expect(comparison).toContainText('青钢长剑')
+  await stage.getByRole('button', { name: '装备青钢长剑', exact: true }).click()
+  await expect(stage.getByText(/穿戴「青钢长剑」/)).toBeVisible()
+  await stage.getByRole('button', { name: '返回角色', exact: true }).click()
+  await expect(weapon.getByRole('heading', { name: '青钢长剑' })).toBeVisible()
+
+  await stage.getByRole('tab', { name: '武学', exact: true }).click()
+  await stage.getByRole('button', { name: '查看落英神剑掌详情', exact: true }).click()
+  const effects = stage.getByRole('region', { name: '当前效果' })
+  await expect(effects).toContainText('第 2 重')
+  await expect(stage.getByRole('region', { name: '下一重效果' })).toContainText('第 3 重')
+  await stage.getByRole('button', { name: '升级落英神剑掌', exact: true }).click()
+  await expect(effects).toContainText('第 3 重')
+  await stage.getByRole('button', { name: '返回武学', exact: true }).click()
+  await expect(stage.getByRole('heading', { name: '已习得 · 外功', exact: true })).toBeVisible()
+  await tab(game, '修行').click()
+  await expect(characterRail).toBeVisible()
+  await expect(worldRail).toBeVisible()
 
   await game.getByRole('button', { name: '存档并返回开局' }).click()
   await expect(game.getByRole('button', { name: '继续', exact: true })).toBeVisible()
@@ -68,6 +129,9 @@ test('游客进入演武，切换五个页签并从浏览器读档', async ({ pa
   await enter(game)
   await game.getByRole('button', { name: '继续', exact: true }).click()
   await expect(game.getByRole('button', { name: '领取修行收益' })).toBeVisible()
+  await tab(game, '武库').click()
+  await stage.getByRole('tab', { name: '角色', exact: true }).click()
+  await expect(stage.getByRole('button', { name: '查看已穿戴的青钢长剑', exact: true })).toBeVisible()
 })
 
 test('联机注册、创角、同图聊天、私聊、领取收益、换装读档与删除角色', async ({ browser }) => {
@@ -148,12 +212,13 @@ test('联机注册、创角、同图聊天、私聊、领取收益、换装读�
     const stage = alice.game.getByRole('region', { name: '江湖舞台' })
     const worn = stage.getByRole('button', { name: '查看已穿戴的青钢长剑' })
     await tab(alice.game, '武库').click()
-    await stage.getByRole('tab', { name: '装备', exact: true }).click()
+    await stage.getByRole('tab', { name: '角色', exact: true }).click()
     // 新角色开局佩着青钢长剑：卸下后读档仍是空手，再从背包换上
     await expect(worn).toBeVisible()
     const saved = alice.page.waitForResponse(
       (response) => response.url().includes('/api/v1/loadout/') && response.request().method() === 'PUT',
     )
+    await worn.click()
     await stage.getByRole('button', { name: '卸下青钢长剑', exact: true }).click()
     expect((await saved).ok()).toBe(true)
     await expect(worn).toHaveCount(0)
@@ -162,10 +227,14 @@ test('联机注册、创角、同图聊天、私聊、领取收益、换装读�
     await enter(alice.game)
     await expect(tab(alice.game, '修行')).toHaveAttribute('aria-selected', 'true')
     await tab(alice.game, '武库').click()
-    await stage.getByRole('tab', { name: '装备', exact: true }).click()
+    await stage.getByRole('tab', { name: '角色', exact: true }).click()
     await expect(stage.getByRole('button', { name: '卸下青钢长剑', exact: true })).toHaveCount(0)
+    await stage.getByRole('button', { name: '查看武器装备位', exact: true }).click()
+    await stage.getByRole('button', { name: '选择装备', exact: true }).click()
     await stage.getByRole('button', { name: '青钢长剑', exact: true }).click()
     await stage.getByRole('button', { name: '装备青钢长剑', exact: true }).click()
+    await expect(stage.getByText(/穿戴「青钢长剑」/)).toBeVisible()
+    await stage.getByRole('button', { name: '返回角色', exact: true }).click()
     await expect(worn).toBeVisible()
 
     // 删除角色：输入角色名与账号密码，删后回到建角

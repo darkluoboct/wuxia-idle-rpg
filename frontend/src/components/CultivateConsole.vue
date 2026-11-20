@@ -7,6 +7,7 @@ import { IS_MOCK_MODE } from '@/network/apiClient'
 import { boostPctOver, nextCultivationRealm, realmBreakChance } from '../../../shared/player.ts'
 import { boostLabel } from '../../../shared/admin.ts'
 import type { RateBoostKind } from '@/network/protocol'
+import ItemIcon from './ItemIcon.vue'
 
 const store = useGameStore()
 const usePill = ref(false)
@@ -133,7 +134,7 @@ function openSkill(id: string | null) {
           :disabled="store.pillCount === 0 || !nextRealm" :title="`纯阳·通脉破障丹：专用于大境界关隘冲击，剩 ${store.pillCount} 枚（成功率 +35%）`"
           @click="usePill = !usingPill"
         >
-          <i class="art art-potion" aria-hidden="true" />
+          <ItemIcon item-id="pozhang_dan" />
           <b>{{ store.pillCount }}</b>
         </button>
         <button class="hotbar-command" aria-label="升级角色" :title="levelHint" :disabled="!canLevel || store.onlineActionBusy" @click="store.upgradeLevel()">

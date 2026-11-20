@@ -23,7 +23,7 @@ const vFocus = { mounted: (el: HTMLElement) => el.focus() }
       aria-labelledby="feature-card-title" @keydown.esc="store.closeFeatureCard(false)"
     >
       <div class="hidden w-28 shrink-0 flex-col items-center gap-1.5 sm:flex">
-        <div class="h-36 w-28 overflow-hidden border border-line bg-[var(--bg-1)]"><InkFigure :key="voice.portrait" :style-type="voice.portrait" /></div>
+        <div class="h-36 w-28 overflow-hidden border border-line bg-[var(--bg-1)]"><InkFigure :style-type="voice.portrait" :name="voice.speaker" /></div>
         <b class="font-brush text-lg leading-none">{{ voice.speaker }}</b>
       </div>
       <div class="flex min-w-0 flex-1 flex-col gap-3">

@@ -5,10 +5,10 @@ import { useGameStore } from '@/stores/gameStore'
 import type { DerivedStatsDTO } from '@/network/protocol'
 
 const store = useGameStore()
-const props = defineProps<{ stats?: DerivedStatsDTO }>()
+const props = defineProps<{ stats?: DerivedStatsDTO; summary?: boolean }>()
 const combatStats = computed(() => {
   const d = props.stats ?? store.derivedStats
-  return [
+  const stats = [
     { label: '气血', value: d.maxHp, icon: Heart },
     { label: '内力', value: d.maxMp, icon: Droplet },
     { label: '攻击', value: d.atk, icon: Swords },
@@ -18,6 +18,7 @@ const combatStats = computed(() => {
     { label: '速度', value: d.speed, icon: Wind },
     ...(!props.stats ? [{ label: '煞气', value: store.player.shaQi, icon: Flame }] : []),
   ]
+  return props.summary ? stats.slice(0, 4) : stats
 })
 </script>
 

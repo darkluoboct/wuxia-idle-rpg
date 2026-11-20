@@ -53,6 +53,7 @@ import GhostStalls from '@/components/GhostStalls.vue'
 import EquipmentForge from '@/components/EquipmentForge.vue'
 import ArtifactBoard from '@/components/ArtifactBoard.vue'
 import ShopPanel from '@/components/ShopPanel.vue'
+import ItemIcon from '@/components/ItemIcon.vue'
 
 const store = useGameStore()
 const sub = computed({
@@ -244,6 +245,7 @@ const FLAME_META = {
             <div class="flex flex-wrap items-center justify-between gap-2">
               <b class="font-brush text-lg">{{ COMPANIONS[id].name }}</b>
               <button class="btn btn-sm btn-gold" :disabled="store.player.goldIngot < REUNION_TICKET_COST" @click="store.redeemReunionTicket(id)">
+                <ItemIcon item-id="recruit-token" class="[--item-icon-size:1.4rem]" />
                 重逢令 · {{ REUNION_TICKET_COST }} 元宝
               </button>
             </div>
@@ -348,7 +350,7 @@ const FLAME_META = {
             :class="[TIER_META[view(c.id).tier].cls]"
           >
             <div class="relative h-[6.2rem] w-[4.6rem] shrink-0 self-start overflow-hidden bg-[var(--bg-1)] tier-edge">
-              <InkFigure :style-type="c.portraitStyle" />
+              <InkFigure :style-type="c.portraitStyle" :portrait-id="c.id" />
             </div>
             <div class="flex min-w-0 flex-1 flex-col gap-2">
               <div class="flex items-baseline justify-between gap-2">
@@ -391,7 +393,8 @@ const FLAME_META = {
                   class="btn btn-sm btn-gold !min-h-[2.4rem] flex-col !gap-0" :class="willTrigger(c.id) ? 'anim-pulse-glow' : ''"
                   :disabled="giftDisabled(c.id, true)" @click="store.giftCompanionInInn(c.id, true)"
                 >
-                  <span class="max-w-full truncate">{{ c.favGift }}</span><span class="text-[0.7rem] opacity-80">{{ INN_GIFT_COST }} 两 · +{{ store.innGiftGain(c.id, true) }} {{ leftLabel(store.giftsLeft(c.id).gift) }}</span>
+                  <span class="flex max-w-full items-center gap-1.5"><ItemIcon item-id="world-gift" class="[--item-icon-size:1.4rem]" /><span class="truncate">{{ c.favGift }}</span></span>
+                  <span class="text-[0.7rem] opacity-80">{{ INN_GIFT_COST }} 两 · +{{ store.innGiftGain(c.id, true) }} {{ leftLabel(store.giftsLeft(c.id).gift) }}</span>
                 </button>
               </div>
 
@@ -443,7 +446,10 @@ const FLAME_META = {
             :class="[TIER_META[item.tier].cls, 'tier-edge', item.tier === 'red' ? 'glow-border' : '']"
           >
             <div class="flex items-start justify-between gap-2">
-              <h4 class="font-brush tier-text text-xl leading-tight">{{ item.itemName }}</h4>
+              <div class="flex min-w-0 items-center gap-2">
+                <ItemIcon :item-id="item.itemId" />
+                <h4 class="font-brush tier-text text-xl leading-tight">{{ item.itemName }}</h4>
+              </div>
               <span class="chip shrink-0">一口价</span>
             </div>
             <div class="flex flex-wrap gap-1"><span class="chip tier-chip">{{ TIER_META[item.tier].label }}</span></div>
@@ -540,9 +546,12 @@ const FLAME_META = {
               class="rounded border border-line bg-[var(--bg-1)] p-2.5 transition-colors"
               :class="TIER_META[herb.tier].cls"
             >
-              <div class="flex items-center justify-between gap-1">
-                <span class="font-bold tier-text text-sm">{{ herb.name }}</span>
-                <span class="chip tier-chip !py-0 !text-[0.65rem]">{{ TIER_META[herb.tier].label }}</span>
+              <div class="flex items-center gap-2">
+                <ItemIcon :item-id="herb.id" class="[--item-icon-size:2.4rem]" />
+                <div class="min-w-0">
+                  <span class="block font-bold tier-text text-sm">{{ herb.name }}</span>
+                  <span class="chip tier-chip !py-0 !text-[0.65rem]">{{ TIER_META[herb.tier].label }}</span>
+                </div>
               </div>
               <div class="mt-1 flex items-baseline justify-between text-xs">
                 <span class="text-ink3">储量</span>
@@ -585,7 +594,10 @@ const FLAME_META = {
                 @click="selectedRecipeId = r.id"
               >
                 <div class="flex items-center justify-between gap-2">
-                  <h5 class="font-brush tier-text text-base leading-tight">{{ r.name }}</h5>
+                  <div class="flex min-w-0 items-center gap-2">
+                    <ItemIcon :item-id="r.targetMedicineId" />
+                    <h5 class="font-brush tier-text text-base leading-tight">{{ r.name }}</h5>
+                  </div>
                   <span class="chip tier-chip shrink-0 !py-0 !text-[0.68rem]">{{ TIER_META[r.tier].label }}</span>
                 </div>
 
@@ -616,6 +628,7 @@ const FLAME_META = {
             <div class="flex items-start justify-between gap-3 border-b border-line pb-3">
               <div>
                 <div class="flex items-center gap-2">
+                  <ItemIcon :item-id="selectedRecipe.targetMedicineId" class="[--item-icon-size:2.75rem]" />
                   <h4 class="font-brush tier-text text-2xl leading-none">{{ selectedRecipe.name }}</h4>
                   <span class="chip tier-chip">{{ TIER_META[selectedRecipe.tier].label }}</span>
                 </div>
@@ -652,10 +665,11 @@ const FLAME_META = {
                 <div
                   v-for="req in selectedRecipe.requiredHerbs"
                   :key="req.herbId"
-                  class="flex items-center justify-between rounded border border-line p-2 text-xs"
+                  class="flex items-center gap-2 rounded border border-line p-2 text-xs"
                   :class="(store.herbInventory[req.herbId] ?? 0) >= req.count ? 'bg-jade/5 border-jade/30' : 'bg-crimson/5 border-crimson/30'"
                 >
-                  <div class="min-w-0">
+                  <ItemIcon :item-id="req.herbId" />
+                  <div class="min-w-0 flex-1">
                     <div class="font-bold truncate" :class="TIER_META[HERBS[req.herbId]?.tier ?? 'green'].cls">
                       {{ HERBS[req.herbId]?.name }}
                     </div>

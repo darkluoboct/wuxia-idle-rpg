@@ -27,7 +27,7 @@ const kin = computed(() => chosen.value && COMPANIONS[chosen.value.companionId])
     </div>
     <div class="origin-detail" aria-live="polite">
       <template v-if="chosen && kin">
-        <div class="origin-kin" aria-hidden="true"><InkFigure :style-type="kin.portraitStyle" /></div>
+        <div class="origin-kin" aria-hidden="true"><InkFigure :style-type="kin.portraitStyle" :portrait-id="kin.id" /></div>
         <div class="min-w-0">
           <p>{{ chosen.blurb }}</p>
           <dl>

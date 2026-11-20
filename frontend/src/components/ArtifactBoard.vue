@@ -4,6 +4,7 @@ import { useGameStore } from '@/stores/gameStore'
 import { ITEMS } from '@/config/gameData'
 import { EQUIP_SLOT_META, TIER_META } from '@/config/uiMeta'
 import { arenaDay, arenaWindow, DAGOU_STAFF, isArenaDay, nextArenaDay } from '../../../shared/artifacts.ts'
+import ItemIcon from './ItemIcon.vue'
 
 const store = useGameStore()
 const item = ITEMS[DAGOU_STAFF.itemId]
@@ -45,7 +46,9 @@ onUnmounted(() => clearInterval(timer))
 
     <article v-else class="well t-red tier-edge glow-border space-y-3 p-4" :aria-label="`真品 ${art.name}`">
       <div class="flex flex-wrap items-start justify-between gap-2">
-        <button class="font-brush tier-text text-left text-2xl leading-tight underline-offset-4 hover:underline" @click="store.inspectById('item', art.itemId)">「{{ art.name }}」</button>
+        <button class="font-brush tier-text flex items-center gap-2 text-left text-2xl leading-tight underline-offset-4 hover:underline" @click="store.inspectById('item', art.itemId)">
+          <ItemIcon :item-id="art.itemId" class="[--item-icon-size:2.6rem]" />「{{ art.name }}」
+        </button>
         <span class="flex shrink-0 items-center gap-1.5">
           <span v-if="!mine && store.player.artifactHonors?.includes(art.itemId)" class="chip chip-gold">曾执绿玉杖</span>
           <span class="chip tier-chip">全服唯一</span>
@@ -106,7 +109,8 @@ onUnmounted(() => clearInterval(timer))
           v-for="entry in registry" :key="entry.item.id" class="well well-hover tier-edge flex items-center justify-between gap-2 p-2.5 text-left"
           :class="TIER_META[entry.item.tier].cls" @click="store.inspectById('item', entry.item.id)"
         >
-          <span class="min-w-0">
+          <ItemIcon :item-id="entry.item.id" />
+          <span class="min-w-0 flex-1">
             <span class="tier-text block truncate text-sm font-bold">{{ entry.item.name }}</span>
             <span class="block text-xs text-ink3">{{ EQUIP_SLOT_META[entry.item.slot].label }}{{ entry.owned ? ' · 你已拥有' : '' }}</span>
           </span>

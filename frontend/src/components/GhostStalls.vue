@@ -4,6 +4,7 @@ import { useGameStore } from '@/stores/gameStore'
 import { TIER_META } from '@/config/uiMeta'
 import type { StallListingDTO } from '@/network/protocol'
 import { STALL, stallFee, stallGoods, stallTax } from '../../../shared/stalls.ts'
+import ItemIcon from './ItemIcon.vue'
 
 const store = useGameStore()
 const time = new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit' })
@@ -104,6 +105,7 @@ onUnmounted(() => clearInterval(timer))
       <ul v-if="mine.length" class="space-y-1.5 border-t border-line pt-2.5" aria-label="我的摊位">
         <li v-for="stall in mine" :key="stall.id" class="flex flex-wrap items-center justify-between gap-2 text-sm">
           <span class="min-w-0" :class="TIER_META[goodsOf(stall).tier].cls">
+            <ItemIcon :item-id="stall.kind === 'HERB' ? stall.goodsId : 'skill-fragment'" class="mr-1 [--item-icon-size:1.45rem]" />
             <b class="tier-text">{{ goodsOf(stall).name }}</b>
             <span class="tabular-nums"> ×{{ stall.qty }}</span>
             <span class="text-xs text-ink3"> · 每份 {{ stall.unitPrice }} 两 · 已卖 {{ stall.sold ?? 0 }}<template v-if="stall.proceeds"> · 待入账 {{ stall.proceeds.toLocaleString() }} 两</template> · 还挂 {{ left(stall.expiresAt) }}</span>
@@ -124,6 +126,7 @@ onUnmounted(() => clearInterval(timer))
       <ul v-else class="space-y-1.5" aria-label="市面上的摊位">
         <li v-for="entry in listings" :key="entry.id" class="flex flex-wrap items-center justify-between gap-2 text-sm" :class="TIER_META[entry.goods.tier].cls">
           <span class="min-w-0">
+            <ItemIcon :item-id="entry.kind === 'HERB' ? entry.goodsId : 'skill-fragment'" class="mr-1 [--item-icon-size:1.45rem]" />
             <b class="tier-text">{{ entry.goods.name }}</b>
             <span class="tabular-nums"> ×{{ entry.qty }}</span>
             <span class="text-xs text-ink3"> · 每份 <b class="tabular-nums text-ink2">{{ entry.unitPrice }}</b> 两（参考 {{ entry.goods.refPrice }}）· {{ entry.seller }}{{ entry.system ? ' · 每日一次，整摊买走' : ` · 还挂 ${left(entry.expiresAt)}` }}</span>

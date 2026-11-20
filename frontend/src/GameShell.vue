@@ -10,6 +10,7 @@ import DailyTasks from '@/components/DailyTasks.vue'
 import RightJianghuSidebar from '@/components/RightJianghuSidebar.vue'
 import ChatPanel from '@/components/ChatPanel.vue'
 import OriginPicker from '@/components/OriginPicker.vue'
+import ItemIcon from '@/components/ItemIcon.vue'
 import type { OriginId } from '@/network/protocol'
 import { isOriginId, ORIGIN_IDS } from '../../shared/origins.ts'
 import './wuxia.css'
@@ -76,6 +77,10 @@ const navTabs: { key: MainTab; label: string; icon: Component; hotkey: string; v
 const inBattle = computed(() => !!store.activeBattle)
 const currentTab = computed(() => (inBattle.value ? 'CULTIVATE' : store.activeTab))
 const currentView = computed(() => navTabs.find((t) => t.key === currentTab.value)!.view)
+const arsenalWorkspace = computed(() => currentTab.value === 'ARSENAL')
+watch(arsenalWorkspace, (open) => {
+  if (open && (store.mobileDrawer === 'CHAR' || store.mobileDrawer === 'WORLD')) store.mobileDrawer = 'NONE'
+})
 /** 门派、市井随剧情开放，未开放时不显示 */
 const openTabs = computed(() => navTabs.filter((t) => store.mainTabOpen(t.key)))
 const stage = ref<HTMLElement>()
@@ -201,8 +206,8 @@ const TOAST_GLYPH = { gold: '喜', danger: '警', info: '讯' } as const
         </button>
         <button class="wuxia-icon" aria-label="选择角色" title="选择角色" @click="chooseCharacter"><UserRound /></button>
         <button v-if="!IS_MOCK_MODE" class="wuxia-icon" aria-label="退出登录" title="退出登录" :disabled="store.authBusy" @click="store.logout()"><LogOut /></button>
-        <button class="wuxia-icon md:hidden" aria-label="查看角色" title="查看角色" aria-controls="character-rail" :aria-expanded="store.mobileDrawer === 'CHAR'" @click="toggleDrawer('CHAR')"><UserRound /></button>
-        <button class="wuxia-icon xl:hidden" aria-label="任务与战报" title="任务与战报" aria-controls="world-rail" :aria-expanded="store.mobileDrawer === 'WORLD'" @click="toggleDrawer('WORLD')"><Compass /></button>
+        <button v-if="!arsenalWorkspace" class="wuxia-icon md:hidden" aria-label="查看角色" title="查看角色" aria-controls="character-rail" :aria-expanded="store.mobileDrawer === 'CHAR'" @click="toggleDrawer('CHAR')"><UserRound /></button>
+        <button v-if="!arsenalWorkspace" class="wuxia-icon xl:hidden" aria-label="任务与战报" title="任务与战报" aria-controls="world-rail" :aria-expanded="store.mobileDrawer === 'WORLD'" @click="toggleDrawer('WORLD')"><Compass /></button>
         <button
           class="wuxia-icon md:hidden" :aria-label="store.isMidnightTheme ? '切换为宋宣（浅色）' : '切换为玄墨（深色）'"
           :title="store.isMidnightTheme ? '切换为宋宣' : '切换为玄墨'" @click="store.toggleTheme()"
@@ -210,7 +215,7 @@ const TOAST_GLYPH = { gold: '喜', danger: '警', info: '讯' } as const
       </div>
     </header>
 
-    <main class="wuxia-layout">
+    <main class="wuxia-layout" :class="{ 'wuxia-arsenal-workspace': arsenalWorkspace }">
       <aside id="character-rail" class="wuxia-rail character-rail" aria-label="人物卷" :data-open="store.mobileDrawer === 'CHAR'">
         <div class="rail-frame character-frame">
           <LeftCharacterSidebar />
@@ -288,10 +293,14 @@ const TOAST_GLYPH = { gold: '喜', danger: '警', info: '讯' } as const
           <div class="h-1.5" style="background: linear-gradient(90deg, transparent, var(--tc), transparent)" />
           <div class="space-y-3 p-5">
             <div class="flex items-start justify-between gap-3">
-              <div class="min-w-0">
-                <span class="chip tier-chip">{{ TIER_META[store.inspectModal.tier].label }}</span>
-                <h4 class="font-brush tier-text mt-2 text-[1.9rem] leading-tight">{{ store.inspectModal.title }}</h4>
-                <div class="mt-1 text-xs text-ink3">{{ store.inspectModal.subtitle }}</div>
+              <div class="flex min-w-0 items-center gap-3">
+                <ItemIcon v-if="store.inspectModal.itemId" :item-id="store.inspectModal.itemId"
+                  class="[--item-icon-size:3.25rem] [--item-illustration-size:clamp(4.5rem,16vh,7rem)]" />
+                <div class="min-w-0">
+                  <span class="chip tier-chip">{{ TIER_META[store.inspectModal.tier].label }}</span>
+                  <h4 class="font-brush tier-text mt-2 text-[1.9rem] leading-tight">{{ store.inspectModal.title }}</h4>
+                  <div class="mt-1 text-xs text-ink3">{{ store.inspectModal.subtitle }}</div>
+                </div>
               </div>
               <button v-focus class="btn btn-sm shrink-0" @click="store.inspectModal = null">关闭</button>
             </div>

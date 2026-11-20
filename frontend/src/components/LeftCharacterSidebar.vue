@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { Backpack, ChevronRight, Sparkles, Swords, UsersRound } from 'lucide-vue-next'
 import { useGameStore } from '@/stores/gameStore'
 import { PLAYER_AVATARS } from '@/config/uiMeta'
+import { CHARACTER_PORTRAITS } from '@/config/characterPortraits'
 import { CHAPTER_ONE_TITLE } from '../../../shared/trialStages.ts'
 import { ORIGINS } from '../../../shared/origins.ts'
 
@@ -12,13 +13,12 @@ const title = computed(() => store.jianghuTitle)
 const origin = computed(() => p.value.origin && ORIGINS[p.value.origin])
 const qiPct = computed(() => Math.min(100, Math.round(p.value.qiExp / Math.max(1, p.value.nextLevelQi) * 100)))
 
-const PORTRAITS: Record<string, string> = { guojing: 'guojing', huangrong: 'huangrong', huangyaoshi: 'taoist' }
 const party = computed(() => {
-  const members = [{ id: p.value.id, name: p.value.nickname, detail: `Lv.${p.value.level}`, role: '主角', art: 'player' }]
+  const members = [{ id: p.value.id, name: p.value.nickname, detail: `Lv.${p.value.level}`, role: '主角', image: PLAYER_AVATARS[p.value.avatarId].image }]
   const l = store.currentLoadout
   for (const [id, role] of [[l.leftCompanionId, '追击'], [l.rightCompanionId, '挡招']] as const) {
     const companion = id ? store.companionOf(id) : undefined
-    if (companion) members.push({ id: companion.id, name: companion.name, detail: companion.title, role, art: PORTRAITS[companion.id] })
+    if (companion) members.push({ id: companion.id, name: companion.name, detail: companion.title, role, image: CHARACTER_PORTRAITS[companion.id] ?? '' })
   }
   return members.map((m) => {
     const unit = store.activeBattle?.units.find((u) => u.id === m.id)
@@ -38,7 +38,7 @@ function openArsenal(tab: typeof store.arsenalTab) {
   <div class="character-sheet">
     <header class="character-profile">
       <div class="hero-portrait">
-        <i class="art art-player" :style="{ backgroundImage: `url(${PLAYER_AVATARS[p.avatarId].image})` }" aria-hidden="true" />
+        <i class="art art-portrait art-player" :style="{ backgroundImage: `url(${PLAYER_AVATARS[p.avatarId].image})` }" aria-hidden="true" />
         <span class="hero-seal font-brush">侠</span>
       </div>
       <div class="hero-details">
@@ -62,7 +62,7 @@ function openArsenal(tab: typeof store.arsenalTab) {
       <ul class="party-list">
         <li v-for="member in party" :key="member.id" class="party-row">
           <span class="party-avatar" aria-hidden="true">
-            <i v-if="member.art" class="art" :class="`art-${member.art}`" :style="member.id === p.id ? { backgroundImage: `url(${PLAYER_AVATARS[p.avatarId].image})` } : undefined" />
+            <i v-if="member.image" class="art art-portrait" :class="{ 'art-player': member.id === p.id }" :style="{ backgroundImage: `url(${member.image})` }" />
             <span v-else class="font-brush">{{ member.name.slice(0, 1) }}</span>
           </span>
           <div class="party-details">

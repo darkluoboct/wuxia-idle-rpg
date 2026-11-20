@@ -13,6 +13,7 @@ import { useGameStore, type GachaResultView } from '@/stores/gameStore'
 import { GACHA_ASSETS, GACHA_HARD_PITY, GACHA_SINGLE_COST, GACHA_TEN_COST } from '@/config/gachaData'
 import { TIER_META } from '@/config/uiMeta'
 import InkFigure from './InkFigure.vue'
+import ItemIcon from './ItemIcon.vue'
 
 const store = useGameStore()
 
@@ -202,6 +203,7 @@ const STICKS = [
             <div class="relative mx-auto mt-3 flex h-56 items-end justify-center">
               <img v-if="r.portrait && r.draw.refId && GACHA_ASSETS.portraits[r.draw.refId]" :src="GACHA_ASSETS.portraits[r.draw.refId]" :alt="r.name" class="h-full object-contain" />
               <InkFigure v-else-if="r.portrait" :style-type="r.portrait" />
+              <ItemIcon v-else-if="r.draw.refId && (r.draw.kind === 'ITEM' || r.draw.kind === 'PILL')" :item-id="r.draw.refId" :glyph="r.glyph" class="mb-6 [--item-icon-size:7rem]" />
               <span v-else class="seal mb-6 h-28 w-28 text-7xl" :style="{ background: 'var(--tc)', boxShadow: '0 0 0 0.2rem var(--tc)' }">{{ r.glyph }}</span>
             </div>
             <h3 class="font-brush mt-3 text-4xl leading-tight" :style="{ color: 'var(--tc)' }">{{ r.name }}</h3>
@@ -234,6 +236,7 @@ const STICKS = [
             <div class="relative flex min-h-0 w-full flex-1 justify-center" :class="r.portrait ? 'items-end' : 'items-center'">
               <img v-if="r.portrait && r.draw.refId && GACHA_ASSETS.portraits[r.draw.refId]" :src="GACHA_ASSETS.portraits[r.draw.refId]" :alt="r.name" class="h-full object-contain" />
               <InkFigure v-else-if="r.portrait" :style-type="r.portrait" />
+              <ItemIcon v-else-if="r.draw.refId && (r.draw.kind === 'ITEM' || r.draw.kind === 'PILL')" :item-id="r.draw.refId" :glyph="r.glyph" class="[--item-icon-size:3.5rem]" />
               <span v-else class="seal h-14 w-14 text-3xl" :style="{ background: 'var(--tc)', boxShadow: '0 0 0 0.14rem var(--tc)' }">{{ r.glyph }}</span>
             </div>
             <b class="font-brush mt-0.5 w-full truncate text-base leading-tight" :style="{ color: 'var(--tc)' }">{{ r.name }}</b>

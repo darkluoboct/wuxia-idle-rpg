@@ -16,6 +16,8 @@ export type ToastTone = 'info' | 'gold' | 'danger'
 
 export const SHICHEN_LABELS = ['子时·夜半', '寅时·平旦', '辰时·烟雨', '午时·日正', '申时·斜阳', '戌时·黄昏']
 
+type InspectDetails = { title: string; subtitle: string; tier: TierColor; desc: string; extra?: string; itemId?: string }
+
 export const useGameUiStore = defineStore('wuxiaUi', () => {
 
   const playerStore = usePlayerStore()
@@ -26,7 +28,7 @@ export const useGameUiStore = defineStore('wuxiaUi', () => {
   const activeTab = ref<MainTab>('CULTIVATE')
   const jianghuTab = ref<'STORY' | 'TRIAL' | 'MAPS' | 'RAID' | 'XIANGYANG' | 'BOUNTY'>('TRIAL')
   const bountyTargetId = ref<string>()
-  const arsenalTab = ref<'SKILLS' | 'SQUAD' | 'EQUIP' | 'MERIDIAN'>('SKILLS')
+  const arsenalTab = ref<'SKILLS' | 'SQUAD' | 'EQUIP' | 'BAG' | 'MERIDIAN'>('SKILLS')
   // 窄屏下左 / 右侧栏以抽屉形式呈现
   const mobileDrawer = ref<'NONE' | 'CHAR' | 'WORLD' | 'CHAT'>('NONE')
   /** 江湖地图弹窗：右栏与舞台顶上的地名都能打开 */
@@ -50,7 +52,7 @@ export const useGameUiStore = defineStore('wuxiaUi', () => {
   } | null>(null)
 
   // 点击富文本词条弹出的详情浮窗
-  const inspectModal = ref<{ title: string; subtitle: string; tier: TierColor; desc: string; extra?: string } | null>(null)
+  const inspectModal = ref<InspectDetails | null>(null)
   const marketTab = ref<'INN' | 'SHOP' | 'GHOST' | 'ALCHEMY' | 'HUASHAN' | 'ARTIFACTS'>('INN')
 
   // 滚动富文本日志流
@@ -117,7 +119,7 @@ export const useGameUiStore = defineStore('wuxiaUi', () => {
     if (typeof document !== 'undefined') document.documentElement.classList.toggle('theme-midnight', isMidnightTheme.value)
   }
 
-  function openInspect(payload: { title: string; subtitle: string; tier: TierColor; desc: string; extra?: string }) {
+  function openInspect(payload: InspectDetails) {
     inspectModal.value = payload
   }
 
@@ -152,6 +154,7 @@ export const useGameUiStore = defineStore('wuxiaUi', () => {
       }
       openInspect({
         title: `【${it.name}】${stars ? ` +${stars} 星` : ''}`,
+        itemId: it.id,
         subtitle: `${EQUIP_SLOT_META[it.slot].label}${it.isTrueUnique ? ' · 全服唯一' : ''}${it.reqStat ? ` · 需要${it.reqStat.label}` : ''}`,
         tier: it.tier,
         desc: it.desc,

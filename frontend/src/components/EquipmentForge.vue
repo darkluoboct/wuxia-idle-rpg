@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { ITEMS } from '@/config/gameData'
 import { EQUIP_SLOT_META, itemBonusLabels, TIER_META } from '@/config/uiMeta'
+import ItemIcon from './ItemIcon.vue'
 import { useGameStore } from '@/stores/gameStore'
 import { formatBattleStatBonuses } from '../../../shared/combatMeta.ts'
 import { forgeBlockReason, forgeMaterialLabel, isForgeable, reforgeCost, salvageYield, temperCost, temperedItem } from '../../../shared/equipmentForge.ts'
@@ -49,7 +50,10 @@ function salvage() {
     <h3 class="sec-title">{{ reforge ? '鬼市铁匠炉' : '装备淬炼' }}</h3>
     <p v-if="reforge" class="hint">嘉兴南湖 · 北京时间 23:00–00:59。重铸会随机替换未锁定的词条。</p>
     <template v-else>
-      <p class="text-sm text-gold">{{ forgeMaterialLabel(forge?.iron ?? 0, forge?.stones ?? 0) }}</p>
+      <p class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-gold">
+        <span class="flex items-center gap-1.5"><ItemIcon item-id="forge-iron" />百炼玄铁 {{ forge?.iron ?? 0 }}</span>
+        <span class="flex items-center gap-1.5"><ItemIcon item-id="forge-stone" />淬火石 {{ forge?.stones ?? 0 }}</span>
+      </p>
       <p class="hint">每次巡历遭遇各得 1 份材料，分解闲置的凡品、良品装备也可获得。每星提升 10% 基础属性。</p>
     </template>
     <label class="block space-y-1 text-sm">
@@ -62,7 +66,7 @@ function salvage() {
       </select>
     </label>
     <template v-if="selected">
-      <p class="hint">{{ baseStats }}</p>
+      <p class="hint flex items-center gap-2"><ItemIcon :item-id="selected.id" />{{ baseStats }}</p>
       <p v-if="primary" class="hint">主词条 · {{ primary }}</p>
       <p v-if="secondary" class="hint">副词条 · {{ secondary }}</p>
       <label v-if="reforge" class="block space-y-1 text-sm">

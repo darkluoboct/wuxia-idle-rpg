@@ -3,6 +3,7 @@ import { onMounted } from 'vue'
 import { useGameStore } from '@/stores/gameStore'
 import type { ShopGoodsDTO } from '@/network/protocol'
 import { mailAttachmentText } from '../../../shared/admin.ts'
+import ItemIcon from './ItemIcon.vue'
 
 /** 江湖商行（docs/22）：运营上架的商品，用元宝或纹银买，有的限购、有的限量 */
 const store = useGameStore()
@@ -31,6 +32,11 @@ onMounted(() => void store.refreshShop())
           <b class="shrink-0 tabular-nums" :class="goods.currency === 'INGOT' ? 'text-gold' : 'text-ink'">{{ priceText(goods) }}</b>
         </div>
         <p v-if="goods.description" class="text-sm leading-relaxed text-ink2">{{ goods.description }}</p>
+        <div class="flex flex-wrap gap-1.5 empty:hidden">
+          <ItemIcon v-for="id in goods.goods.items" :key="id" :item-id="id" />
+          <ItemIcon v-for="(_count, id) in goods.goods.pills" :key="`pill-${id}`" :item-id="id" />
+          <ItemIcon v-if="Object.keys(goods.goods.fragments ?? {}).length" item-id="skill-fragment" />
+        </div>
         <p class="text-sm">内含：{{ mailAttachmentText(goods.goods) }}</p>
         <div class="flex flex-wrap gap-1.5 text-xs">
           <span v-if="goods.limit" class="chip tabular-nums">{{ LIMIT_TEXT[goods.limit.kind] }} {{ goods.limit.count }} 次 · 已买 {{ goods.bought }}</span>

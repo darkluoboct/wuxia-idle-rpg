@@ -1,35 +1,35 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { ChevronDown, Swords } from 'lucide-vue-next'
+import { computed, nextTick, onActivated, ref, watch } from 'vue'
+import { ArrowLeft, ChevronRight, Swords } from 'lucide-vue-next'
+import {
+  backpackCapacity, canEquipCompanionItem, HERBS, HIDDEN_WEAPONS, hiddenWeaponCapacity,
+  ITEMS, JIANGHU_TITLES, MEDICINES, meetsItemStatRequirement, SKILLS, titleEligible,
+  unlockedHiddenWeapons, type ItemConfig,
+} from '@/config/gameData'
+import { BASE_STAT_LABELS, EQUIP_SLOT_META, itemBonusLabels, PLAYER_AVATARS, TIER_META } from '@/config/uiMeta'
+import type { EquipSlotType, TierColor } from '@/network/protocol'
 import { useGameStore } from '@/stores/gameStore'
-import { backpackCapacity, canEquipCompanionItem, HIDDEN_WEAPONS, hiddenWeaponCapacity, ITEMS, JIANGHU_TITLES, MEDICINES, meetsItemStatRequirement, SKILLS, titleEligible, unlockedHiddenWeapons, type ItemConfig } from '@/config/gameData'
-import { BASE_STAT_LABELS, EQUIP_SLOT_META, itemBonusLabels, TIER_META } from '@/config/uiMeta'
-import type { EquipSlotType } from '@/network/protocol'
 import { companionItemId, formatBattleStatBonuses, PERSONAL_EQUIP_SLOTS } from '../../../shared/combatMeta.ts'
 import { temperedItem } from '../../../shared/equipmentForge.ts'
-import { equippedGearSkill, trialAffixLabel, trialAffixQuality } from '../../../shared/trialStages.ts'
-import { sectEquipmentSetOf, WANDERER_EQUIPMENT } from '../../../shared/sectEquipment.ts'
+import { sectEquipmentSetOf } from '../../../shared/sectEquipment.ts'
+import { equippedGearSkill, trialAffixLabel, trialAffixQuality, trialSetOf } from '../../../shared/trialStages.ts'
 import CharacterCombatStats from './CharacterCombatStats.vue'
 import EquipmentForge from './EquipmentForge.vue'
 import InkFigure from './InkFigure.vue'
+import ItemIcon from './ItemIcon.vue'
 
+const emit = defineEmits<{ skill: [id: string] }>()
 const store = useGameStore()
+const root = ref<HTMLElement>()
+const roleHeading = ref<HTMLElement>()
+const bagHeading = ref<HTMLElement>()
+const detailHeading = ref<HTMLElement>()
+const inBag = computed(() => store.arsenalTab === 'BAG')
+
 const slotOrder = ['HEAD', 'WEAPON', 'ARMOR', 'ACC', 'WRIST', 'BELT', 'BOOTS', 'RELIC'] as const satisfies readonly EquipSlotType[]
 const emptyHints: Partial<Record<EquipSlotType, string>> = { BELT: '主线掉落', RELIC: '副本掉落' }
-const fallbackArt: Partial<Record<EquipSlotType, string>> = { WEAPON: 'art-sword', ARMOR: 'art-armor', ACC: 'art-charm', RELIC: 'art-scroll' }
-const atlasRows = [
-  ['bamboo_hat', 'pine_crown', 'snow_hood', 'xuantie_dagger'],
-  ['cloth_bracers', 'swallow_bracers', 'iron_bracers', 'qinggang_sword'],
-  ['cloth_belt', 'oxhide_belt', 'jade_belt', 'iron_bagua'],
-  ['cloth_boots', 'deerskin_boots', 'cloud_boots', 'xiaoao_qupu'],
-]
-const atlasCells = Object.fromEntries(atlasRows.flatMap((row, y) => row.map((id, x) => [
-  id, { '--art-x': `${x * 100 / 3}%`, '--art-y': `${y * 100 / 3}%` },
-])))
-function itemArt(item: ItemConfig) {
-  return atlasCells[item.id] ? 'art-gear' : fallbackArt[item.slot]
-}
-
+type RolePane = EquipSlotType | 'ATTRIBUTES' | 'PREPARE' | 'FORGE'
+const rolePane = ref<RolePane | null>(null)
 const companionId = ref<string | null>(null)
 const companions = computed(() => [...new Set([store.currentLoadout.leftCompanionId, store.currentLoadout.rightCompanionId])]
   .flatMap((id) => {
@@ -37,55 +37,23 @@ const companions = computed(() => [...new Set([store.currentLoadout.leftCompanio
     return companion ? [companion] : []
   }))
 const wearer = computed(() => companions.value.find((member) => member.id === companionId.value))
+const wearerName = computed(() => wearer.value?.name ?? store.player.nickname)
 const wearerStats = computed(() => wearer.value?.stats ?? store.player.stats)
 const companionStats = computed(() => wearer.value && store.companionCombatStats(wearer.value.id))
 const shownStats = computed(() => companionStats.value?.attributes ?? wearer.value?.stats ?? store.martialStats)
-const hiddenSlots = computed(() => hiddenWeaponCapacity(store.currentLoadout))
-const availableWeapons = computed(() => unlockedHiddenWeapons(store.player))
-const equippedWeapons = computed(() => (store.currentLoadout.hiddenWeaponIds ?? []).slice(0, hiddenSlots.value))
-const gearSkillWeapon = computed(() => ITEMS[store.currentLoadout.weaponId ?? ''])
-const gearSkill = computed(() => equippedGearSkill({ ...store.currentLoadout, gearSkillId: gearSkillWeapon.value?.id }))
-const equippedTitle = computed(() => JIANGHU_TITLES.find((title) => title.id === store.currentLoadout.titleId))
-const titleActive = computed(() => !!store.jianghuTitle)
-const medicineSlots = [
-  { field: 'battlePillId', category: 'BATTLE_PILL', name: '战斗丹药' },
-  { field: 'weaponVenomId', category: 'WEAPON_VENOM', name: '兵刃毒膏' },
-] as const
-const medicineStock = computed(() => store.player.battleMedicines ?? {})
-const battleMedicines = Object.values(MEDICINES).filter((medicine) => medicine.category === 'BATTLE_PILL' || medicine.category === 'WEAPON_VENOM')
-
-function equipHiddenWeapon(index: number, event: Event) {
-  const id = (event.target as HTMLSelectElement).value
-  const selected = [...equippedWeapons.value]
-  selected[index] = id
-  return store.updateLoadout({ hiddenWeaponIds: selected.filter(Boolean) })
-}
-
-function equipTitle(event: Event) {
-  const id = (event.target as HTMLSelectElement).value
-  return store.updateLoadout({ titleId: id || null })
-}
-
-function selectGearSkill(event: Event) {
-  return store.updateLoadout({ gearSkillId: (event.target as HTMLSelectElement).value || null })
-}
-
-function equipMedicine(field: typeof medicineSlots[number]['field'], event: Event) {
-  const id = (event.target as HTMLSelectElement).value
-  return store.updateLoadout({ [field]: id || null })
-}
-
-function openAlchemy() {
-  store.marketTab = 'ALCHEMY'
-  store.selectTab('MARKET')
-}
+const qiProgress = computed(() => Math.min(100, Math.round(100 * store.player.qiExp / Math.max(1, store.player.nextLevelQi))))
 
 const worn = computed(() => slotOrder.flatMap((type) => {
-  const slot = EQUIP_SLOT_META[type]
   if (type === 'RELIC' && wearer.value) return []
+  const slot = EQUIP_SLOT_META[type]
   const id = wearer.value && type !== 'RELIC' ? companionItemId(store.currentLoadout, wearer.value.id, type) : store.currentLoadout[slot.field]
   return [{ ...slot, type, item: typeof id === 'string' ? ITEMS[id] : undefined }]
 }))
+const slotColumns = computed(() => [
+  worn.value.filter((_, index) => index % 2 === 0),
+  worn.value.filter((_, index) => index % 2 === 1),
+])
+const openSlot = computed(() => worn.value.find(({ type }) => type === rolePane.value))
 const wornIds = computed(() => new Set([
   ...slotOrder.map((slot) => store.currentLoadout[EQUIP_SLOT_META[slot].field]),
   ...companions.value.flatMap(({ id }) => PERSONAL_EQUIP_SLOTS.map((slot) => companionItemId(store.currentLoadout, id, slot))),
@@ -95,394 +63,590 @@ const backpack = computed(() => store.ownedItemIds
   .filter((item) => item && !wornIds.value.has(item.id))
   .sort((a, b) => TIER_META[b.tier].rank - TIER_META[a.tier].rank))
 
-const PILL_ID = 'pozhang_dan'
-const hasPill = computed(() => store.pillCount > 0)
-const bagCapacity = computed(() => backpackCapacity(store.currentLoadout))
-const carriedSlots = computed(() => bagCapacity.value - Number(hasPill.value))
-const bagSections = computed(() => [
-  { name: '背包', items: backpack.value.slice(0, carriedSlots.value) },
-  { name: '行囊', items: backpack.value.slice(carriedSlots.value) },
-])
-const emptySlots = computed(() => Math.max(0, carriedSlots.value - backpack.value.length))
+const hiddenSlots = computed(() => hiddenWeaponCapacity(store.currentLoadout))
+const availableWeapons = computed(() => unlockedHiddenWeapons(store.player))
+const equippedWeapons = computed(() => (store.currentLoadout.hiddenWeaponIds ?? []).slice(0, hiddenSlots.value))
+const gearSkill = computed(() => equippedGearSkill({ ...store.currentLoadout, gearSkillId: store.currentLoadout.weaponId }))
+const equippedTitle = computed(() => JIANGHU_TITLES.find((title) => title.id === store.currentLoadout.titleId))
+const medicineSlots = [
+  { field: 'battlePillId', category: 'BATTLE_PILL', name: '战斗丹药' },
+  { field: 'weaponVenomId', category: 'WEAPON_VENOM', name: '兵刃毒膏' },
+] as const
+const medicineStock = computed(() => store.player.battleMedicines ?? {})
+const battleMedicines = Object.values(MEDICINES).filter((medicine) => medicine.category === 'BATTLE_PILL' || medicine.category === 'WEAPON_VENOM')
+
+function equipHiddenWeapon(index: number, event: Event) {
+  const selected = [...equippedWeapons.value]
+  selected[index] = (event.target as HTMLSelectElement).value
+  return store.updateLoadout({ hiddenWeaponIds: selected.filter(Boolean) })
+}
+
+function openAlchemy() {
+  store.marketTab = 'ALCHEMY'
+  store.selectTab('MARKET')
+}
+
+const categories = [
+  { id: 'GEAR', label: '装备' }, { id: 'MEDICINE', label: '丹药' },
+  { id: 'HERB', label: '药材' }, { id: 'FRAGMENT', label: '残页' },
+] as const
+type Category = typeof categories[number]['id']
+type Supply = { id: string; name: string; tier: TierColor; count: number; desc: string; source?: string; iconId?: string; glyph: string }
+const category = ref<Category>('GEAR')
+const slotFilter = ref<EquipSlotType | 'ALL'>('ALL')
 const showStorage = ref(false)
+const selectedId = ref<string>()
+const returnSlot = ref<EquipSlotType | null>(null)
+const showComparison = ref(false)
+const equipMessage = ref('')
 
-const selectedId = ref<string | null>(null)
-const selected = computed(() => backpack.value.find((item) => item.id === selectedId.value))
-const pillSelected = computed(() => hasPill.value && selectedId.value === PILL_ID)
-const requirement = computed(() => selected.value?.reqStat)
-const meetsRequirement = computed(() => wearer.value
-  ? canEquipCompanionItem(wearer.value, selected.value)
-  : !selected.value || meetsItemStatRequirement(selected.value, wearerStats.value))
+const bagCapacity = computed(() => backpackCapacity(store.currentLoadout))
+const pillSlot = computed(() => Number(store.pillCount > 0))
+const carriedSlots = computed(() => bagCapacity.value - pillSlot.value)
+const carriedCount = computed(() => Math.min(backpack.value.length, carriedSlots.value) + pillSlot.value)
+const carried = computed(() => backpack.value.slice(0, carriedSlots.value))
+const storage = computed(() => backpack.value.slice(carriedSlots.value))
+const matchesSlot = (item: ItemConfig) => slotFilter.value === 'ALL' || item.slot === slotFilter.value
+const matchingStorage = computed(() => storage.value.filter(matchesSlot))
+const visibleGear = computed(() => showStorage.value ? matchingStorage.value : carried.value.filter(matchesSlot))
+const emptySlots = computed(() => !showStorage.value && slotFilter.value === 'ALL' ? bagCapacity.value - carriedCount.value : 0)
+const supplies = computed<Supply[]>(() => {
+  if (category.value === 'MEDICINE') return Object.values(MEDICINES).flatMap((medicine) => {
+    const stock = medicine.category === 'BATTLE_PILL' || medicine.category === 'WEAPON_VENOM'
+      ? medicineStock.value : store.pillInventory
+    const count = stock[medicine.id] ?? 0
+    return count > 0 ? [{ ...medicine, count, desc: medicine.effectDesc, glyph: '丹' }] : []
+  })
+  if (category.value === 'HERB') return Object.entries(store.herbInventory).flatMap(([id, count]) => {
+    const herb = HERBS[id]
+    return herb && count > 0 ? [{ ...herb, count, source: herb.mapName, glyph: '药' }] : []
+  })
+  if (category.value === 'FRAGMENT') return Object.entries(store.player.skillFragments ?? {}).flatMap(([id, count]) => {
+    const skill = SKILLS[id]
+    if (!skill || count <= 0) return []
+    const desc = store.learnedSkills[id] ? '参悟同名武学时可用残页抵扣真气。' : '习得同名武学后，可在参悟时用残页抵扣真气。'
+    return [{ id, name: `《${skill.name}》残页`, tier: skill.tier, count, desc, iconId: 'skill-fragment', glyph: '卷' }]
+  })
+  return []
+})
 
+const selectedGear = computed(() => category.value === 'GEAR' ? visibleGear.value.find((item) => item.id === selectedId.value) : undefined)
+const selectedSupply = computed(() => supplies.value.find(({ id }) => id === selectedId.value))
+const item = computed(() => inBag.value ? selectedGear.value : openSlot.value?.item)
+const comparedItem = computed(() => selectedGear.value && worn.value.find(({ type }) => type === selectedGear.value?.slot)?.item)
+const canCompare = computed(() => !!comparedItem.value || !!returnSlot.value)
+const comparing = computed(() => inBag.value && showComparison.value && canCompare.value)
+const requirement = computed(() => item.value?.reqStat)
+const meetsRequirement = computed(() => {
+  const gear = item.value
+  if (!gear) return false
+  return wearer.value ? canEquipCompanionItem(wearer.value, gear) : meetsItemStatRequirement(gear, wearerStats.value)
+})
 const forgeState = (id: string) => store.player.equipmentForge?.items[id]
 const stars = (id: string) => forgeState(id)?.stars ?? 0
-const bonuses = computed(() => selected.value ? itemBonusLabels(temperedItem(selected.value, stars(selected.value.id))) : [])
-const secondaryLabel = computed(() => {
-  const affix = selected.value && forgeState(selected.value.id)?.secondary
-  return affix ? formatBattleStatBonuses({ [affix.stat]: affix.value }) : ''
-})
-const sectSet = computed(() => selected.value?.setId ? sectEquipmentSetOf(selected.value.setId) : undefined)
-const wornSetPieces = computed(() => worn.value.filter(({ item }) => sectSet.value && item?.setId === sectSet.value.id).length)
-const affixRoll = (id: string) => store.player.equipmentAffixes?.[id] ?? 0
 
-function equipSelected() {
-  if (!selected.value || !meetsRequirement.value) return
-  const { id, slot } = selected.value
-  if (!wearer.value) store.equipItem(id)
-  else if (slot !== 'RELIC') store.equipCompanionItem(wearer.value.id, slot, id)
-  selectedId.value = null
+function itemEffects(gear: ItemConfig) {
+  const effects = itemBonusLabels(temperedItem(gear, stars(gear.id)))
+  const roll = store.player.equipmentAffixes?.[gear.id]
+  if (roll) effects.push(`${trialAffixQuality(gear, roll)} · ${trialAffixLabel(gear, roll)}`)
+  const secondary = forgeState(gear.id)?.secondary
+  if (secondary) effects.push(`副词条 · ${formatBattleStatBonuses({ [secondary.stat]: secondary.value })}`)
+  return effects
+}
+
+const comparisons = computed(() => [
+  { label: '当前穿戴', gear: comparedItem.value },
+  { label: '选中装备', gear: selectedGear.value },
+])
+const setDetail = computed(() => {
+  const id = item.value?.setId
+  if (!id) return undefined
+  const sect = sectEquipmentSetOf(id)
+  const trial = trialSetOf(id)
+  const count = worn.value.filter(({ item: wornItem }) => wornItem?.setId === id).length
+  if (sect) return { name: sect.name, count, total: sect.parts.length, effects: [sect.bonus] }
+  if (trial) {
+    const thresholds = [[2, 'two'], [4, 'four'], [6, 'six']] as const
+    return { name: trial.name, count, total: trial.parts.length, effects: thresholds
+      .flatMap(([pieces, key]) => trial.bonuses[key] ? [`${pieces} 件 · ${trial.bonuses[key]}`] : []) }
+  }
+  return undefined
+})
+
+const supplyAction = computed(() => {
+  const supply = selectedSupply.value
+  if (!supply) return undefined
+  if (category.value === 'HERB' && store.featureOpen('MAPS')) return { label: '去百草丹房', run: openAlchemy }
+  if (category.value === 'FRAGMENT' && store.learnedSkills[supply.id]) {
+    return { label: '查看武学', run: () => emit('skill', supply.id) }
+  }
+  const medicine = category.value === 'MEDICINE' ? MEDICINES[supply.id] : undefined
+  if (medicine?.category === 'BATTLE_PILL' || medicine?.category === 'WEAPON_VENOM') {
+    return { label: '去战备', run: () => { pickWearer(null); store.arsenalTab = 'EQUIP'; openRolePane('PREPARE') } }
+  }
+  const effect = medicine?.acupointEffect?.type
+  if (effect === 'BREAKTHROUGH_RATE' || effect === 'PREVENT_DEVIATION') {
+    return { label: '去修行', run: () => store.selectTab('CULTIVATE') }
+  }
+  if (effect) return { label: '去经脉冲穴', run: () => { store.arsenalTab = 'MERIDIAN' } }
+  return undefined
+})
+const paneTitle = computed(() => {
+  if (inBag.value) return '物品详情'
+  if (openSlot.value) return `${openSlot.value.label}详情`
+  if (rolePane.value === 'ATTRIBUTES') return '属性详情'
+  if (rolePane.value === 'PREPARE') return '战备'
+  if (rolePane.value === 'FORGE') return '装备淬炼'
+  return '角色属性'
+})
+
+function pickWearer(id: string | null) {
+  companionId.value = id
+  rolePane.value = null
+  returnSlot.value = null
+}
+watch(wearer, (member) => {
+  if (companionId.value && !member) pickWearer(null)
+})
+
+function openRolePane(pane: RolePane) {
+  rolePane.value = pane
+  void nextTick(() => detailHeading.value?.focus({ preventScroll: true }))
+}
+
+function closeRolePane() {
+  const previous = rolePane.value
+  rolePane.value = null
+  void nextTick(() => {
+    const trigger = root.value?.querySelector<HTMLElement>(`[data-role-pane="${previous}"]`) ?? roleHeading.value
+    trigger?.focus({ preventScroll: true })
+  })
+}
+
+function selectItem(id?: string) {
+  selectedId.value = id
+  showComparison.value = !!returnSlot.value
+  equipMessage.value = ''
+}
+
+function filterCategory(next: Category) {
+  if (category.value === next) return
+  category.value = next
+  slotFilter.value = 'ALL'
+  showStorage.value = false
+  selectItem()
+}
+
+function changeEquipment(type: EquipSlotType) {
+  category.value = 'GEAR'
+  slotFilter.value = type
+  showStorage.value = !carried.value.some(matchesSlot) && matchingStorage.value.length > 0
+  returnSlot.value = type
+  selectItem()
+  store.arsenalTab = 'BAG'
+  void nextTick(() => bagHeading.value?.focus({ preventScroll: true }))
+}
+
+function returnToRole() {
+  const type = returnSlot.value
+  returnSlot.value = null
+  if (type) rolePane.value = type
+  store.arsenalTab = 'EQUIP'
+  void nextTick(() => detailHeading.value?.focus({ preventScroll: true }))
+}
+
+function focusBagItem(id: string) {
+  void nextTick(() => root.value?.querySelector<HTMLElement>(`[data-bag-item="${id}"]`)?.focus({ preventScroll: true }))
+}
+
+function closeItem() {
+  const id = selectedId.value
+  selectItem()
+  if (id) focusBagItem(id)
+}
+
+onActivated(() => {
+  if (inBag.value && selectedId.value) focusBagItem(selectedId.value)
+})
+
+async function equipSelected() {
+  const candidate = selectedGear.value
+  if (!candidate || !meetsRequirement.value || store.onlineActionBusy) return
+  if (!wearer.value) await store.equipItem(candidate.id)
+  else if (candidate.slot !== 'RELIC') await store.equipCompanionItem(wearer.value.id, candidate.slot, candidate.id)
+  if (selectedId.value === candidate.id && worn.value.some(({ item: gear }) => gear?.id === candidate.id)) {
+    selectItem()
+    equipMessage.value = `已为${wearerName.value}穿戴「${candidate.name}」。`
+    if (inBag.value) void nextTick(() => detailHeading.value?.focus({ preventScroll: true }))
+  }
 }
 
 function unequip(type: EquipSlotType) {
-  if (!wearer.value) store.updateLoadout({ [EQUIP_SLOT_META[type].field]: null }, '已卸下装备')
-  else if (type !== 'RELIC') store.equipCompanionItem(wearer.value.id, type, null)
+  if (!wearer.value) return store.updateLoadout({ [EQUIP_SLOT_META[type].field]: null }, '已卸下装备')
+  if (type !== 'RELIC') return store.equipCompanionItem(wearer.value.id, type, null)
+}
+
+function onEscape(event: KeyboardEvent) {
+  if (store.confirmDialog || store.inspectModal) return
+  if (inBag.value && (selectedGear.value || selectedSupply.value)) closeItem()
+  else if (inBag.value && returnSlot.value) returnToRole()
+  else if (!inBag.value && rolePane.value) closeRolePane()
+  else return
+  event.stopPropagation()
 }
 </script>
 
 <template>
-  <div class="equipment-panel">
-    <div v-if="companions.length" class="flex flex-wrap gap-2" role="group" aria-label="选择穿戴者">
-      <button class="btn btn-sm" :class="{ 'btn-gold': !wearer }" :aria-pressed="!wearer" @click="companionId = null">主角</button>
-      <button v-for="companion in companions" :key="companion.id" class="btn btn-sm" :class="{ 'btn-gold': wearer?.id === companion.id }"
-        :aria-pressed="wearer?.id === companion.id" @click="companionId = companion.id">{{ companion.name }}</button>
-    </div>
-    <div class="equipment-overview">
-      <section class="well equip-pane" aria-label="已穿戴">
-        <header class="equip-heading">
-          <h3 class="sec-title">已穿戴</h3>
-          <span>{{ worn.filter(({ item }) => item).length }} / {{ worn.length }}</span>
-        </header>
-
-        <div class="equip-doll">
-          <div class="equip-portrait">
-            <span v-if="wearer" class="equip-partner-portrait relative overflow-hidden"><InkFigure :style-type="wearer.portraitStyle" /></span>
-            <i v-else class="art art-hero" aria-hidden="true" />
-            <strong class="font-brush">{{ wearer?.name ?? store.player.nickname }}</strong>
-            <small>{{ wearer?.title ?? `${store.player.level} 级 · ${store.currentRealm.name}` }}</small>
-          </div>
-
-          <div v-for="slot in worn" :key="slot.type" class="worn-slot" :data-slot="slot.type">
-            <span class="worn-label">{{ slot.label }}</span>
-            <button
-              v-if="slot.item"
-              class="gear-cell worn-cell" :class="TIER_META[slot.item.tier].cls"
-              :aria-label="`查看已穿戴的${slot.item.name}`" :title="slot.item.name"
-              @click="store.inspectById('item', slot.item.id)"
-            ><i class="art" :class="itemArt(slot.item)" :style="atlasCells[slot.item.id]" aria-hidden="true" /></button>
-            <span v-else class="gear-cell worn-cell is-empty font-brush" aria-hidden="true">{{ slot.glyph }}</span>
-            <span class="worn-name" :class="slot.item ? TIER_META[slot.item.tier].cls : ''">
-              {{ slot.item?.name ?? emptyHints[slot.type] ?? '未装备' }}
-              <small v-if="slot.item && stars(slot.item.id)" class="text-gold">+{{ stars(slot.item.id) }} 星</small>
-              <small v-if="slot.item && affixRoll(slot.item.id)" class="text-gold">{{ trialAffixQuality(slot.item, affixRoll(slot.item.id)) }}</small>
-            </span>
-            <button v-if="slot.item" type="button" class="text-xs text-ink3 underline" :aria-label="`卸下${slot.item.name}`"
-              :disabled="store.onlineActionBusy" @click="unequip(slot.type)">卸下</button>
-          </div>
-        </div>
-      </section>
-
-      <section class="well equip-pane equip-attributes" aria-label="角色属性">
-        <h3 class="sec-title">角色属性</h3>
-        <div class="equip-power"><Swords aria-hidden="true" /><span>战力</span><b>{{ (companionStats ?? store.derivedStats).combatPower.toLocaleString() }}</b></div>
-        <CharacterCombatStats :stats="companionStats" />
-
-        <details class="equip-base">
-          <summary><span>{{ !wearer && store.isWandererMasteryActive ? '六维属性 · 兼收并蓄' : '六维属性' }}</span><ChevronDown :size="14" aria-hidden="true" /></summary>
-          <dl class="base-stats">
-            <div v-for="(label, key) in BASE_STAT_LABELS" :key="key"><dt>{{ label }}</dt><dd>{{ shownStats[key] }}</dd></div>
-          </dl>
-        </details>
-      </section>
-    </div>
-
-    <div v-if="!wearer" class="grid gap-2 md:grid-cols-2">
-      <section v-if="gearSkill" class="well equip-pane space-y-2" aria-label="装备特技配装">
-        <label class="block space-y-1 text-sm">
-          <span>装备特技</span>
-          <select class="field w-full" :value="store.currentLoadout.gearSkillId ?? ''"
-            :disabled="store.onlineActionBusy" @change="selectGearSkill">
-            <option value="">不使用</option>
-            <option :value="gearSkill.weapon.id">{{ gearSkill.name }} · {{ gearSkill.rageCost }} 怒气</option>
-          </select>
-        </label>
-        <p class="hint">试炼与复战每场可施展一次。对同一目标连击，每击按外功威力的 {{ gearSkill.damagePercent }}% 结算。</p>
-      </section>
-      <section class="well equip-pane space-y-2" aria-label="暗器配装">
-        <h3 class="sec-title">暗器</h3>
-        <p v-if="!availableWeapons.length" class="hint">首胜历练第 04 关解锁飞天淬毒黑菱。</p>
-        <label v-for="index in hiddenSlots" :key="index" class="block space-y-1 text-sm">
-          <span>暗器 {{ index }}</span>
-          <select class="field w-full" :value="equippedWeapons[index - 1] ?? ''"
-            :disabled="store.onlineActionBusy || !availableWeapons.length" @change="equipHiddenWeapon(index - 1, $event)">
-            <option value="">未装备</option>
-            <option v-for="weapon in availableWeapons" :key="weapon.id" :value="weapon.id"
-              :disabled="equippedWeapons.includes(weapon.id) && equippedWeapons[index - 1] !== weapon.id">{{ weapon.name }}</option>
-          </select>
-          <span v-if="HIDDEN_WEAPONS[equippedWeapons[index - 1]]" class="hint block">{{ HIDDEN_WEAPONS[equippedWeapons[index - 1]].effectDesc }}</span>
-        </label>
-      </section>
-      <section class="well equip-pane space-y-2" aria-label="称号配装">
-        <h3 class="sec-title">江湖称号</h3>
-        <label class="block space-y-1 text-sm">
-          <span>出战称号</span>
-          <select class="field w-full" :value="equippedTitle?.id ?? ''" :disabled="store.onlineActionBusy" @change="equipTitle">
-            <option value="">不佩戴称号</option>
-            <option v-for="title in JIANGHU_TITLES" :key="title.id" :value="title.id">
-              {{ title.titleName }}{{ titleEligible(title, { ...store.player, stats: store.martialStats }, store.currentLoadout) ? '' : '（未达条件）' }}
-            </option>
-          </select>
-        </label>
-        <template v-if="equippedTitle">
-          <p class="hint">{{ equippedTitle.statBuffDesc }}</p>
-          <p v-if="!titleActive" class="hint">
-            {{ equippedTitle.reqAlignment === 'HERMIT' ? '侠义 −199 至 199' : `侠义 ${equippedTitle.reqAlignment === 'EVIL' ? '≤' : '≥'} ${equippedTitle.minReputation}` }}，
-            装配{{ equippedTitle.skills.map((id) => SKILLS[id]?.name).join('、') }}中的一门{{ equippedTitle.outerForm === 'PALM' ? '或其他掌法外功' : '' }}后生效。
-          </p>
-        </template>
-      </section>
-    </div>
-
-    <section v-if="!wearer" class="well equip-pane space-y-2" aria-label="百草药囊">
+  <div ref="root" class="equipment-panel" :class="{ 'bag-layout': inBag }" @keydown.esc="onEscape">
+    <section v-show="!inBag" class="equip-pane character-pane" aria-label="人物装备">
       <header class="equip-heading">
-        <h3 class="sec-title">百草药囊</h3>
-        <button v-if="store.featureOpen('MAPS')" class="btn btn-sm" type="button" @click="openAlchemy">去百草丹房</button>
+        <h2 ref="roleHeading" class="sec-title" tabindex="-1">人物装备</h2>
+        <span>{{ worn.filter(({ item: gear }) => gear).length }} / {{ worn.length }} 已穿戴</span>
       </header>
-      <div class="grid gap-2 md:grid-cols-2">
-        <label v-for="slot in medicineSlots" :key="slot.field" class="block space-y-1 text-sm">
-          <span>{{ slot.name }}</span>
-          <select class="field w-full" :value="store.currentLoadout[slot.field] ?? ''" :disabled="store.onlineActionBusy"
-            @change="equipMedicine(slot.field, $event)">
-            <option value="">未装配</option>
-            <option v-for="medicine in battleMedicines.filter((entry) => entry.category === slot.category)" :key="medicine.id" :value="medicine.id"
-              :disabled="!(medicineStock[medicine.id] > 0)">{{ medicine.name }} · {{ medicineStock[medicine.id] ?? 0 }} 份</option>
-          </select>
-          <span v-if="store.currentLoadout[slot.field]" class="hint block">{{ MEDICINES[store.currentLoadout[slot.field] ?? '']?.effectDesc }}</span>
-        </label>
+      <div v-if="companions.length" class="equip-options" role="group" aria-label="选择穿戴者">
+        <button type="button" class="btn btn-sm" :aria-pressed="!wearer" @click="pickWearer(null)">主角</button>
+        <button v-for="companion in companions" :key="companion.id" type="button" class="btn btn-sm"
+          :aria-pressed="wearer?.id === companion.id" @click="pickWearer(companion.id)">{{ companion.name }}</button>
       </div>
-      <p class="hint">实战触发后扣除库存。切磋和华山挑战期间药囊停用。</p>
+      <div class="equip-doll">
+        <div v-for="(column, index) in slotColumns" :key="index" class="slot-column" :class="{ 'second-column': index === 1 }">
+          <button v-for="slot in column" :key="slot.type" type="button" class="worn-slot"
+            :data-role-pane="slot.type" :aria-pressed="rolePane === slot.type" :title="slot.item?.name ?? slot.label"
+            :aria-label="slot.item ? `查看已穿戴的${slot.item.name}` : `查看${slot.label}装备位`"
+            @click="openRolePane(slot.type)">
+            <ItemIcon :item-id="slot.item?.id" :glyph="slot.glyph" class="gear-icon" :class="slot.item && TIER_META[slot.item.tier].cls" />
+            <span class="worn-copy">
+              <small>{{ slot.label }}</small>
+              <b :class="slot.item && TIER_META[slot.item.tier].cls">{{ slot.item?.name ?? '未装备' }}</b>
+              <small v-if="slot.item && stars(slot.item.id)">+{{ stars(slot.item.id) }} 星</small>
+            </span>
+          </button>
+        </div>
+        <figure class="equip-portrait">
+          <span v-if="wearer" class="partner-portrait"><InkFigure :style-type="wearer.portraitStyle" :portrait-id="wearer.id" /></span>
+          <img v-else :src="PLAYER_AVATARS[store.player.avatarId].image" alt="" />
+          <figcaption><strong class="font-brush">{{ wearerName }}</strong><small>{{ wearer?.title ?? `${store.player.level} 级 · ${store.currentRealm.name}` }}</small></figcaption>
+        </figure>
+      </div>
+      <footer class="equip-footer">
+        <span v-if="!wearer" class="text-ink2">修为进度 <b class="text-gold tabular-nums">{{ qiProgress }}%</b></span>
+        <div class="equip-buttons">
+          <button v-if="!wearer" type="button" class="btn btn-sm" data-role-pane="PREPARE" :aria-pressed="rolePane === 'PREPARE'" @click="openRolePane('PREPARE')">战备</button>
+          <button type="button" class="btn btn-sm" data-role-pane="FORGE" :aria-pressed="rolePane === 'FORGE'" @click="openRolePane('FORGE')">装备淬炼</button>
+        </div>
+      </footer>
     </section>
 
-    <div class="equipment-storage">
-      <section class="well equip-pane" aria-label="背包">
-        <header class="equip-heading">
-          <h3 class="sec-title">背包</h3>
-          <span>{{ Math.min(backpack.length, carriedSlots) + Number(hasPill) }} / {{ bagCapacity }} 格</span>
-        </header>
-        <template v-for="(section, index) in bagSections" :key="section.name">
-          <button v-if="index && section.items.length" class="btn btn-sm mt-2" :aria-expanded="showStorage"
-            aria-controls="equipment-storage" @click="showStorage = !showStorage">{{ showStorage ? '收起' : '展开' }}行囊 · {{ section.items.length }} 件</button>
-          <div v-if="!index || (section.items.length && showStorage)" :id="index ? 'equipment-storage' : undefined" class="bag-grid" :aria-label="section.name">
-            <button
-              v-for="item in section.items" :key="item.id"
-              class="gear-cell" :class="TIER_META[item.tier].cls"
-              :aria-pressed="selectedId === item.id" :aria-label="affixRoll(item.id) ? `${item.name} · ${trialAffixQuality(item, affixRoll(item.id))}` : item.name"
-              :title="`${item.name} · ${TIER_META[item.tier].label}`"
-              @click="selectedId = item.id"
-            >
-              <i class="art" :class="itemArt(item)" :style="atlasCells[item.id]" aria-hidden="true" />
-              <span v-if="stars(item.id) || affixRoll(item.id)" class="affix-star text-gold" aria-hidden="true">{{ stars(item.id) || '' }}★</span>
+    <section v-show="inBag" class="equip-pane" aria-label="背包">
+      <header class="equip-heading">
+        <button v-if="returnSlot" type="button" class="btn btn-sm" @click="returnToRole"><ArrowLeft aria-hidden="true" />返回角色</button>
+        <h2 ref="bagHeading" class="sec-title" tabindex="-1">背包</h2>
+        <span v-if="category === 'GEAR'" title="穿戴的装备不计入随身容量，破障丹占一格">{{ carriedCount }} / {{ bagCapacity }} 格</span>
+      </header>
+      <div class="equip-options" role="group" aria-label="物品分类">
+        <button v-for="entry in categories" :key="entry.id" type="button" class="btn btn-sm"
+          :aria-pressed="category === entry.id" @click="filterCategory(entry.id)">{{ entry.label }}</button>
+      </div>
+      <div v-if="category === 'GEAR'" class="bag-filter">
+        <label class="flex items-center gap-2"><span>部位</span>
+          <select v-model="slotFilter" class="field" aria-label="装备部位" @change="selectItem()">
+            <option value="ALL">全部</option>
+            <option v-for="slot in slotOrder" :key="slot" :value="slot">{{ EQUIP_SLOT_META[slot].label }}</option>
+          </select>
+        </label>
+        <span class="text-ink3">穿戴者 · {{ wearerName }}</span>
+        <div class="equip-buttons" role="group" aria-label="物品位置">
+          <button type="button" class="btn btn-sm" :aria-pressed="!showStorage" @click="showStorage = false; selectItem()">随身</button>
+          <button type="button" class="btn btn-sm" :aria-pressed="showStorage" @click="showStorage = true; selectItem()">行囊 · {{ matchingStorage.length }}</button>
+        </div>
+      </div>
+      <div class="equip-scroll">
+        <p v-if="category === 'GEAR' && !visibleGear.length" class="equip-empty">
+          {{ showStorage ? '行囊里没有符合条件的装备。' : '随身没有符合条件的装备。' }}
+        </p>
+        <p v-else-if="category !== 'GEAR' && !supplies.length" class="equip-empty">暂无{{ categories.find(({ id }) => id === category)?.label }}。</p>
+        <div class="bag-grid">
+          <template v-if="category === 'GEAR'">
+            <button v-for="gear in visibleGear" :key="gear.id" type="button" class="bag-tile" :class="TIER_META[gear.tier].cls"
+              :data-bag-item="gear.id" :aria-pressed="selectedId === gear.id" :aria-label="gear.name" :title="gear.name" @click="selectItem(gear.id)">
+              <ItemIcon :item-id="gear.id" :glyph="EQUIP_SLOT_META[gear.slot].glyph" class="gear-icon" />
+              <b class="tier-text">{{ gear.name }}</b>
+              <small>{{ TIER_META[gear.tier].label }}<template v-if="stars(gear.id)"> · +{{ stars(gear.id) }} 星</template></small>
             </button>
+            <span v-for="n in emptySlots" :key="`empty-${n}`" class="bag-empty-cell" aria-hidden="true" />
+          </template>
+          <button v-for="entry in supplies" :key="entry.id" type="button" class="bag-tile" :class="TIER_META[entry.tier].cls"
+            :data-bag-item="entry.id" :aria-pressed="selectedId === entry.id" :title="entry.name" @click="selectItem(entry.id)">
+            <ItemIcon :item-id="entry.iconId ?? entry.id" :glyph="entry.glyph" class="gear-icon" />
+            <b class="tier-text">{{ entry.name }}</b>
+            <small>×{{ entry.count.toLocaleString() }}</small>
+          </button>
+        </div>
+      </div>
+    </section>
 
-            <template v-if="!index">
-              <button
-                v-if="hasPill" class="gear-cell bag-potion"
-                :aria-pressed="pillSelected" :aria-label="`${MEDICINES[PILL_ID].name}，${store.pillCount} 枚`" :title="MEDICINES[PILL_ID].name"
-                @click="selectedId = PILL_ID"
-              >
-                <i class="art art-potion" aria-hidden="true" /><b>{{ store.pillCount }}</b>
-              </button>
-              <span v-for="n in emptySlots" :key="`empty-${n}`" class="gear-cell is-empty" aria-hidden="true" />
-            </template>
+    <aside class="equip-pane detail-pane" :aria-label="paneTitle">
+      <header class="equip-heading">
+        <h2 ref="detailHeading" class="sec-title" tabindex="-1">{{ paneTitle }}</h2>
+        <button v-if="inBag && (selectedGear || selectedSupply)" type="button" class="btn btn-sm" @click="closeItem">关闭详情</button>
+        <button v-else-if="!inBag && rolePane" type="button" class="btn btn-sm" @click="closeRolePane"><ArrowLeft aria-hidden="true" />返回概览</button>
+      </header>
+      <div :key="inBag ? (selectedId ?? 'bag') : (rolePane ?? 'role')" class="equip-scroll detail-body">
+        <template v-if="item">
+          <div class="item-heading" :class="TIER_META[item.tier].cls">
+            <ItemIcon :item-id="item.id" :glyph="EQUIP_SLOT_META[item.slot].glyph" class="gear-icon" />
+            <div>
+              <h3 class="font-brush tier-text">{{ item.name }}<small v-if="stars(item.id)"> +{{ stars(item.id) }} 星</small></h3>
+              <p class="text-ink3">{{ EQUIP_SLOT_META[item.slot].label }} · {{ TIER_META[item.tier].label }}<template v-if="item.isTrueUnique"> · 全服唯一</template></p>
+            </div>
           </div>
+          <div v-if="comparing" class="gear-comparison" role="group" aria-label="同部位装备对比">
+            <section v-for="{ label, gear } in comparisons" :key="label" class="compare-column">
+              <h4>{{ label }}</h4>
+              <template v-if="gear">
+                <div class="flex min-w-0 items-center gap-1.5" :class="TIER_META[gear.tier].cls">
+                  <ItemIcon :item-id="gear.id" :glyph="EQUIP_SLOT_META[gear.slot].glyph" class="[--item-icon-size:1.6rem]" />
+                  <b class="tier-text">{{ gear.name }}<small v-if="stars(gear.id)"> +{{ stars(gear.id) }} 星</small></b>
+                </div>
+                <ul><li v-for="effect in itemEffects(gear)" :key="effect">{{ effect }}</li></ul>
+                <p v-if="gear.signatureEffect" class="hint">{{ gear.signatureEffect }}</p>
+              </template>
+              <p v-else class="text-ink3">未装备</p>
+            </section>
+          </div>
+          <ul v-else class="item-effects text-jade"><li v-for="effect in itemEffects(item)" :key="effect">{{ effect }}</li></ul>
+          <p v-if="item.signatureEffect && !comparing" class="text-gold">{{ item.signatureEffect }}</p>
+          <div v-if="setDetail" class="set-effects">
+            <b>{{ setDetail.name }} · {{ setDetail.count }}/{{ setDetail.total }} 件已穿戴</b>
+            <p v-for="effect in setDetail.effects" :key="effect" class="hint">{{ effect }}</p>
+          </div>
+          <p class="text-ink2">{{ item.desc }}</p>
+          <p v-if="inBag && wearer && item.slot === 'RELIC'" class="text-cinnabar">全队秘宝在主角栏装配。</p>
+          <p v-else-if="requirement" :class="meetsRequirement ? 'text-ink2' : 'text-cinnabar'">
+            需要{{ requirement.label }}<template v-if="'key' in requirement">（当前 {{ wearerStats[requirement.key] }}）</template>
+            <template v-if="inBag && !meetsRequirement">，暂不可穿戴。</template>
+          </p>
         </template>
-      </section>
-
-      <aside class="well equip-pane bag-actions" aria-label="物品操作">
-        <h3 class="sec-title">物品操作</h3>
-
-        <div class="bag-selection" aria-live="polite">
-          <template v-if="selected">
-            <h4 class="tier-text" :class="TIER_META[selected.tier].cls">{{ selected.name }}<template v-if="stars(selected.id)"> +{{ stars(selected.id) }} 星</template></h4>
-            <p class="text-ink2">{{ TIER_META[selected.tier].label }} · {{ EQUIP_SLOT_META[selected.slot].label }}</p>
-            <p v-if="selected.isTrueUnique" class="text-cinnabar">全服唯一</p>
-            <ul v-if="bonuses.length" class="bag-bonuses text-jade">
-              <li v-for="bonus in bonuses" :key="bonus">{{ bonus }}</li>
-            </ul>
-            <p v-if="affixRoll(selected.id)" class="text-gold">
-              {{ trialAffixQuality(selected, affixRoll(selected.id)) }} · {{ trialAffixLabel(selected, affixRoll(selected.id)) }}
-            </p>
-            <p v-if="secondaryLabel" class="text-gold">副词条 · {{ secondaryLabel }}</p>
-            <p v-if="selected.signatureEffect" class="hint">{{ selected.signatureEffect }}</p>
-            <p v-if="sectSet" class="hint">{{ sectSet.name }} · 已穿戴 {{ wornSetPieces }}/{{ sectSet.parts.length }}</p>
-            <p v-if="sectSet" class="hint">{{ sectSet.bonus }}</p>
-            <p v-if="WANDERER_EQUIPMENT.items.some(({ id }) => id === selected?.id)" class="hint">{{ selected.desc }}</p>
-            <p v-if="requirement" :class="meetsRequirement ? 'text-ink2' : 'text-cinnabar'">
-              需要{{ requirement.label }}<template v-if="'key' in requirement">（当前 {{ wearerStats[requirement.key] }}）</template>
-            </p>
-            <p v-if="wearer && selected.slot === 'RELIC'" class="text-ink2">全队秘宝在主角栏装配。</p>
+        <template v-else-if="inBag && selectedSupply">
+          <div class="item-heading" :class="TIER_META[selectedSupply.tier].cls">
+            <ItemIcon :item-id="selectedSupply.iconId ?? selectedSupply.id" :glyph="selectedSupply.glyph" class="gear-icon" />
+            <h3 class="font-brush tier-text">{{ selectedSupply.name }}</h3>
+          </div>
+          <p class="text-gold">持有 ×{{ selectedSupply.count.toLocaleString() }}</p>
+          <p class="text-ink2">{{ selectedSupply.desc }}</p>
+          <p v-if="selectedSupply.source" class="hint">来源 · {{ selectedSupply.source }}</p>
+        </template>
+        <p v-else-if="inBag" class="equip-empty" aria-live="polite">{{ equipMessage || '选一个物品查看详细信息。' }}</p>
+        <template v-else-if="openSlot">
+          <p class="text-ink2">当前{{ openSlot.label }}位未装备。</p>
+          <p v-if="emptyHints[openSlot.type]" class="hint">{{ emptyHints[openSlot.type] }}</p>
+        </template>
+        <template v-else-if="rolePane === 'PREPARE'">
+          <section v-if="gearSkill" class="prep-group" aria-label="装备特技配装">
+            <label class="block space-y-1"><span>装备特技</span>
+              <select class="field w-full" :value="store.currentLoadout.gearSkillId ?? ''" :disabled="store.onlineActionBusy"
+                @change="store.updateLoadout({ gearSkillId: ($event.target as HTMLSelectElement).value || null })">
+                <option value="">不使用</option>
+                <option :value="gearSkill.weapon.id">{{ gearSkill.name }} · {{ gearSkill.rageCost }} 怒气</option>
+              </select>
+            </label>
+            <p class="hint">试炼与复战每场可施展一次。对同一目标连击，每击按外功威力的 {{ gearSkill.damagePercent }}% 结算。</p>
+          </section>
+          <section class="prep-group" aria-label="暗器配装">
+            <h3 class="sec-title">暗器</h3>
+            <p v-if="!availableWeapons.length" class="hint">首胜历练第 04 关解锁飞天淬毒黑菱。</p>
+            <label v-for="index in hiddenSlots" :key="index" class="block space-y-1">
+              <span>暗器 {{ index }}</span>
+              <select class="field w-full" :value="equippedWeapons[index - 1] ?? ''"
+                :disabled="store.onlineActionBusy || !availableWeapons.length" @change="equipHiddenWeapon(index - 1, $event)">
+                <option value="">未装备</option>
+                <option v-for="weapon in availableWeapons" :key="weapon.id" :value="weapon.id"
+                  :disabled="equippedWeapons.includes(weapon.id) && equippedWeapons[index - 1] !== weapon.id">{{ weapon.name }}</option>
+              </select>
+              <span v-if="HIDDEN_WEAPONS[equippedWeapons[index - 1]]" class="hint flex items-center gap-2">
+                <ItemIcon :item-id="equippedWeapons[index - 1]" class="[--item-icon-size:1.6rem]" />{{ HIDDEN_WEAPONS[equippedWeapons[index - 1]].effectDesc }}
+              </span>
+            </label>
+          </section>
+          <section class="prep-group" aria-label="称号配装">
+            <h3 class="sec-title">江湖称号</h3>
+            <label class="block space-y-1"><span>出战称号</span>
+              <select class="field w-full" :value="equippedTitle?.id ?? ''" :disabled="store.onlineActionBusy"
+                @change="store.updateLoadout({ titleId: ($event.target as HTMLSelectElement).value || null })">
+                <option value="">不佩戴称号</option>
+                <option v-for="title in JIANGHU_TITLES" :key="title.id" :value="title.id">
+                  {{ title.titleName }}{{ titleEligible(title, { ...store.player, stats: store.martialStats }, store.currentLoadout) ? '' : '（未达条件）' }}
+                </option>
+              </select>
+            </label>
+            <template v-if="equippedTitle">
+              <p class="hint">{{ equippedTitle.statBuffDesc }}</p>
+              <p v-if="!store.jianghuTitle" class="hint">
+                {{ equippedTitle.reqAlignment === 'HERMIT' ? '侠义 −199 至 199' : `侠义 ${equippedTitle.reqAlignment === 'EVIL' ? '≤' : '≥'} ${equippedTitle.minReputation}` }}，
+                装配{{ equippedTitle.skills.map((id) => SKILLS[id]?.name).join('、') }}中的一门{{ equippedTitle.outerForm === 'PALM' ? '或其他掌法外功' : '' }}后生效。
+              </p>
+            </template>
+          </section>
+          <section class="prep-group" aria-label="百草药囊">
+            <div class="equip-heading">
+              <h3 class="sec-title">百草药囊</h3>
+              <button v-if="store.featureOpen('MAPS')" type="button" class="btn btn-sm" @click="openAlchemy">去百草丹房</button>
+            </div>
+            <label v-for="slot in medicineSlots" :key="slot.field" class="block space-y-1">
+              <span>{{ slot.name }}</span>
+              <select class="field w-full" :value="store.currentLoadout[slot.field] ?? ''" :disabled="store.onlineActionBusy"
+                @change="store.updateLoadout({ [slot.field]: ($event.target as HTMLSelectElement).value || null })">
+                <option value="">未装配</option>
+                <option v-for="medicine in battleMedicines.filter((entry) => entry.category === slot.category)" :key="medicine.id" :value="medicine.id"
+                  :disabled="!(medicineStock[medicine.id] > 0)">{{ medicine.name }} · {{ medicineStock[medicine.id] ?? 0 }} 份</option>
+              </select>
+              <span v-if="store.currentLoadout[slot.field]" class="hint flex items-center gap-2">
+                <ItemIcon :item-id="store.currentLoadout[slot.field]" class="[--item-icon-size:1.6rem]" />{{ MEDICINES[store.currentLoadout[slot.field] ?? '']?.effectDesc }}
+              </span>
+            </label>
+            <p class="hint">实战触发后扣除库存。切磋和华山挑战期间药囊停用。</p>
+          </section>
+        </template>
+        <EquipmentForge v-else-if="rolePane === 'FORGE'" />
+        <template v-else>
+          <div class="equip-power"><Swords aria-hidden="true" /><span>战力</span><b>{{ (companionStats ?? store.derivedStats).combatPower.toLocaleString() }}</b></div>
+          <template v-if="rolePane === 'ATTRIBUTES'">
+            <section class="stat-section">
+              <h3 class="sec-title">{{ !wearer && store.isWandererMasteryActive ? '六维属性 · 兼收并蓄' : '六维属性' }}</h3>
+              <dl class="base-stats"><div v-for="(label, key) in BASE_STAT_LABELS" :key="key"><dt>{{ label }}</dt><dd>{{ shownStats[key] }}</dd></div></dl>
+            </section>
+            <section class="stat-section"><h3 class="sec-title">战斗属性</h3><CharacterCombatStats :stats="companionStats" /></section>
           </template>
-          <template v-else-if="pillSelected">
-            <h4>{{ MEDICINES[PILL_ID].name }}</h4>
-            <p class="text-ink2">{{ MEDICINES[PILL_ID].effectDesc }}</p>
-          </template>
-          <p v-else class="text-ink2">{{ backpack.length || hasPill ? '选一个背包格子。' : '背包里还没有物品。' }}</p>
-        </div>
+          <CharacterCombatStats v-else :stats="companionStats" summary />
+          <button v-if="!rolePane" type="button" class="btn btn-sm mt-3" data-role-pane="ATTRIBUTES" @click="openRolePane('ATTRIBUTES')">属性详情 <ChevronRight aria-hidden="true" /></button>
+        </template>
+      </div>
 
-        <div class="bag-controls">
-          <button v-if="pillSelected" class="btn btn-gold btn-block" @click="store.selectTab('CULTIVATE')">去修行</button>
-          <template v-else>
-            <button
-              class="btn btn-gold btn-block" :disabled="!selected || !meetsRequirement || store.onlineActionBusy"
-              :aria-label="selected ? `装备${selected.name}` : '装备物品'"
-              @click="equipSelected"
-            >装备</button>
-            <button class="btn btn-block" :disabled="!selected" @click="selected && store.inspectById('item', selected.id)">查看详情</button>
-          </template>
-        </div>
-      </aside>
-    </div>
-    <EquipmentForge />
+      <footer v-if="inBag && selectedGear" class="equip-footer">
+        <button v-if="canCompare" type="button" class="btn btn-sm" :aria-pressed="showComparison" @click="showComparison = !showComparison">同部位对比</button>
+        <button type="button" class="btn btn-gold action-main" :disabled="!meetsRequirement || store.onlineActionBusy"
+          :aria-label="`装备${selectedGear.name}`" @click="equipSelected">{{ comparedItem ? '更换装备' : '装备' }}</button>
+      </footer>
+      <footer v-else-if="inBag && supplyAction" class="equip-footer">
+        <button type="button" class="btn btn-gold action-main" @click="supplyAction.run">{{ supplyAction.label }}</button>
+      </footer>
+      <footer v-else-if="!inBag && openSlot" class="equip-footer">
+        <button v-if="openSlot.item" type="button" class="btn btn-sm" :aria-label="`卸下${openSlot.item.name}`" :disabled="store.onlineActionBusy" @click="unequip(openSlot.type)">卸下</button>
+        <button type="button" class="btn btn-gold action-main" @click="changeEquipment(openSlot.type)">{{ openSlot.item ? '更换装备' : '选择装备' }}</button>
+      </footer>
+    </aside>
   </div>
 </template>
 
 <style scoped>
 .equipment-panel {
-  container-type: inline-size;
   display: grid;
-  align-content: start;
-  gap: .72rem;
-}
-.equipment-overview, .equipment-storage {
-  display: grid;
-  gap: .66rem;
-}
-.equipment-overview { grid-template-columns: minmax(0, 1.13fr) minmax(0, 1fr); }
-.equipment-storage { grid-template-columns: minmax(0, 1fr) clamp(8.5rem, 26%, 12rem); }
-.equip-pane {
+  flex: 1;
+  grid-template-columns: minmax(0, 1.38fr) minmax(0, 1fr);
+  gap: .8rem;
+  min-height: 0;
   min-width: 0;
-  padding: clamp(.57rem, 1.1vw, .86rem);
-  background: linear-gradient(155deg, var(--gold-faint), transparent 58%), var(--bg-2);
 }
-.equip-heading {
-  display: flex;
-  align-items: baseline;
-  gap: .4rem;
-}
-.equip-heading .sec-title { flex: 1; white-space: nowrap; }
-.equip-heading > span { font-size: .73rem; color: var(--ink-3); text-align: right; }
-
-.equip-doll {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr) minmax(0, 1fr);
-  align-items: center;
-  gap: .28rem .3rem;
-  margin-top: .7rem;
-}
-.equip-portrait {
-  grid-column: 2;
-  grid-row: 1 / span 4;
+.bag-layout { grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); }
+.equip-pane {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: .17rem;
+  gap: .55rem;
   min-width: 0;
-  text-align: center;
+  min-height: 0;
+  padding: clamp(.55rem, 1.15vw, 1rem);
+  border: 1px solid var(--line);
+  background: var(--bg-1);
 }
-.equip-portrait .art,
-.equip-partner-portrait {
-  width: min(100%, 7rem);
-  aspect-ratio: 1;
-  border: 2px solid var(--frame-edge);
-  border-radius: 50%;
-  box-shadow: 0 0 0 3px var(--gold-soft), 0 .34rem .8rem #17110e55;
-}
-.equip-portrait strong { margin-top: .27rem; color: var(--gold); font-size: 1.1rem; line-height: 1.2; }
-.equip-portrait small { color: var(--ink-2); font-size: .71rem; }
-.worn-slot {
-  display: grid;
-  justify-items: center;
-  gap: .14rem;
-  min-width: 0;
-  text-align: center;
-  line-height: 1.14;
-}
-.worn-label { color: var(--ink-2); font-size: .78rem; }
-.worn-name {
-  max-width: 100%;
-  overflow: hidden;
-  color: var(--tc, var(--ink-3));
-  font-size: .73rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.gear-cell {
-  position: relative;
-  display: grid;
-  min-width: 0;
-  aspect-ratio: 1;
-  place-items: center;
-  overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--tc, var(--gold)) 58%, var(--line-strong));
-  border-radius: .25rem;
-  background: linear-gradient(145deg, var(--bg-1), var(--bg-0));
-}
-.gear-cell.is-empty {
-  border-color: var(--line-strong);
-  box-shadow: inset 0 0 0 2px var(--gold-faint);
-}
-.gear-cell .art { position: absolute; inset: 2px; border-radius: .16rem; }
-.art.art-gear { background-image: url('@/assets/gear-atlas.webp'); }
-.affix-star { position: absolute; top: .1rem; right: .25rem; font-size: .8rem; }
-button.gear-cell:hover { border-color: var(--gold); }
-button.gear-cell[aria-pressed="true"] { border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold), 0 0 .65rem var(--gold-soft); }
-.worn-cell { width: min(100%, 2.65rem); }
-.worn-cell.is-empty { color: var(--ink-3); opacity: .75; }
-
-.equip-power {
+.equip-heading, .equip-footer, .equip-options, .equip-buttons, .bag-filter {
   display: flex;
   align-items: center;
-  gap: .35rem;
-  margin-top: .56rem;
+  flex-wrap: wrap;
+  gap: .4rem .55rem;
+}
+.equip-heading .sec-title { flex: 1; margin: 0; font-size: 1.12rem; }
+.equip-heading > span, .bag-filter { color: var(--ink-3); font-size: .78rem; }
+.equip-options .btn[aria-pressed="true"], .equip-buttons .btn[aria-pressed="true"], .equip-footer .btn[aria-pressed="true"] {
   color: var(--gold);
-  font-size: .88rem;
+  border-color: var(--gold);
+  background: var(--gold-soft);
 }
-.equip-power svg { width: 1.05rem; height: 1.05rem; flex: none; }
-.equip-power b { margin-left: .16rem; font-size: 1.18rem; font-variant-numeric: tabular-nums; }
-.equip-attributes :deep(.combat-stats), .equip-base .base-stats { padding: .45rem 0 .52rem; column-gap: .75rem; font-size: .84rem; }
-.equip-base { border-top: 1px solid var(--line); }
-.equip-base summary { display: flex; align-items: center; gap: .3rem; padding-block: .36rem; color: var(--ink-2); font-size: .77rem; }
-.equip-base summary:hover { color: var(--gold); }
-.equip-base[open] svg { transform: rotate(180deg); }
-.equip-base .base-stats { border-bottom: 0; padding-top: 0; }
-
-.bag-grid {
+.equip-scroll { flex: 1; min-height: 0; overflow: auto; }
+.equip-footer { flex: none; justify-content: space-between; padding-top: .6rem; border-top: 1px solid var(--line); }
+.equip-footer .action-main, .character-pane .equip-buttons, .bag-filter .equip-buttons { margin-inline-start: auto; }
+.equip-doll {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: .38rem;
-  margin-top: .61rem;
+  flex: 1;
+  min-height: 0;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.55fr) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  align-items: center;
+  gap: .55rem;
+  overflow-y: auto;
 }
-.bag-potion b { position: absolute; right: .25rem; bottom: .1rem; color: var(--scene-ink); font-size: .77rem; text-shadow: 0 1px 3px #211609; }
-.bag-actions { display: flex; flex-direction: column; gap: .59rem; }
-.bag-selection { min-height: 2.5rem; font-size: .79rem; line-height: 1.46; overflow-wrap: anywhere; }
-.bag-selection h4 { font-size: .95rem; font-weight: 700; line-height: 1.26; }
-.bag-selection p + p, .bag-bonuses { margin-top: .25rem; }
-.bag-controls { display: grid; gap: .32rem; }
-.bag-controls .btn { padding-inline: .3rem; font-size: .8rem; white-space: nowrap; }
-
-@container (max-width: 32rem) {
-  .equipment-storage { grid-template-columns: minmax(0, 1fr) max(5.8rem, 28%); }
-  .bag-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.slot-column { display: grid; grid-column: 1; grid-row: 1; gap: .45rem; }
+.second-column { grid-column: 3; }
+.equip-portrait {
+  grid-area: 1 / 2;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  place-items: center;
+  align-self: stretch;
+  min-height: 0;
+  text-align: center;
+  background: radial-gradient(ellipse at 50% 45%, var(--gold-soft), transparent 68%);
 }
-@container (max-width: 26rem) {
-  .equip-doll { gap: .28rem .14rem; }
-  .worn-cell { width: min(100%, 2.3rem); }
-  .worn-label, .worn-name { font-size: .65rem; }
-  .equip-portrait strong { font-size: .87rem; }
-  .equip-portrait small { font-size: .63rem; }
-  .equip-attributes :deep(.combat-stats) { grid-template-columns: minmax(0, 1fr); row-gap: .08rem; }
-  .equip-attributes :deep(.combat-stats dt svg) { width: .76rem; height: .76rem; }
-  .equipment-overview, .equipment-storage { gap: .42rem; }
-  .bag-grid { gap: .26rem; }
+.equip-portrait img {
+  width: 100%; height: 100%; min-height: 0; object-fit: contain;
+  mask-image: linear-gradient(90deg, transparent, var(--bg-0) 13% 87%, transparent);
+}
+.partner-portrait { position: relative; align-self: center; width: min(100%, 12rem); aspect-ratio: 1; overflow: hidden; }
+.equip-portrait strong { display: block; color: var(--gold); font-size: 1.35rem; }
+.equip-portrait small, .worn-copy small { display: block; color: var(--ink-3); font-size: .74rem; }
+.worn-slot, .bag-tile {
+  min-width: 0;
+  border: 1px solid var(--line-strong);
+  background: var(--bg-0);
+}
+.worn-slot { display: flex; align-items: center; gap: .45rem; padding: .4rem; text-align: start; }
+.worn-slot:hover, .worn-slot[aria-pressed="true"], .bag-tile:hover, .bag-tile[aria-pressed="true"] { border-color: var(--gold); }
+.worn-slot[aria-pressed="true"], .bag-tile[aria-pressed="true"] { background: var(--gold-soft); }
+.worn-copy { flex: 1; min-width: 0; }
+.worn-copy b, .bag-tile b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .84rem; }
+.worn-copy b { color: var(--tc, var(--ink)); }
+.gear-icon { --item-icon-size: clamp(1.45rem, 3.25vw, 2.6rem); }
+.bag-filter { padding-block: .2rem; }
+.bag-filter select { padding-block: .24rem; }
+.bag-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(4.75rem, 100%), 1fr)); gap: .45rem; padding: .15rem; }
+.bag-tile { display: grid; justify-items: center; align-content: center; gap: .24rem; padding: .4rem; text-align: center; }
+.bag-tile b { width: 100%; }
+.bag-tile small { color: var(--ink-3); font-size: .71rem; }
+.bag-empty-cell { min-height: 5rem; border: 1px dashed var(--line); background: var(--gold-faint); }
+.equip-empty { margin: .35rem 0 .65rem; color: var(--ink-3); font-size: .86rem; }
+.detail-pane .equip-heading { flex: none; min-height: 1.85rem; padding-bottom: .45rem; border-bottom: 1px solid var(--line); }
+.detail-body { display: flex; flex-direction: column; gap: .65rem; padding: .25rem .18rem .35rem; font-size: .88rem; overflow-wrap: anywhere; }
+.detail-body > * { flex-shrink: 0; }
+.item-heading { display: flex; align-items: center; gap: .55rem; }
+.item-heading h3 { font-size: 1.32rem; line-height: 1.19; }
+.item-heading .gear-icon { --item-icon-size: clamp(2rem, 4.3vw, 3.5rem); }
+.item-heading .item-icon-standalone { --item-illustration-size: clamp(5rem, 18vh, 8rem); }
+.item-effects, .compare-column ul { display: grid; gap: .2rem; }
+.gear-comparison { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .55rem; }
+.compare-column { display: grid; align-content: start; gap: .35rem; min-width: 0; padding: .58rem; border: 1px solid var(--line); background: var(--bg-0); }
+.compare-column h4 { color: var(--ink-3); font-size: .78rem; }
+.compare-column ul { color: var(--ink-2); }
+.set-effects, .stat-section, .prep-group { border-top: 1px solid var(--line); padding-top: .48rem; }
+.prep-group { display: grid; gap: .45rem; }
+.equip-power { display: flex; align-items: center; gap: .5rem; color: var(--gold); }
+.equip-power svg { width: 1.12rem; height: 1.12rem; }
+.equip-power b { font-size: 1.52rem; font-variant-numeric: tabular-nums; }
+.detail-body :deep(.combat-stats), .stat-section .base-stats { padding-block: .55rem; font-size: .87rem; }
+.detail-body > .btn { align-self: flex-start; }
+@media (max-width: 767px) {
+  .equipment-panel { gap: .35rem; }
+  .equip-doll { gap: .2rem; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr) minmax(0, 1fr); }
+  .worn-slot { flex-direction: column; padding: .18rem; text-align: center; }
+  .worn-copy { width: 100%; }
+  .worn-copy b { font-size: .69rem; }
 }
 </style>

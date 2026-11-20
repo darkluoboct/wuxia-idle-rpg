@@ -5,10 +5,12 @@ import { COMPANIONS, COOP_RAIDS, SKILLS } from '@/config/gameData'
 import { TIER_META } from '@/config/uiMeta'
 import PortraitCard from './PortraitCard.vue'
 import SceneBackdrop from './SceneBackdrop.vue'
+import ItemIcon from './ItemIcon.vue'
 
 const store = useGameStore()
 
 const SLOT_ORDER = ['LEFT', 'MAIN', 'RIGHT', 'REAR']
+const DEMO_MIRRORS = new Set(['shaoshi_demo_qiao', 'shaoshi_demo_qingfeng'])
 const bySide = (side: 'ALLY' | 'ENEMY') =>
   store.battleUnits.filter((unit) => unit.slot.startsWith(side)).sort(
     (a, b) => SLOT_ORDER.indexOf(a.slot.split('_')[1]) - SLOT_ORDER.indexOf(b.slot.split('_')[1])
@@ -119,7 +121,8 @@ function inspectReward(id: string) {
           <div class="mx-auto grid grid-cols-[1fr_1.2fr_1fr] gap-1.5">
             <PortraitCard
               v-for="u in allyUnits" :key="u.slot"
-              :name="u.name" :subtitle="store.activeBattle.mode === 'COOP_3P' && u.id === store.player.id ? `你 · ${u.title}` : u.title" :style-type="u.portraitStyle" :avatar-id="u.avatarId"
+              :name="u.name" :subtitle="store.activeBattle.mode === 'COOP_3P' && u.id === store.player.id ? `你 · ${u.title}` : u.title" :style-type="u.portraitStyle"
+              :avatar-id="DEMO_MIRRORS.has(u.id) ? undefined : u.avatarId"
               :hp="store.liveUnitStates[u.slot]?.hp ?? u.hp" :max-hp="u.maxHp"
               :rage="store.liveUnitStates[u.slot]?.rage ?? u.rage"
               :anim="store.liveUnitStates[u.slot]?.anim ?? 'NONE'" :anim-key="store.battleEventCursor"
@@ -178,8 +181,9 @@ function inspectReward(id: string) {
             <span v-if="rewards.ingot" class="chip chip-gold tabular-nums">元宝 +{{ rewards.ingot }}</span>
             <button
               v-for="it in rewards.items ?? []" :key="it.id"
-              class="chip tier-chip" :class="TIER_META[it.tier].cls" @click="inspectReward(it.id)"
+              class="chip tier-chip inline-flex items-center gap-1" :class="TIER_META[it.tier].cls" @click="inspectReward(it.id)"
             >
+              <ItemIcon v-if="!SKILLS[it.id]" :item-id="it.id" class="[--item-icon-size:1.3rem]" />
               {{ TIER_META[it.tier].label }} · {{ it.name }}
             </button>
             <span v-for="id in rewards.companions ?? []" :key="id" class="chip chip-jade">{{ COMPANIONS[id]?.name }}入队</span>

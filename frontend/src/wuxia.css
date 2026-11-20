@@ -314,7 +314,12 @@ button.chat-name:hover { text-decoration: underline; text-underline-offset: 2px;
   .world-rail { position: relative; z-index: 1; visibility: visible; transform: none; width: auto; min-height: 0; }
   .wuxia-rail { padding: .72rem 2px .8rem; }
 }
+.wuxia-layout.wuxia-arsenal-workspace { grid-template-columns: minmax(0, 1fr); }
+.wuxia-arsenal-workspace > .wuxia-rail { display: none; }
+.wuxia-arsenal-workspace > .wuxia-stage { overflow: hidden; padding-inline: .7rem; }
+.wuxia-arsenal-workspace .view { height: 100%; }
 @media (max-width: 767px) {
+  .wuxia-arsenal-workspace .view-scroll { flex: 1 1 0%; min-height: 0; overflow-y: auto; }
   .wuxia-header { grid-template-columns: minmax(0, 1fr) auto; height: 3.12rem; }
   .wuxia-navigation { display: none; }
   .wuxia-wordmark h1 { font-size: clamp(1.25rem, 5.5vw, 1.75rem); }
@@ -342,10 +347,11 @@ button.chat-name:hover { text-decoration: underline; text-underline-offset: 2px;
   flex: none;
   background: url('./assets/wuxia-atlas.webp') var(--art-x, 0%) var(--art-y, 0%) / 400% 400% no-repeat;
 }
-.art-player { background-size: 245% auto; background-position: 68.3% 2.6%; }
-.art-guojing, .art-armor, .art-outer, .art-ingot { --art-x: 33.3333%; }
-.art-huangrong, .art-scroll, .art-light, .art-potion { --art-x: 66.6667%; }
-.art-taoist, .art-charm, .art-ult, .art-chest { --art-x: 100%; }
+.art-portrait { background-size: 245% auto; background-position: center 2.6%; }
+.art-portrait.art-player { background-position: 68.3% 2.6%; }
+.art-armor, .art-outer, .art-ingot { --art-x: 33.3333%; }
+.art-scroll, .art-light, .art-potion { --art-x: 66.6667%; }
+.art-charm, .art-ult, .art-chest { --art-x: 100%; }
 .art-sword, .art-armor, .art-scroll, .art-charm { --art-y: 33.3333%; }
 .art-inner, .art-outer, .art-light, .art-ult { --art-y: 66.6667%; }
 .art-coin, .art-ingot, .art-potion, .art-chest { --art-y: 100%; }
@@ -1027,7 +1033,7 @@ summary.quest-row:hover { background-color: var(--gold-faint); }
 .hotbar-skill,
 .hotbar-command { border-radius: 50%; }
 .hotbar-skill .art,
-.hotbar-pill .art { position: absolute; inset: 2px; }
+.hotbar-pill .item-icon { position: absolute; inset: 2px; width: auto; border: 0; }
 .hotbar-skill .art { border-radius: 50%; }
 .hotbar-skill span {
   position: absolute;
