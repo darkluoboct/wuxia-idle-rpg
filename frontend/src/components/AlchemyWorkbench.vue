@@ -84,7 +84,7 @@ function herbBlocked(herb: HerbConfig) {
               <ItemIcon :item-id="herb.id" class="[--item-icon-size:2.4rem]" />
               <div class="min-w-0">
                 <span class="block font-bold tier-text text-sm">{{ herb.name }}</span>
-                <span class="chip tier-chip !py-0 !text-[0.75rem]">{{ TIER_META[herb.tier].label }}</span>
+                <span class="chip tier-chip py-0 text-[0.75rem]">{{ TIER_META[herb.tier].label }}</span>
               </div>
             </div>
             <div class="mt-1 flex items-baseline justify-between text-xs">
@@ -233,7 +233,7 @@ function herbBlocked(herb: HerbConfig) {
       </div>
       <footer class="workbench-actions">
         <button
-          class="btn btn-gold btn-block !py-2.5 text-base font-bold shadow-lg"
+          class="btn btn-gold btn-block py-2.5 text-base font-bold shadow-lg"
           :disabled="store.onlineActionBusy || !canCraftRecipe(selectedRecipe)"
           @click="store.refinePill(selectedRecipe.id)"
         >

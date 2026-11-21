@@ -12,6 +12,8 @@ import { usePlayerStore } from './playerStore'
 import { storeToRefs } from 'pinia'
 import type { useBattlePlayback } from './battlePlayback'
 import { useGameUiStore } from './gameUiStore'
+import { readPreference } from './interfacePrefs'
+import { useGameClock } from '@/composables/useGameClock'
 import type { GachaResultView, useCompanions } from './companions'
 import type { useWorld } from './world'
 import { DAGOU_STAFF } from '../../../shared/artifacts.ts'
@@ -252,7 +254,7 @@ export function useLocalGame({ battle, companions, world, market, artifacts, sta
     player.value.ftue ??= legacyFtue(player.value.id)
     mapArrivedAt.value = saved.mapArrivedAt
     logs.value = saved.logs
-    toggleTheme(saved.isMidnightTheme)
+    if (readPreference('theme') === null && typeof saved.isMidnightTheme === 'boolean') toggleTheme(saved.isMidnightTheme)
     nearbyPlayers.value = generateRoomPlayers(player.value.currentMapId)
   }
 
@@ -393,12 +395,12 @@ export function useLocalGame({ battle, companions, world, market, artifacts, sta
 
   // 每5秒模拟一次在线打坐微跳与江湖时辰推进
   if (IS_MOCK_MODE) {
-    const idleTick = setInterval(() => {
-      if (!gameMode.value) return
+    const clock = useGameClock()
+    watch(() => clock.now, (now, previous) => {
+      if (!gameMode.value || !clock.isPageVisible || now - previous < 5_000) return
       const tickQi = Math.max(8, Math.round(effectiveQiPerHour.value / 720))
       player.value.qiExp += tickQi
-    }, 5000)
-    onScopeDispose(() => clearInterval(idleTick))
+    }, { flush: 'sync' })
   }
 
   return {

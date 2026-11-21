@@ -53,7 +53,8 @@ onBeforeUnmount(() => dialog.value?.close())
         <footer class="letter-actions">
           <div><p>{{ hasAttachments ? (mail.claimed ? '附件已领取' : '附件待领取') : (mail.claimed ? '已读' : '未读') }}</p>
             <small>{{ date.format(mail.expiresAt) }} 前有效</small></div>
-          <button v-if="!mail.claimed" class="btn btn-seal" :disabled="store.onlineActionBusy" @click="store.claimMail(mail)">{{ hasAttachments ? '领取附件' : '标为已读' }}</button>
+          <button v-if="!mail.claimed" class="btn btn-seal" :aria-busy="store.isSubmitting('/mail', { mailId: mail.id })"
+            :disabled="store.onlineActionBusy" @click="store.claimMail(mail)">{{ hasAttachments ? '领取附件' : '标为已读' }}</button>
           <button v-else-if="bagItem" class="btn btn-gold" @click="emit('bag', bagItem)">在背包中查看</button>
         </footer>
       </template>
@@ -66,7 +67,7 @@ onBeforeUnmount(() => dialog.value?.close())
 .mail-dialog { position: fixed; inset: 0; margin: auto; padding: 0; width: min(48rem, 94vw); height: min(31rem, 90dvh); max-width: none; max-height: none; color: var(--ink); border: 1px solid var(--frame-edge); background: var(--bg-1); }
 .mail-dialog::backdrop { background: var(--scrim); }
 .letter-paper { height: 100%; display: flex; flex-direction: column; padding: .8rem clamp(1rem, 4vw, 2.6rem);
-  background: linear-gradient(105deg, var(--bg-1) 15%, color-mix(in srgb, var(--bg-1) 89%, transparent)), url('../assets/jiaxing-spring.webp') center/cover; }
+  background: linear-gradient(105deg, var(--bg-1) 15%, color-mix(in srgb, var(--bg-1) 89%, transparent)), url('../assets/_optimized/scenes/jiaxing-spring.webp') center/cover; }
 .letter-head, .letter-head h2, .letter-head nav, .letter-actions { display: flex; align-items: center; gap: .65rem; }
 .letter-head { padding-bottom: .55rem; border-bottom: 1px solid var(--frame-edge); }
 .letter-head h2 { margin-right: auto; font: 1.45rem var(--font-brush); color: var(--gold); }

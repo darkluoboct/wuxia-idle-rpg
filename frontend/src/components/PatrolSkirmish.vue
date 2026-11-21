@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useGameStore } from '@/stores/gameStore'
 import { usePlayerStore } from '@/stores/playerStore'
+import { useGameClock } from '@/composables/useGameClock'
 import { BATTLE_STEP_MS } from '@/stores/battlePlayback'
 import type { CombatUnitDTO, RateBoostKind } from '@/network/protocol'
 import { TIER_META } from '@/config/uiMeta'
@@ -18,6 +19,7 @@ import PortraitCard from './PortraitCard.vue'
  */
 const store = useGameStore()
 const playerStore = usePlayerStore()
+const gameClock = useGameClock()
 
 /** 打完至少留给战果的时间；战斗太长时直接跳到结果 */
 const RESULT_MS = 6_000
@@ -47,6 +49,7 @@ const now = ref(Date.now())
 let timer: ReturnType<typeof setTimeout> | undefined
 function tick() {
   clearTimeout(timer)
+  if (!gameClock.isPageVisible) return
   now.value = Date.now()
   const { intoBattleMs, battleMs } = clock.value
   const left = battleMs - intoBattleMs
@@ -56,6 +59,7 @@ function tick() {
 }
 onMounted(tick)
 onUnmounted(() => clearTimeout(timer))
+watch(() => gameClock.isPageVisible, tick)
 const serverNow = computed(() => now.value + store.worldTime - playerStore.nowTick)
 
 const stage = computed(() => featureUnlocked(store.player, 'TRIAL') ? trialStageOf(store.player.trial.selectedStageId) : undefined)

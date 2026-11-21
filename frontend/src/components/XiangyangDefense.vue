@@ -99,7 +99,7 @@ onScopeDispose(() => {
     </article>
 
     <!-- 收兵后领赏（收功时也会顺带领） -->
-    <article v-for="award in board?.awards ?? []" :key="award.warId" class="well space-y-2 p-3 !border-gold">
+    <article v-for="award in board?.awards ?? []" :key="award.warId" class="well space-y-2 p-3 border-gold">
       <div class="flex flex-wrap items-center justify-between gap-2">
         <h4 class="font-brush text-xl">襄阳论功 · {{ gateName(award.gate) }}</h4>
         <span class="chip" :class="award.wavesCleared >= XIANGYANG_WAVES ? 'chip-gold' : ''">
@@ -115,7 +115,7 @@ onScopeDispose(() => {
     <div v-if="board && war" class="grid gap-3 lg:grid-cols-3">
       <article
         v-for="gate in board.gates" :key="gate.id" class="well flex flex-col gap-2 p-3"
-        :class="(self?.gate ?? post?.gate) === gate.id ? '!border-gold' : ''"
+        :class="(self?.gate ?? post?.gate) === gate.id ? 'border-gold' : ''"
       >
         <div class="flex items-start justify-between gap-2">
           <div>

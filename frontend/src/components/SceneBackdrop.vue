@@ -1,19 +1,31 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import jiaxing from '@/assets/jiaxing-spring.webp'
-import jiaxingDusk from '@/assets/jiaxing-dusk.webp'
-import zhongnan from '@/assets/zhongnan.webp'
-import damo from '@/assets/damo.webp'
-import heizhao from '@/assets/heizhao.webp'
+import { computed, ref, watch } from 'vue'
+import jiaxing from '@/assets/_optimized/scenes/jiaxing-spring.webp'
+import jiaxingDusk from '@/assets/_optimized/scenes/jiaxing-dusk.webp'
 
 const props = defineProps<{ mapId: string; shichenIdx: number; battle?: boolean; priority?: boolean }>()
-const scenes: Record<string, string> = { zhongnan_forest: zhongnan, damo_caravan: damo, heizhao_swamp: heizhao }
+const scenes: Partial<Record<string, () => Promise<{ default: string }>>> = {
+  zhongnan_forest: () => import('@/assets/_optimized/scenes/zhongnan.webp'),
+  damo_caravan: () => import('@/assets/_optimized/scenes/damo.webp'),
+  heizhao_swamp: () => import('@/assets/_optimized/scenes/heizhao.webp'),
+}
 const dusk = computed(() => props.shichenIdx === 0 || props.shichenIdx === 5)
-const image = computed(() => scenes[props.mapId] ?? (dusk.value ? jiaxingDusk : jiaxing))
+const fallback = computed(() => dusk.value ? jiaxingDusk : jiaxing)
+const image = ref(fallback.value)
+watch([() => props.mapId, fallback], async ([id, jiaxingScene], _, onCleanup) => {
+  const load = scenes[id]
+  if (!load) { image.value = jiaxingScene; return }
+  let active = true
+  onCleanup(() => { active = false })
+  try {
+    const { default: scene } = await load()
+    if (active) image.value = scene
+  } catch { if (active) image.value = jiaxingScene }
+}, { immediate: true })
 </script>
 
 <template>
   <div class="scene-backdrop" :class="{ 'scene-battle': battle, 'scene-night': dusk && mapId !== 'jiaxing_suburb' }" aria-hidden="true">
-    <img :src="image" alt="" :loading="priority || battle ? 'eager' : 'lazy'" :fetchpriority="priority ? 'high' : 'auto'" />
+    <img :src="image" alt="" decoding="async" :loading="priority || battle ? 'eager' : 'lazy'" :fetchpriority="priority ? 'high' : 'auto'" />
   </div>
 </template>

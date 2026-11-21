@@ -1,6 +1,7 @@
 import { defineStore, storeToRefs } from 'pinia'
 import { computed, onScopeDispose } from 'vue'
-import { validateGameData } from '@/config/gameData'
+import { MAPS, ONLINE_MAPS, ONLINE_STORY_CHAPTERS, STORY_CHAPTERS, validateGameData } from '@/config/gameData'
+import type { RoomPlayerDTO } from '@/network/protocol'
 import { useOnlineStore } from './onlineStore'
 import { actionFeature, onlineGameActions, type GameActions } from '@/network/gameActions'
 import { mockGameActions } from '@/network/mockEngine'
@@ -22,7 +23,7 @@ import { useSect } from './sect'
 import { useMarket } from './market'
 import { useArtifacts } from './artifacts'
 import { useStalls } from './stalls'
-import { useLocalGame } from './localGame'
+import { useLocalGame } from '@/stores/localGame'
 import { useEconomy } from './economy'
 import { useXiangyang } from './xiangyang'
 import { useFeatures } from './features'
@@ -30,6 +31,16 @@ import { featureLockedText, featureUnlocked } from '../../../shared/features.ts'
 
 export type { MainTab } from './gameUiStore'
 export type { GachaResultView } from './companions'
+
+type NearbyPlayerAction = {
+  key: string
+  label: string
+  ariaLabel?: string
+  danger?: boolean
+  disabled?: boolean
+  busy?: boolean
+  run: () => void | Promise<void>
+}
 
 // 组合各玩法和会话，并保留现有页面使用的游戏状态入口。
 export const useGameStore = defineStore('wuxiaGame', () => {
@@ -105,6 +116,55 @@ export const useGameStore = defineStore('wuxiaGame', () => {
   const { logs, toasts, inspectModal, confirmDialog, mobileDrawer, activeTab, jianghuTab, bountyTargetId } = uiRefs
   const { showToast } = uiStore
   const { closeBattleStage, activeBattle, isBattlePlaying } = battle
+  const onlineActionBusy = computed(() => session.actionBusy.value || session.canRetry.value)
+
+  function getNearbyPlayerActions(target: RoomPlayerDTO, canInviteRaid: boolean) {
+    const available: NearbyPlayerAction[] = []
+    const connected = session.roomConnected.value
+    const safety = playerStore.currentMap.safety
+    const busy = onlineActionBusy.value || !connected
+    if (features.featureOpen('MAPS') && (IS_MOCK_MODE || safety === 'PEACE')) {
+      available.push({ key: 'cultivate', label: IS_MOCK_MODE ? '一起修行' : '邀请共修',
+        ariaLabel: IS_MOCK_MODE ? undefined : `邀请${target.nickname}共修`,
+        disabled: !IS_MOCK_MODE && (busy || !!playerStore.activeCoCultivation || !!playerStore.coCultivationInvite),
+        run: () => world.interactNearbyPlayer(target, 'CO_CULT') })
+    }
+    if (features.featureOpen('HUASHAN')) {
+      available.push({ key: 'spar', label: IS_MOCK_MODE ? '切磋' : '递帖切磋',
+        ariaLabel: IS_MOCK_MODE ? undefined : `邀请${target.nickname}切磋`,
+        disabled: !IS_MOCK_MODE && (busy || !!world.duelInvite.value || isBattlePlaying.value),
+        busy: onlineStore.isSubmitting('/duel', { targetPlayerId: target.id, action: 'invite' }),
+        run: () => world.interactNearbyPlayer(target, 'SPAR') })
+      if ((safety === 'CONTESTED' && target.isEscortingDart) || target.isBetrayerBounty) {
+        available.push({ key: 'ambush', label: target.isBetrayerBounty ? '追捕' : '劫镖', danger: true,
+          disabled: !IS_MOCK_MODE && (busy || isBattlePlaying.value),
+          run: () => world.interactNearbyPlayer(target, 'AMBUSH') })
+      }
+    }
+    if (!IS_MOCK_MODE) {
+      const team = world.raidLobby.value.team
+      if (features.featureOpen('RAID') && canInviteRaid && !team?.members.some(({ id }) => id === target.id)
+        && !team?.invited.some(({ id }) => id === target.id)) {
+        available.push({ key: 'raid', label: '邀请组队', ariaLabel: `邀请${target.nickname}组队`,
+          disabled: world.raidLobbyBusy.value || !connected,
+          run: () => world.raidTeamAction({ action: 'invite', targetPlayerId: target.id }) })
+      }
+      available.push({ key: 'chat', label: '私聊', ariaLabel: `私聊${target.nickname}`, run: () => chat.openChatThread(target) })
+    }
+    return available
+  }
+
+  const modeCapabilities = computed(() => ({
+    isLocal: IS_MOCK_MODE,
+    maxCharacters: IS_MOCK_MODE ? 4 : 1,
+    hasBounty: !IS_MOCK_MODE,
+    hasShop: !IS_MOCK_MODE,
+    supportsRealChat: !IS_MOCK_MODE,
+    inlineAdventures: !IS_MOCK_MODE,
+    availableMaps: IS_MOCK_MODE ? MAPS : ONLINE_MAPS,
+    storyChapters: IS_MOCK_MODE ? STORY_CHAPTERS : ONLINE_STORY_CHAPTERS,
+    getNearbyPlayerActions,
+  }))
 
   const unbindGame = onlineStore.bindGame({
     snapshot: (snapshot) => {
@@ -157,6 +217,7 @@ export const useGameStore = defineStore('wuxiaGame', () => {
   }
 
   return {
+    modeCapabilities,
     isMidnightTheme: uiRefs.isMidnightTheme,
     activeTab: uiRefs.activeTab,
     jianghuTab: uiRefs.jianghuTab,
@@ -254,6 +315,7 @@ export const useGameStore = defineStore('wuxiaGame', () => {
     sectPromotionBlockReason: sect.sectPromotionBlockReason,
     battleOpponentEntry: battle.battleOpponentEntry,
     battleEventCursor: battle.battleEventCursor,
+    currentBattleEvent: battle.currentBattleEvent,
     battleUnits: battle.battleUnits,
     onlinePhase: session.phase,
     authBusy: session.authBusy,
@@ -262,7 +324,8 @@ export const useGameStore = defineStore('wuxiaGame', () => {
     roomMapId: world.roomMapId,
     roomCount: world.roomCount,
     canRetryOnline: session.canRetry,
-    onlineActionBusy: computed(() => session.actionBusy.value || session.canRetry.value),
+    onlineActionBusy,
+    isSubmitting: onlineStore.isSubmitting,
     onlineRevision: computed(() => onlineState.value?.snapshot.revision ?? 0),
     onlineRetryBusy: session.actionBusy,
     resumeOnline: onlineStore.resume,

@@ -1,0 +1,126 @@
+@layer components {
+  .equipment-panel {
+    display: grid;
+    flex: 1;
+    grid-template-columns: minmax(0, 1.38fr) minmax(0, 1fr);
+    gap: .8rem;
+    min-height: 0;
+    min-width: 0;
+  }
+  .bag-layout { grid-template-columns: minmax(0, 1fr); }
+  .equip-pane {
+    display: flex;
+    flex-direction: column;
+    gap: .55rem;
+    min-width: 0;
+    min-height: 0;
+    padding: clamp(.55rem, 1.15vw, 1rem);
+    border: 1px solid var(--line);
+    background: var(--bg-1);
+  }
+  .equip-heading, .equip-footer, .equip-options, .equip-buttons, .bag-filter {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: .4rem .55rem;
+  }
+  .equip-heading .sec-title { flex: 1; margin: 0; font-size: 1.12rem; }
+  .equip-heading > span, .bag-filter { color: var(--ink-3); font-size: .78rem; }
+  .equip-options .btn[aria-pressed="true"], .equip-buttons .btn[aria-pressed="true"], .equip-footer .btn[aria-pressed="true"] {
+    color: var(--gold);
+    border-color: var(--gold);
+    background: var(--gold-soft);
+  }
+  .equip-scroll { flex: 1; min-height: 0; overflow: auto; }
+  .equip-footer { flex: none; justify-content: space-between; padding-top: .6rem; border-top: 1px solid var(--line); }
+  .equip-footer .action-main, .character-pane .equip-buttons, .bag-filter .equip-buttons { margin-inline-start: auto; }
+  .equip-doll {
+    display: grid;
+    flex: 1;
+    min-height: 0;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.55fr) minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+    align-items: center;
+    gap: .55rem;
+    overflow-y: auto;
+  }
+  .slot-column { display: grid; grid-column: 1; grid-row: 1; gap: .45rem; }
+  .second-column { grid-column: 3; }
+  .equip-portrait {
+    grid-area: 1 / 2;
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) auto;
+    place-items: center;
+    align-self: stretch;
+    min-height: 0;
+    text-align: center;
+    background: radial-gradient(ellipse at 50% 45%, var(--gold-soft), transparent 68%);
+  }
+  .equip-portrait img {
+    width: 100%; height: 100%; min-height: 0; object-fit: contain;
+    mask-image: linear-gradient(90deg, transparent, var(--bg-0) 13% 87%, transparent);
+  }
+  .partner-portrait { position: relative; align-self: center; width: min(100%, 12rem); aspect-ratio: 1; overflow: hidden; }
+  .equip-portrait strong { display: block; color: var(--gold); font-size: 1.35rem; }
+  .equip-portrait small, .worn-copy small { display: block; color: var(--ink-3); font-size: .75rem; }
+  .worn-slot, .bag-tile {
+    min-width: 0;
+    border: 1px solid var(--line-strong);
+    background: var(--bg-0);
+  }
+  .worn-slot { display: flex; align-items: center; gap: .45rem; padding: .4rem; text-align: start; }
+  .worn-slot:hover, .worn-slot[aria-pressed="true"], .bag-tile:hover, .bag-tile[aria-pressed="true"] { border-color: var(--gold); }
+  .worn-slot[aria-pressed="true"], .bag-tile[aria-pressed="true"] { background: var(--gold-soft); }
+  .worn-copy { flex: 1; min-width: 0; }
+  .worn-copy b, .bag-tile b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .84rem; }
+  .worn-copy b { color: var(--tc, var(--ink)); }
+  .gear-icon { --item-icon-size: clamp(1.45rem, 3.25vw, 2.6rem); }
+  .bag-filter { padding-block: .2rem; }
+  .bag-filter select { padding-block: .24rem; }
+  .bag-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(9rem, 100%), 1fr)); gap: .55rem; padding: .15rem; }
+  .bag-tile { position: relative; display: grid; justify-items: center; gap: .3rem; padding-top: .35rem; text-align: center; background: radial-gradient(ellipse, var(--bg-2), var(--bg-0) 85%); }
+  .bag-tile .gear-icon { --item-icon-size: clamp(3.5rem, 10vh, 5.5rem); border: 0; background: transparent; }
+  .bag-tile b { width: 100%; padding: .3rem; border-top: 1px solid var(--line); background: var(--bg-2); }
+  .tile-count, .worn-tag { position: absolute; padding-inline: .25rem; background: var(--bg-0); font-size: .75rem; }
+  .tile-count { bottom: 2rem; right: .2rem; }.worn-tag { top: .2rem; left: .2rem; color: var(--jade); }
+  .equip-empty { margin: .35rem 0 .65rem; color: var(--ink-3); font-size: .86rem; }
+  .detail-pane .equip-heading { flex: none; min-height: 1.85rem; padding-bottom: .45rem; border-bottom: 1px solid var(--line); }
+  .detail-body { display: flex; flex-direction: column; gap: .65rem; padding: .25rem .18rem .35rem; font-size: .88rem; overflow-wrap: anywhere; }
+  .detail-body > * { flex-shrink: 0; }
+  .item-heading { display: flex; align-items: center; gap: .55rem; }
+  .item-heading h3 { font-size: 1.32rem; line-height: 1.19; }
+  .item-heading .gear-icon { --item-icon-size: clamp(2rem, 4.3vw, 3.5rem); }
+  .item-heading .item-icon-standalone { --item-illustration-size: clamp(5rem, 18vh, 8rem); }
+  .gear-stats { display: grid; grid-template-columns: max-content 1fr; gap: .15rem 1rem; }
+  .gear-comparison { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: .85rem; }
+  .gear-comparison :is(th, td) { padding: .35rem .5rem; border: 1px solid var(--line); text-align: left; vertical-align: top; }
+  .gear-comparison thead { color: var(--gold); background: var(--bg-2); }
+  .gear-comparison th:first-child { width: 20%; }
+  .equipment-panel .item-popover.detail-pane { padding: 0; gap: 0; }
+  .item-popover .detail-body, .item-popover .equip-footer { padding: .65rem .85rem; }
+  .item-popover .equip-footer small { margin-inline-end: auto; color: var(--ink-3); }
+  .item-popover .action-main { margin: 0; }
+  .set-effects, .stat-section, .prep-group { border-top: 1px solid var(--line); padding-top: .48rem; }
+  .prep-group { display: grid; gap: .45rem; }
+  .equip-power { display: flex; align-items: center; gap: .5rem; color: var(--gold); }
+  .equip-power svg { width: 1.12rem; height: 1.12rem; }
+  .equip-power b { font-size: 1.52rem; font-variant-numeric: tabular-nums; }
+  .detail-body .combat-stats, .stat-section .base-stats { padding-block: .55rem; font-size: .87rem; }
+  .detail-body > .btn { align-self: flex-start; }
+  @media (max-width: 767px) {
+    .equipment-panel { gap: .35rem; }
+    .equip-doll { gap: .2rem; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr) minmax(0, 1fr); }
+    .worn-slot { flex-direction: column; padding: .18rem; text-align: center; }
+    .worn-copy { width: 100%; }
+    .worn-copy b { font-size: .69rem; }
+  }
+  @media (max-width: 639px) {
+    .equipment-panel:not(.bag-layout) {
+      grid-template-columns: minmax(0, 1fr);
+      align-content: start;
+      overflow-y: auto;
+    }
+    .equip-doll { min-height: 13rem; }
+    .equipment-panel:not(.bag-layout) .detail-body { overflow: visible; }
+  }
+}

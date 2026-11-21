@@ -1,13 +1,16 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useGameStore } from '@/stores/gameStore'
+import { useInterfacePrefs } from '@/stores/interfacePrefs'
 import { COMPANIONS, COOP_RAIDS, SKILLS } from '@/config/gameData'
 import { TIER_META } from '@/config/uiMeta'
 import PortraitCard from './PortraitCard.vue'
 import SceneBackdrop from './SceneBackdrop.vue'
 import ItemIcon from './ItemIcon.vue'
+import RichLogSegments from './RichLogSegments.vue'
 
 const store = useGameStore()
+const prefs = useInterfacePrefs()
 
 const SLOT_ORDER = ['LEFT', 'MAIN', 'RIGHT', 'REAR']
 const DEMO_MIRRORS = new Set(['shaoshi_demo_qiao', 'shaoshi_demo_qingfeng'])
@@ -24,6 +27,7 @@ const rewards = computed(() => store.activeBattle?.rewards ?? null)
 const won = computed(() => store.activeBattle?.winner === (store.activeBattle?.perspective ?? 'ALLY'))
 const retreated = computed(() => !!store.activeBattle?.retreated)
 const enemyPerspective = computed(() => store.activeBattle?.perspective === 'ENEMY')
+const totalRounds = computed(() => store.activeBattle?.events.reduce((max, event) => Math.max(max, event.round), 1) ?? 1)
 const raidLog = computed(() => {
   const report = store.activeBattle
   if (report?.raidId !== 'chongyang' && report?.raidId !== 'juxian') return []
@@ -73,13 +77,16 @@ function inspectReward(id: string) {
       </div>
 
       <!-- 战斗标题与控制 -->
-      <div class="relative z-10 flex flex-wrap items-center justify-between gap-2 border-b border-line bg-black/30 px-3 py-2 backdrop-blur-[2px]">
+      <div class="relative z-10 flex flex-wrap items-center justify-between gap-2 border-b border-[var(--stage-border)] bg-black/30 px-3 py-2 backdrop-blur-[2px]">
         <div class="flex min-w-0 items-center gap-2.5">
           <span class="chip chip-gold shrink-0">{{ store.activeBattle.mode === 'COOP_3P' ? '三人合战' : '战斗' }}</span>
-          <h3 class="font-brush truncate text-xl leading-none text-[#e8e2d6]">{{ store.activeBattle.sceneTitle }}</h3>
+          <h3 class="font-brush truncate text-xl leading-none">{{ store.activeBattle.sceneTitle }}</h3>
         </div>
-        <div class="flex shrink-0 items-center gap-1.5">
-          <button class="btn btn-sm !text-[#e8e2d6] xl:hidden" @click="store.mobileDrawer = 'WORLD'">战报</button>
+        <div class="flex flex-wrap items-center gap-1.5">
+          <span class="text-xs tabular-nums text-[var(--stage-muted)]">第 {{ Math.max(1, store.currentBattleEvent?.round ?? 1) }} / {{ totalRounds }} 回合</span>
+          <button v-if="store.isBattlePlaying" class="btn btn-sm" type="button" :aria-label="`回放倍速 ${prefs.battleSpeed} 倍`"
+            @click="prefs.battleSpeed = prefs.battleSpeed === 1 ? 2 : 1">{{ prefs.battleSpeed }} 倍速</button>
+          <button class="btn btn-sm xl:hidden" @click="store.mobileDrawer = 'WORLD'">战报</button>
           <button v-if="store.isBattlePlaying" class="btn btn-sm btn-gold" @click="store.skipBattleToEnd()">跳过回放</button>
           <button v-else class="btn btn-sm btn-seal" @click="store.closeBattleStage()">
             返回 <kbd class="hidden font-sans text-[0.75rem] opacity-70 md:inline">Space</kbd>
@@ -143,6 +150,10 @@ function inspectReward(id: string) {
         </div>
       </div>
 
+      <p v-if="store.currentBattleEvent" class="battle-summary relative z-10 border-t border-[var(--stage-border)] bg-[var(--stage-panel)] px-3 py-2 text-sm" aria-label="本回合战报">
+        <RichLogSegments :segments="store.currentBattleEvent.segments" @inspect="store.inspectById" />
+      </p>
+
       <!-- 架势态势 / 战果 -->
       <div class="relative z-10 border-t border-line bg-black/35 px-3 py-2 backdrop-blur-[2px]">
         <p
@@ -152,7 +163,7 @@ function inspectReward(id: string) {
               ? 'text-gold'
               : stanceBanner?.advantage === 'ENEMY'
                 ? 'text-cinnabar'
-                : 'text-[#b9b2a4]'
+                : 'text-[var(--stage-muted)]'
           "
         >
           {{ stanceBanner?.description }}
@@ -171,7 +182,7 @@ function inspectReward(id: string) {
         <div v-if="!store.isBattlePlaying" class="mt-2 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 border-t border-line pt-2">
           <span
             class="anim-stamp seal h-11 w-14 text-2xl"
-            :class="won ? '' : '!bg-transparent !text-ink3 !shadow-none !outline-ink3'"
+            :class="won ? '' : 'bg-transparent text-ink3 shadow-none outline-ink3'"
           >{{ won ? '告捷' : retreated ? '脱身' : '惜败' }}</span>
           <template v-if="won && rewards">
             <span class="chip chip-jade tabular-nums">真气 +{{ rewards.qiExp.toLocaleString() }}</span>

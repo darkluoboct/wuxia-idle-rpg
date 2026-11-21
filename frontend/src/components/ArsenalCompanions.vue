@@ -72,7 +72,7 @@ function changeWeapon(id: string, event: Event) {
             :aria-pressed="selected?.id === companion.id" aria-controls="arsenal-companion-detail"
             @click="selectedId = companion.id"
           >
-            <span class="squad-thumbnail"><InkFigure :style-type="companion.portraitStyle" :portrait-id="companion.id" /></span>
+            <span class="squad-thumbnail"><InkFigure :style-type="companion.portraitStyle" :portrait-id="companion.id" image-size="thumb" /></span>
             <span class="min-w-0">
               <b class="block truncate">{{ companion.name }}</b>
               <span class="block truncate text-xs text-ink3">{{ companion.title }}</span>
@@ -178,7 +178,7 @@ function changeWeapon(id: string, event: Event) {
         <section>
           <h3 class="sec-title mb-2">伙伴搭档</h3>
           <div class="grid grid-cols-3 gap-2">
-            <article v-for="synergy in synergies" :key="synergy.id" class="well flex flex-col gap-1.5 p-3" :class="{ '!border-gold': synergy.active }">
+            <article v-for="synergy in synergies" :key="synergy.id" class="well flex flex-col gap-1.5 p-3" :class="{ 'border-gold': synergy.active }">
               <div class="flex items-center justify-between gap-2">
                 <b class="font-brush text-lg" :class="{ 'text-gold': synergy.active }">{{ synergy.name }}</b>
                 <span v-if="synergy.active" class="chip chip-gold">已上阵</span>
@@ -198,7 +198,7 @@ function changeWeapon(id: string, event: Event) {
         <section v-if="IS_MOCK_MODE" class="mt-3">
           <h3 class="sec-title mb-2">收集羁绊 <span class="text-xs font-sans tracking-normal text-ink3">伙伴入队即计入人数，无需同队</span></h3>
           <div class="grid grid-cols-3 gap-2">
-            <article v-for="bond in store.setBonusStates" :key="bond.set.id" class="well flex flex-col gap-2 p-3" :class="{ '!border-gold': bond.tier }">
+            <article v-for="bond in store.setBonusStates" :key="bond.set.id" class="well flex flex-col gap-2 p-3" :class="{ 'border-gold': bond.tier }">
               <div class="flex items-center justify-between gap-2">
                 <b class="font-brush text-lg" :class="{ 'text-gold': bond.tier }">{{ bond.set.name }}</b>
                 <span class="chip tabular-nums" :class="{ 'chip-gold': bond.tier }">{{ bond.owned }} / {{ bond.set.memberIds.length }}</span>
@@ -295,7 +295,7 @@ function changeWeapon(id: string, event: Event) {
   z-index: -1;
   inset: 0;
   content: "";
-  background: linear-gradient(0deg, var(--bg-2), transparent 56%), url('../assets/zhongnan.webp') center / cover;
+  background: linear-gradient(0deg, var(--bg-2), transparent 56%), url('../assets/_optimized/scenes/zhongnan.webp') center / cover;
   opacity: .22;
 }
 .squad-portrait-art {

@@ -153,7 +153,7 @@ watch([list, () => stage.value?.id], ([el, id], [, previous]) => {
 
         <section class="space-y-2" aria-label="套装收集">
           <div class="flex flex-wrap items-center justify-between gap-2">
-            <h4 class="sec-title !mb-0" :class="TIER_META[row.set.tier].cls">{{ row.set.name }} · {{ row.parts.filter(({ id }) => ownsPart(id)).length }}/{{ row.parts.length }}</h4>
+            <h4 class="sec-title mb-0" :class="TIER_META[row.set.tier].cls">{{ row.set.name }} · {{ row.parts.filter(({ id }) => ownsPart(id)).length }}/{{ row.parts.length }}</h4>
             <span class="text-xs text-gold">本关印记 {{ marks }} 枚</span>
           </div>
           <ul class="grid grid-cols-2 gap-2 min-[480px]:grid-cols-3 xl:grid-cols-7">

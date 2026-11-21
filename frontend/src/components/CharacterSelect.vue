@@ -1,25 +1,27 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
-import { ArrowLeftRight, Check, ChevronDown, ChevronRight, ChevronsLeft, Flower2, Maximize2, Plus, Settings, ShieldCheck, Swords, Trash2, UserRound, X } from 'lucide-vue-next'
+import { computed, defineAsyncComponent, nextTick, ref, watch } from 'vue'
+import { ArrowLeftRight, Check, ChevronDown, ChevronRight, ChevronsLeft, Flower2, Plus, Settings, ShieldCheck, Swords, Trash2, UserRound, X } from 'lucide-vue-next'
 import { useGameStore } from '@/stores/gameStore'
-import { IS_MOCK_MODE } from '@/network/apiClient'
 import { SECTS } from '@/config/gameData'
 import { PLAYER_AVATARS } from '@/config/uiMeta'
 import type { OriginId, PlayerAvatarId } from '@/network/protocol'
-import scene from '@/assets/selection-scene.webp'
+import scene from '@/assets/_optimized/scenes/selection-scene.webp'
 import OriginPicker from './OriginPicker.vue'
+import ScenePetals from './ScenePetals.vue'
+import { useInterfacePrefs } from '@/stores/interfacePrefs'
 
 defineProps<{ canReturn: boolean }>()
 const emit = defineEmits<{ enter: []; back: [] }>()
 const store = useGameStore()
-const roles = computed(() => IS_MOCK_MODE ? store.characterList : store.onlinePhase === 'ready' ? [store.player] : [])
+const mode = store.modeCapabilities
+const roles = computed(() => mode.isLocal ? store.characterList : store.onlinePhase === 'ready' ? [store.player] : [])
 const selectedId = ref(store.savedGame?.playerId ?? store.player.id)
 const selected = computed(() => roles.value.find((role) => role.id === selectedId.value))
-const canCreate = computed(() => IS_MOCK_MODE ? roles.value.length < 4 : store.onlinePhase === 'create')
-const serverName = IS_MOCK_MODE ? '嘉兴烟雨 · 本地试玩' : '嘉兴烟雨 · 江湖在线'
+const canCreate = computed(() => mode.isLocal ? roles.value.length < mode.maxCharacters : store.onlinePhase === 'create')
+const serverName = mode.isLocal ? '嘉兴烟雨 · 本地试玩' : '嘉兴烟雨 · 江湖在线'
 const sectName = (id: string | null) => SECTS.find((sect) => sect.id === id)?.name ?? '逍遥散人'
 const modal = ref<HTMLDialogElement>()
-const modalKind = ref<'create' | 'delete' | 'server' | 'settings'>('create')
+const modalKind = ref<'create' | 'delete' | 'server'>('create')
 const nickname = ref('')
 const avatarId = ref<PlayerAvatarId>('hero_sword')
 /** 联机创角时选家世；本地试玩在「新游戏」开局时选 */
@@ -28,7 +30,9 @@ const formError = ref('')
 /** 联机删角色：输入角色名与账号密码确认（docs/24） */
 const deleteName = ref('')
 const deletePassword = ref('')
-const movingScene = ref(true)
+const prefs = useInterfacePrefs()
+const settingsOpen = ref(false)
+const SceneSettingsDialog = defineAsyncComponent(() => import('./SceneSettingsDialog.vue'))
 const submitting = ref(false)
 
 watch(roles, (list) => {
@@ -56,13 +60,13 @@ async function createCharacter() {
     formError.value = '侠客名须为 2–16 位汉字、字母或数字，可用 · _ -'
     return
   }
-  if (!IS_MOCK_MODE && !origin.value) {
+  if (!mode.isLocal && !origin.value) {
     formError.value = '请选择家世'
     return
   }
   submitting.value = true
   try {
-    if (IS_MOCK_MODE) selectedId.value = store.createLocalCharacter(name, avatarId.value) ?? selectedId.value
+    if (mode.isLocal) selectedId.value = store.createLocalCharacter(name, avatarId.value) ?? selectedId.value
     else {
       await store.createOnlinePlayer(name, avatarId.value, origin.value!)
       if (store.authError) return
@@ -78,7 +82,7 @@ async function createCharacter() {
 
 async function deleteCharacter() {
   if (!selected.value) return
-  if (IS_MOCK_MODE) {
+  if (mode.isLocal) {
     store.deleteLocalCharacter(selected.value.id)
     modal.value?.close()
     return
@@ -91,23 +95,14 @@ async function deleteCharacter() {
 
 function enterJianghu() {
   if (!selected.value) return
-  if (IS_MOCK_MODE) store.selectLocalCharacter(selected.value.id)
+  if (mode.isLocal) store.selectLocalCharacter(selected.value.id)
   emit('enter')
 }
 
-async function toggleFullscreen() {
-  try {
-    const gameDocument = window.frameElement?.id === 'game-frame' ? window.parent.document : document
-    if (gameDocument.fullscreenElement) await gameDocument.exitFullscreen()
-    else await gameDocument.documentElement.requestFullscreen()
-  } catch {
-    formError.value = '当前窗口不支持全屏显示'
-  }
-}
 </script>
 
 <template>
-  <main class="character-select" :class="{ 'scene-still': !movingScene }" aria-label="角色选择">
+  <main class="character-select" :class="{ 'scene-still': !prefs.sceneMotion }" aria-label="角色选择">
     <img class="selection-landscape" :src="scene" alt="桃花掩映的嘉兴山水，水车与亭台临水而立" fetchpriority="high" />
     <div class="selection-shade" aria-hidden="true" />
 
@@ -118,12 +113,12 @@ async function toggleFullscreen() {
         <span class="brand-subtitle">问道武林</span>
       </div>
       <div class="selection-account">
-        <span class="account-label"><UserRound aria-hidden="true" />{{ IS_MOCK_MODE ? '本地试玩' : '江湖账号' }}</span>
-        <button v-if="!IS_MOCK_MODE" class="header-text-button" :disabled="store.authBusy" @click="store.logout()"><ArrowLeftRight aria-hidden="true" />切换账号</button>
+        <span class="account-label"><UserRound aria-hidden="true" />{{ mode.isLocal ? '本地试玩' : '江湖账号' }}</span>
+        <button v-if="!mode.isLocal" class="header-text-button" :disabled="store.authBusy" @click="store.logout()"><ArrowLeftRight aria-hidden="true" />切换账号</button>
         <span class="header-divider" aria-hidden="true" />
         <button class="header-server" @click="openModal('server')"><i class="server-dot" /> <span>{{ serverName }}</span><ChevronDown aria-hidden="true" /></button>
         <span class="header-divider" aria-hidden="true" />
-        <button class="selection-icon" aria-label="界面设置" @click="openModal('settings')"><Settings /></button>
+        <button class="selection-icon" aria-label="界面设置" aria-haspopup="dialog" @click="settingsOpen = true"><Settings /></button>
       </div>
     </header>
 
@@ -138,7 +133,7 @@ async function toggleFullscreen() {
       <div class="character-slots" role="group" aria-label="侠客名册">
         <template v-for="slot in 4" :key="slot">
           <button v-if="roles[slot - 1]" class="character-slot" :class="{ 'is-selected': selectedId === roles[slot - 1]!.id }" :aria-pressed="selectedId === roles[slot - 1]!.id" @click="selectedId = roles[slot - 1]!.id">
-            <span class="character-avatar" aria-hidden="true"><img :src="PLAYER_AVATARS[roles[slot - 1]!.avatarId].image" alt="" /></span>
+            <span class="character-avatar" aria-hidden="true"><img :src="PLAYER_AVATARS[roles[slot - 1]!.avatarId].thumbnail" alt="" decoding="async" /></span>
             <span class="slot-info"><strong class="font-brush">{{ roles[slot - 1]!.nickname }}</strong><span class="slot-level">Lv.{{ roles[slot - 1]!.level }}</span><span class="slot-sect"><Swords aria-hidden="true" />{{ sectName(roles[slot - 1]!.currentSectId) }}</span></span>
             <span v-if="selectedId === roles[slot - 1]!.id" class="selected-ribbon">当前角色</span>
             <span class="slot-index" aria-hidden="true">{{ String(slot).padStart(2, '0') }}</span>
@@ -150,8 +145,8 @@ async function toggleFullscreen() {
       </div>
 
       <button class="create-character" :disabled="!canCreate || store.authBusy" @click="openModal('create')"><span class="create-plus"><Plus aria-hidden="true" /></span><span class="font-brush">创建角色</span></button>
-      <div class="ledger-footer"><span>{{ roles.length }} / {{ IS_MOCK_MODE ? 4 : 1 }} 位侠客</span><button :disabled="!selected || store.authBusy" :title="IS_MOCK_MODE ? '删除所选试玩角色' : '删除所选角色'" @click="openModal('delete')"><Trash2 aria-hidden="true" />删除角色</button></div>
-      <p class="ledger-note"><ShieldCheck aria-hidden="true" />{{ IS_MOCK_MODE ? '本地试玩' : '江湖存档 · 随账号保存' }}</p>
+      <div class="ledger-footer"><span>{{ roles.length }} / {{ mode.maxCharacters }} 位侠客</span><button :disabled="!selected || store.authBusy" :title="mode.isLocal ? '删除所选试玩角色' : '删除所选角色'" @click="openModal('delete')"><Trash2 aria-hidden="true" />删除角色</button></div>
+      <p class="ledger-note"><ShieldCheck aria-hidden="true" />{{ mode.isLocal ? '本地试玩' : '江湖存档 · 随账号保存' }}</p>
     </section>
 
     <div v-if="selected" class="character-stage" aria-hidden="true">
@@ -161,17 +156,17 @@ async function toggleFullscreen() {
     <div v-if="selected" class="sect-banner" aria-hidden="true"><Flower2 /><span>{{ sectName(selected.currentSectId) }}</span><i>剑心自在</i></div>
     <Transition name="name-reveal" mode="out-in"><section v-if="selected" :key="selected.id" class="selected-identity" aria-label="当前侠客"><span class="identity-kicker">{{ sectName(selected.currentSectId) }}<i />剑行江湖</span><h2 class="font-brush" :class="{ 'identity-long': selected.nickname.length > 5 }">{{ selected.nickname }}</h2><span class="identity-level">等级 {{ selected.level }}<span>·</span>初入射雕</span></section></Transition>
 
-    <div class="selection-petals" aria-hidden="true"><i v-for="n in 9" :key="n" :style="{ '--petal': n }" /></div>
+    <ScenePetals v-if="prefs.sceneMotion" variant="selection" />
     <footer class="selection-actions">
-      <button class="return-button" :disabled="store.authBusy" :title="IS_MOCK_MODE && canReturn ? '返回江湖' : '返回登录'" @click="IS_MOCK_MODE ? emit('back') : store.logout()"><ChevronsLeft aria-hidden="true" />返回</button>
+      <button class="return-button" :disabled="store.authBusy" :title="mode.isLocal && canReturn ? '返回江湖' : '返回登录'" @click="mode.isLocal ? emit('back') : store.logout()"><ChevronsLeft aria-hidden="true" />返回</button>
       <button class="enter-jianghu font-brush" :disabled="!selected || store.authBusy" @click="enterJianghu"><span class="enter-ornament" aria-hidden="true">❖</span><span>进入江湖</span><ChevronRight aria-hidden="true" /></button>
     </footer>
     <span class="scene-caption" aria-hidden="true">第一卷 <i /> 射雕英雄传</span>
 
-    <dialog ref="modal" class="selection-dialog" :class="{ 'is-wide': modalKind === 'create' && !IS_MOCK_MODE }" aria-labelledby="selection-dialog-title" @click="($event.target === modal) && modal?.close()" @cancel="store.authBusy && $event.preventDefault()">
+    <dialog ref="modal" class="selection-dialog" :class="{ 'is-wide': modalKind === 'create' && !mode.isLocal }" aria-labelledby="selection-dialog-title" @click="($event.target === modal) && modal?.close()" @cancel="store.authBusy && $event.preventDefault()">
       <div class="dialog-content">
         <button class="dialog-close selection-icon" aria-label="关闭弹窗" :disabled="store.authBusy" @click="modal?.close()"><X /></button>
-        <h2 id="selection-dialog-title" class="font-brush">{{ { create: '初入江湖', delete: '删除角色', server: '江湖区服', settings: '界面设置' }[modalKind] }}</h2>
+        <h2 id="selection-dialog-title" class="font-brush">{{ { create: '初入江湖', delete: '删除角色', server: '江湖区服' }[modalKind] }}</h2>
         <form v-if="modalKind === 'create'" @submit.prevent="createCharacter">
           <p class="dialog-description">无门无派，亦可问道武林。</p>
           <fieldset class="character-gender" :disabled="submitting || store.authBusy">
@@ -179,19 +174,19 @@ async function toggleFullscreen() {
             <div class="gender-options">
               <label v-for="id in (['hero_sword_male', 'hero_sword'] as const)" :key="id" class="gender-option" :class="{ 'is-selected': avatarId === id }">
                 <input v-model="avatarId" type="radio" name="character-gender" :value="id" required />
-                <img :src="PLAYER_AVATARS[id].image" alt="" />
+                <img :src="PLAYER_AVATARS[id].thumbnail" alt="" decoding="async" />
                 <span>{{ PLAYER_AVATARS[id].label }}</span>
               </label>
             </div>
           </fieldset>
-          <OriginPicker v-if="!IS_MOCK_MODE" v-model="origin" class="character-origin" :disabled="submitting || store.authBusy" />
+          <OriginPicker v-if="!mode.isLocal" v-model="origin" class="character-origin" :disabled="submitting || store.authBusy" />
           <label class="name-label" for="character-name">侠客名</label>
           <input id="character-name" v-model="nickname" class="character-name-input" required minlength="2" maxlength="16" autocomplete="off" placeholder="留下你的江湖名号" :disabled="submitting || store.authBusy" :aria-invalid="!!(formError || store.authError)" aria-describedby="character-form-message" />
           <p id="character-form-message" class="form-message" :class="{ 'form-error': formError || store.authError }" :role="formError || store.authError ? 'alert' : undefined">{{ formError || store.authError || '2–16 位汉字、字母或数字，可用 · _ -' }}</p>
           <button class="dialog-primary" type="submit" :disabled="submitting || store.authBusy">{{ submitting || store.authBusy ? '正在落笔…' : '创建侠客' }}<ChevronRight aria-hidden="true" /></button>
         </form>
         <form v-else-if="modalKind === 'delete'" @submit.prevent="deleteCharacter">
-          <p v-if="IS_MOCK_MODE" class="dialog-description">确定删除「{{ selected?.nickname }}」？该试玩角色的修行进度将一并清除。</p>
+          <p v-if="mode.isLocal" class="dialog-description">确定删除「{{ selected?.nickname }}」？该试玩角色的修行进度将一并清除。</p>
           <template v-else>
             <p class="dialog-description">删除「{{ selected?.nickname }}」后，他的修为、元宝、纹银、装备、武学与伙伴一并清除，可以马上新建一位侠客。</p>
             <ul class="delete-notes">
@@ -207,18 +202,18 @@ async function toggleFullscreen() {
           </template>
           <div class="dialog-buttons">
             <button type="button" @click="modal?.close()">留在江湖</button>
-            <button class="dialog-danger" type="submit" :disabled="!IS_MOCK_MODE && (deleteName.trim() !== selected?.nickname || !deletePassword || store.authBusy)">
+            <button class="dialog-danger" type="submit" :disabled="!mode.isLocal && (deleteName.trim() !== selected?.nickname || !deletePassword || store.authBusy)">
               {{ store.authBusy ? '正在删除…' : '确认删除' }}
             </button>
           </div>
         </form>
         <div v-else-if="modalKind === 'server'">
           <p class="dialog-description">当前开放区服</p>
-          <button class="available-server" @click="modal?.close()"><i class="server-dot" /><span>{{ serverName }}<small>{{ IS_MOCK_MODE ? '独立试玩，随时启程' : '账号存档，同游江湖' }}</small></span><Check aria-hidden="true" /></button>
+          <button class="available-server" @click="modal?.close()"><i class="server-dot" /><span>{{ serverName }}<small>{{ mode.isLocal ? '独立试玩，随时启程' : '账号存档，同游江湖' }}</small></span><Check aria-hidden="true" /></button>
         </div>
-        <div v-else class="selection-settings"><label><span>飘花与场景动态</span><input v-model="movingScene" type="checkbox" /></label><button @click="toggleFullscreen"><Maximize2 aria-hidden="true" />切换全屏</button><p v-if="formError" class="form-error" role="status">{{ formError }}</p></div>
       </div>
     </dialog>
+    <SceneSettingsDialog v-if="settingsOpen" open @close="settingsOpen = false" />
   </main>
 </template>
 
@@ -314,8 +309,6 @@ async function toggleFullscreen() {
 .enter-jianghu:disabled { opacity: .45; filter: grayscale(.5); }
 .scene-caption { position: absolute; z-index: 2; right: 1.7rem; bottom: 1rem; display: flex; align-items: center; gap: .6rem; color: #e2d6bd; font-size: .75rem; letter-spacing: .14em; text-shadow: 0 1px 3px #000; }
 .scene-caption i { width: 1.6rem; height: 1px; background: #d4b88480; }
-.selection-petals { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 3; }
-.selection-petals i { --drift: calc(80px + var(--petal) * 17px); position: absolute; top: -3%; left: calc(var(--petal) * 11%); width: calc(5px + var(--petal) * .7px); height: 6px; border-radius: 90% 10% 80% 20%; background: #f6c6dc; box-shadow: 0 0 5px #ffe3f244; opacity: 0; animation: petal-fall calc(11s + var(--petal) * 1.3s) calc(var(--petal) * -2.7s) linear infinite; }
 .selection-dialog { width: min(26rem, calc(100vw - 2rem)); max-height: calc(100dvh - 2rem); overflow: auto; padding: 0; margin: auto; border: 1px solid #b99a61; border-radius: 4px 16px; color: #eae0cc; background: url('../assets/cloud-etch.svg') right bottom / 17rem no-repeat, #1f242a; box-shadow: inset 0 0 0 4px #1f242a, inset 0 0 0 5px #b99a6140, 0 20px 80px #0009; }
 .selection-dialog.is-wide { width: min(36rem, calc(100vw - 2rem)); }
 .selection-dialog.is-wide .gender-option img { height: 6rem; }
@@ -352,11 +345,6 @@ async function toggleFullscreen() {
 .available-server > span { flex: 1; color: #e6d3ac; }
 .available-server small { display: block; font-size: .75rem; color: #a79e8f; margin-top: .3rem; }
 .available-server svg { width: 1.15rem; height: 1.15rem; color: #c8ae70; }
-.selection-settings { display: grid; gap: 1rem; }
-.selection-settings label, .selection-settings button { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .6rem 0; font-size: .9rem; }
-.selection-settings input { width: 1.1rem; height: 1.1rem; accent-color: #c4a162; }
-.selection-settings button { justify-content: flex-start; border-top: 1px solid var(--selection-line); color: #e5cea1; }
-.selection-settings svg { width: 1rem; height: 1rem; }
 .hero-reveal-enter-active, .hero-reveal-leave-active, .name-reveal-enter-active, .name-reveal-leave-active { transition: opacity .2s ease, translate .3s ease; }
 .hero-reveal-enter-from, .hero-reveal-leave-to { opacity: 0; translate: 12px 0; }
 .name-reveal-enter-from, .name-reveal-leave-to { opacity: 0; translate: 0 8px; }
@@ -364,8 +352,6 @@ async function toggleFullscreen() {
 @keyframes character-arrive { from { opacity: 0; translate: 0 15px; } to { opacity: 1; translate: 0; } }
 @keyframes landscape-arrive { from { opacity: .5; scale: 1.025; } to { opacity: 1; scale: 1; } }
 @keyframes silk-breathe { 0%, 100% { transform: rotate(-.25deg) translateY(0); } 50% { transform: rotate(.25deg) translateY(-4px); } }
-@keyframes petal-fall { 0% { opacity: 0; transform: translate3d(0, 0, 0) rotate(0); } 10% { opacity: .8; } 90% { opacity: .65; } 100% { opacity: 0; transform: translate3d(var(--drift), 105vh, 0) rotate(400deg); } }
-.scene-still .selection-petals { display: none; }
 .scene-still .selection-figure, .scene-still .selection-landscape, .scene-still .character-stage, .scene-still .character-ledger { animation: none; }
 @media (min-width: 1900px) { .character-ledger { top: 6rem; bottom: 4rem; left: 2rem; } .character-stage { left: 28%; width: 38%; } }
 @media (max-height: 800px) and (min-width: 761px) { .character-ledger { top: 4.5rem; bottom: 1.3rem; padding-block: .8rem; } .ledger-heading { padding-bottom: .4rem; } .ledger-heading h2 { font-size: 1.65rem; } .ledger-server { margin-block: .65rem; } .character-slots { gap: .5rem; } .character-slot { padding-block: .35rem; } .character-avatar, .empty-avatar { width: 3.65rem; } .slot-info strong { font-size: 1.2rem; } .slot-sect { font-size: .75rem; } .slot-level { font-size: .8rem; } .create-character { min-height: 3rem; margin-top: .7rem; } .create-character .font-brush { font-size: 1.4rem; } .ledger-footer { margin-block: .5rem; } .ledger-note { padding-top: .3rem; } .enter-jianghu { min-width: 17rem; height: 3.7rem; font-size: 2.1rem; } .selection-actions { bottom: 4%; } }
@@ -425,5 +411,5 @@ async function toggleFullscreen() {
   .scene-caption { right: 1rem; bottom: .35rem; font-size: .55rem; }
 }
 @media (max-width: 760px) and (max-height: 700px) { .character-ledger { bottom: 5.5rem; height: 14rem; } .selection-actions { bottom: 1.3rem; } .character-stage { top: 8%; bottom: 38%; } .sect-banner { min-height: 8.5rem; top: 4.5rem; } .sect-banner > i { display: none; } }
-@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } .selection-petals { display: none; } }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 </style>

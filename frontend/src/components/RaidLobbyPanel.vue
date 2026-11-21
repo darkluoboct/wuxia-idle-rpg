@@ -94,7 +94,7 @@ function showNearby() {
         <ul v-else class="grid max-h-64 gap-2 overflow-auto sm:grid-cols-2" aria-label="可借的结义镜像">
           <li v-for="mirror in mirrors" :key="mirror.id">
             <button
-              class="well flex w-full min-w-0 flex-col items-start gap-0.5 p-2.5 text-left" :class="picked.includes(mirror.id) ? '!border-gold' : ''"
+              class="well flex w-full min-w-0 flex-col items-start gap-0.5 p-2.5 text-left" :class="picked.includes(mirror.id) ? 'border-gold' : ''"
               :aria-pressed="picked.includes(mirror.id)" @click="togglePick(mirror.id)"
             >
               <span class="flex w-full items-center justify-between gap-2">

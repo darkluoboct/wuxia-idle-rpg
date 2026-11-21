@@ -139,7 +139,7 @@ const coCultivationTimeLeft = computed(() => {
         <div class="min-w-0 flex-1">
           <div class="flex items-center gap-1.5">
             <b class="truncate text-sm">{{ store.currentMap.name }}</b>
-            <span class="chip !py-0 !text-[0.75rem]" :class="store.currentMap.safety === 'PEACE' ? 'chip-jade' : 'chip-red'">
+            <span class="chip py-0 text-[0.75rem]" :class="store.currentMap.safety === 'PEACE' ? 'chip-jade' : 'chip-red'">
               {{ store.currentMap.safety === 'PEACE' ? '和平区' : IS_MOCK_MODE ? '可劫镖' : '纷争区' }}
             </span>
           </div>
@@ -163,8 +163,8 @@ const coCultivationTimeLeft = computed(() => {
             <div class="min-w-0 flex-1">
               <div class="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
                 <b class="truncate text-sm" :class="pl.isBetrayerBounty ? 'text-cinnabar' : ''">{{ pl.nickname }}</b>
-                <span v-if="pl.isBetrayerBounty" class="chip chip-red !py-0 !text-[0.75rem]">被通缉</span>
-                <span v-if="pl.isEscortingDart" class="chip chip-gold !py-0 !text-[0.75rem]">押镖</span>
+                <span v-if="pl.isBetrayerBounty" class="chip chip-red py-0 text-[0.75rem]">被通缉</span>
+                <span v-if="pl.isEscortingDart" class="chip chip-gold py-0 text-[0.75rem]">押镖</span>
               </div>
               <div class="truncate text-xs text-ink3">{{ pl.sectName }} · {{ pl.realmName }}</div>
             </div>
@@ -179,37 +179,12 @@ const coCultivationTimeLeft = computed(() => {
               战力约是你的 {{ ratio(pl.combatPower).toFixed(1) }} 倍{{ ratio(pl.combatPower) > 1.2 ? ' · 强敌' : '' }}
             </span>
           </div>
-          <div v-if="pl.holdingUniqueArtifact" class="chip tier-chip t-red glow-border w-full !justify-start truncate">持有「{{ pl.holdingUniqueArtifact }}」</div>
+          <div v-if="pl.holdingUniqueArtifact" class="chip tier-chip t-red glow-border w-full justify-start truncate">持有「{{ pl.holdingUniqueArtifact }}」</div>
 
-          <div v-if="IS_MOCK_MODE" class="flex gap-1.5">
-            <button v-if="store.featureOpen('MAPS')" class="btn btn-sm flex-1" @click="store.interactNearbyPlayer(pl, 'CO_CULT')">一起修行</button>
-            <button v-if="store.featureOpen('HUASHAN')" class="btn btn-sm flex-1" @click="store.interactNearbyPlayer(pl, 'SPAR')">切磋</button>
-            <button
-              v-if="store.featureOpen('HUASHAN') && ((store.currentMap.safety === 'CONTESTED' && pl.isEscortingDart) || pl.isBetrayerBounty)"
-              class="btn btn-sm btn-danger flex-1" @click="store.interactNearbyPlayer(pl, 'AMBUSH')"
-            >
-              {{ pl.isBetrayerBounty ? '追捕' : '劫镖' }}
-            </button>
-          </div>
-          <div v-else class="flex flex-wrap gap-1.5">
-            <button
-              v-if="store.currentMap.safety === 'PEACE' && store.featureOpen('MAPS')" class="btn btn-sm flex-1"
-              :aria-label="`邀请${pl.nickname}共修`"
-              :disabled="store.onlineActionBusy || !store.roomConnected || !!store.activeCoCultivation || !!store.coCultivationInvite"
-              @click="store.interactNearbyPlayer(pl, 'CO_CULT')"
-            >邀请共修</button>
-            <button v-if="store.featureOpen('HUASHAN')" class="btn btn-sm flex-1" :aria-label="`邀请${pl.nickname}切磋`"
-              :disabled="store.onlineActionBusy || !store.roomConnected || !!store.duelInvite || store.isBattlePlaying"
-              @click="store.interactNearbyPlayer(pl, 'SPAR')">递帖切磋</button>
-            <button v-if="store.featureOpen('HUASHAN') && ((store.currentMap.safety === 'CONTESTED' && pl.isEscortingDart) || pl.isBetrayerBounty)"
-              class="btn btn-sm btn-danger flex-1" :disabled="store.onlineActionBusy || !store.roomConnected || store.isBattlePlaying"
-              @click="store.interactNearbyPlayer(pl, 'AMBUSH')">{{ pl.isBetrayerBounty ? '追捕' : '劫镖' }}</button>
-            <button
-              v-if="store.featureOpen('RAID') && canInviteRaid && !store.raidLobby.team?.members.some((entry) => entry.id === pl.id) && !store.raidLobby.team?.invited.some((entry) => entry.id === pl.id)"
-              class="btn btn-sm flex-1" :aria-label="`邀请${pl.nickname}组队`" :disabled="store.raidLobbyBusy || !store.roomConnected"
-              @click="store.raidTeamAction({ action: 'invite', targetPlayerId: pl.id })"
-            >邀请组队</button>
-            <button class="btn btn-sm flex-1" :aria-label="`私聊${pl.nickname}`" @click="store.openChatThread({ id: pl.id, nickname: pl.nickname })">私聊</button>
+          <div class="flex flex-wrap gap-1.5">
+            <button v-for="action in store.modeCapabilities.getNearbyPlayerActions(pl, canInviteRaid)" :key="action.key"
+              class="btn btn-sm flex-1" :class="{ 'btn-danger': action.danger }" :aria-label="action.ariaLabel"
+              :aria-busy="action.busy" :disabled="action.disabled" @click="action.run">{{ action.label }}</button>
           </div>
         </li>
         <li v-if="!IS_MOCK_MODE && store.roomConnected && store.roomCount - 1 > store.nearbyPlayers.length" class="py-1 text-center text-xs text-ink3">
@@ -223,9 +198,9 @@ const coCultivationTimeLeft = computed(() => {
               <div class="min-w-0 flex-1">
                 <div class="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
                   <b class="truncate text-sm" :class="pl.isBetrayerBounty ? 'text-cinnabar' : ''">{{ pl.nickname }}</b>
-                  <span class="chip !py-0 !text-[0.75rem]">离线</span>
-                  <span v-if="pl.isBetrayerBounty" class="chip chip-red !py-0 !text-[0.75rem]">被通缉</span>
-                  <span v-if="pl.isEscortingDart" class="chip chip-gold !py-0 !text-[0.75rem]">押镖</span>
+                  <span class="chip py-0 text-[0.75rem]">离线</span>
+                  <span v-if="pl.isBetrayerBounty" class="chip chip-red py-0 text-[0.75rem]">被通缉</span>
+                  <span v-if="pl.isEscortingDart" class="chip chip-gold py-0 text-[0.75rem]">押镖</span>
                 </div>
                 <div class="truncate text-xs text-ink3">{{ pl.sectName }} · {{ pl.realmName }}</div>
               </div>

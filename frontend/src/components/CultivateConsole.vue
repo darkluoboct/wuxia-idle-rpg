@@ -1,13 +1,16 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, ref } from 'vue'
 import { LockKeyhole, Sparkles, Wind } from 'lucide-vue-next'
 import { useGameStore } from '@/stores/gameStore'
-import { ACUPOINTS, SKILLS } from '@/config/gameData'
+import { SKILLS } from '@/config/gameData'
 import { IS_MOCK_MODE } from '@/network/apiClient'
-import { boostPctOver, nextCultivationRealm, realmBreakChance } from '../../../shared/player.ts'
+import { boostPctOver, realmBreakChance } from '../../../shared/player.ts'
 import { boostLabel } from '../../../shared/admin.ts'
 import type { RateBoostKind } from '@/network/protocol'
 import ItemIcon from './ItemIcon.vue'
+import InfoTip from './ui/InfoTip.vue'
+import { useGrowthReadiness } from '@/composables/useGrowthReadiness'
+import { useGameClock } from '@/composables/useGameClock'
 
 const store = useGameStore()
 const usePill = ref(false)
@@ -17,16 +20,12 @@ const p = computed(() => store.player)
 /** 新角色、停止挂机后：打坐与巡历都不累计，点「开始挂机」才起算 */
 const idleOff = computed(() => !!p.value.idleOff)
 const partner = computed(() => IS_MOCK_MODE ? p.value.coCultivatePartner : store.activeCoCultivation?.partner.nickname)
-const nextRealm = computed(() => nextCultivationRealm(p.value.realmTier))
+const { nextRealm, atCap, canLevel, missingPoint, canBreak } = useGrowthReadiness(store)
 const breakRate = computed(() => nextRealm.value
   ? realmBreakChance(p.value, store.currentLoadout, nextRealm.value.baseBreakRate, usingPill.value)
   : 100)
 
 const expPct = computed(() => Math.min(100, Math.round(p.value.qiExp / Math.max(1, p.value.nextLevelQi) * 100)))
-const atCap = computed(() => p.value.level >= store.currentRealm.maxLevel)
-const canLevel = computed(() => !atCap.value && p.value.qiExp >= p.value.nextLevelQi)
-const missingPoint = computed(() => ACUPOINTS.find((point) => point.realmTier === p.value.realmTier && !store.openedAcupointIds.includes(point.id)))
-const canBreak = computed(() => !!nextRealm.value && atCap.value && !missingPoint.value)
 const breakHint = computed(() => !nextRealm.value ? '下一境界尚未开放'
   : !atCap.value ? `达到 ${store.currentRealm.maxLevel} 级方可冲关`
     : missingPoint.value ? `请先在武库冲通「${missingPoint.value.name}」` : `突破到「${nextRealm.value.name}」，成功率 ${breakRate.value}%`)
@@ -35,12 +34,9 @@ const levelHint = computed(() => atCap.value
   : canLevel.value ? `升到 ${p.value.level + 1} 级，花费 ${p.value.nextLevelQi.toLocaleString()} 真气。`
     : `还差 ${(p.value.nextLevelQi - p.value.qiExp).toLocaleString()} 真气才能升级。`)
 
-const now = ref(Date.now())
-const deviationMinutes = computed(() => Math.max(0, Math.ceil(((p.value.qiDeviationUntil ?? 0) - now.value) / 60_000)))
-let timer: ReturnType<typeof setInterval>
-onMounted(() => { timer = setInterval(() => { now.value = Date.now() }, 5000) })
-onUnmounted(() => clearInterval(timer))
-const pending = computed(() => store.getIdleRewards(now.value))
+const clock = useGameClock()
+const deviationMinutes = computed(() => Math.max(0, Math.ceil(((p.value.qiDeviationUntil ?? 0) - clock.now) / 60_000)))
+const pending = computed(() => store.getIdleRewards(clock.now))
 
 /** 运营的倍率活动（docs/22）：进行中的列在修行状态下，时薪按活动折算 */
 const activeBoosts = computed(() => store.rateBoosts.filter((boost) => boost.startsAt <= store.worldTime && boost.endsAt > store.worldTime))
@@ -83,9 +79,9 @@ function openSkill(id: string | null) {
     </p>
 
     <section class="cultivate-income" aria-label="修行收益">
-      <div class="cultivate-progress" :title="levelHint">
+      <div class="cultivate-progress" :class="{ 'is-secondary': expPct < 85 && !canBreak }">
         <span>升级真气 <b>{{ p.qiExp.toLocaleString() }}</b> / {{ p.nextLevelQi.toLocaleString() }}</span>
-        <span>{{ expPct }}%</span>
+        <span class="flex items-center gap-1">{{ expPct }}% <InfoTip label="修行门槛" :text="`${levelHint} ${breakHint}`" /></span>
         <div class="wuxia-meter qi-meter" role="progressbar" aria-label="角色升级进度" :aria-valuenow="expPct"><i :style="{ width: `${expPct}%` }" /></div>
       </div>
 
@@ -108,7 +104,7 @@ function openSkill(id: string | null) {
         </button>
         <button
           v-else class="claim-reward" aria-label="领取修行收益" :title="`可领 ${pending.gainedQi.toLocaleString()} 真气和 ${pending.gainedSilver.toLocaleString()} 纹银`"
-          :disabled="store.onlineActionBusy" @click="store.settleOfflineQi()"
+          :aria-busy="store.isSubmitting('/cultivate/settle')" :disabled="store.onlineActionBusy" @click="store.settleOfflineQi()"
         >
           <i class="art art-chest" aria-hidden="true" />
           <span><strong class="font-brush">领取收益</strong><small>+{{ pending.gainedQi.toLocaleString() }} 真气</small></span>
@@ -137,15 +133,17 @@ function openSkill(id: string | null) {
           <ItemIcon item-id="pozhang_dan" />
           <b>{{ store.pillCount }}</b>
         </button>
-        <button class="hotbar-command" aria-label="升级角色" :title="levelHint" :disabled="!canLevel || store.onlineActionBusy" @click="store.upgradeLevel()">
-          <span class="font-brush">升级</span><small>{{ atCap ? '待突破' : `Lv.${p.level + 1}` }}</small>
+        <button class="hotbar-command" :class="{ 'anim-pulse-glow': canLevel }" aria-label="升级角色" :aria-description="levelHint"
+          :aria-busy="store.isSubmitting('/cultivate/progress', { action: 'level' })" :disabled="!canLevel || store.onlineActionBusy" @click="store.upgradeLevel()">
+          <span class="font-brush">升级</span><small>{{ canLevel ? '可升级' : atCap ? '待突破' : `Lv.${p.level + 1}` }}</small>
         </button>
         <button
           class="hotbar-command hotbar-break" aria-label="突破境界"
-          :title="breakHint" :disabled="!canBreak || store.onlineActionBusy"
+          :class="{ 'anim-pulse-glow': canBreak }" :aria-description="breakHint"
+          :aria-busy="store.isSubmitting('/cultivate/progress', { action: 'break' })" :disabled="!canBreak || store.onlineActionBusy"
           @click="store.attemptBreakthrough(usingPill)"
         >
-          <span class="font-brush">突破</span><small><Sparkles :size="10" aria-hidden="true" /> {{ nextRealm ? `${breakRate}%` : '待开放' }}</small>
+          <span class="font-brush">突破</span><small><Sparkles :size="10" aria-hidden="true" /> {{ canBreak ? '可突破' : nextRealm ? `${breakRate}%` : '待开放' }}</small>
         </button>
       </div>
       <span v-if="deviationMinutes" class="chip text-cinnabar">气血微沸 · 出战气血 −10% · {{ deviationMinutes }} 分钟</span>

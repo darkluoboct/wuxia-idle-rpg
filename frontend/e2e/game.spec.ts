@@ -1,15 +1,18 @@
 import { randomUUID } from 'node:crypto'
 import { createRequire } from 'node:module'
-import { expect, test, type FrameLocator } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 
-const enter = (game: FrameLocator) =>
+const onlineBuild = process.env.WUXIA_E2E_ONLINE_BUILD === '1'
+const guestUrl = (mode: string) => `${onlineBuild ? '/guest/' : '/'}?mode=${mode}`
+
+const enter = (game: Page) =>
   game.getByRole('button', { name: '进入江湖', exact: true }).click()
-const tab = (game: FrameLocator, name: string) =>
+const tab = (game: Page, name: string) =>
   game.locator('.wuxia-header').getByRole('tab', { name, exact: true })
 
 /** 联机新角色先过序章：跳过文字，打主线 1-1，再看完忘机客的剧情卡 */
 /** 打完序章：楔子按家世讲，家人并肩出战，忘机客说完由家人补一句 */
-async function playPrologue(game: FrameLocator, family: { title: string; kin: string }) {
+async function playPrologue(game: Page, family: { title: string; kin: string }) {
   await expect(game.getByRole('heading', { name: family.title })).toBeVisible()
   await game.getByRole('button', { name: '跳过剧情' }).click()
   await expect(game.locator('.prologue-ally')).toContainText(family.kin)
@@ -32,7 +35,7 @@ test('游客进入演武，切换五个页签，完成横版武库换装和升�
     if (path.endsWith('.webp')) illustrations.add(path)
   })
   await page.goto('/', { waitUntil: 'domcontentloaded' })
-  const game = page.frameLocator('#game-frame')
+  const game = page
   await expect(game.getByRole('heading', { name: '账号登录' })).toBeVisible()
   expect([...scripts].some((path) => /gameStore-|GameShell-|View-/.test(path))).toBe(false)
   await expect
@@ -41,6 +44,7 @@ test('游客进入演武，切换五个页签，完成横版武库换装和升�
   expect([...illustrations].every((path) => path.includes('login-jiaxing-'))).toBe(true)
 
   await game.getByRole('button', { name: '游客进入' }).click()
+  if (onlineBuild) await expect(page).toHaveURL(/\/guest\/\?mode=guest$/)
   await enter(game)
   await game.getByRole('button', { name: /演武模式/ }).click()
   await expect(game.getByRole('button', { name: '领取修行收益' })).toBeVisible()
@@ -76,7 +80,9 @@ test('游客进入演武，切换五个页签，完成横版武库换装和升�
   const roster = stage.getByRole('list', { name: '伙伴列表' })
   const companion = stage.getByRole('article', { name: '伙伴详情' })
   await expect(companion.getByRole('heading', { name: '郭靖', exact: true })).toBeVisible()
-  await roster.getByRole('button', { name: '黄药师', exact: true }).click()
+  const companionPreview = roster.getByRole('button', { name: '黄药师', exact: true })
+  await companionPreview.click()
+  await expect.poll(() => companionPreview.locator('img').evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(256)
   const portrait = companion.getByRole('img', { name: '黄药师立绘' }).locator('img')
   await expect(portrait).toHaveAttribute('src', /huangyaoshi-.*\.webp$/)
   await expect.poll(() => portrait.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(800)
@@ -147,10 +153,90 @@ test('游客进入演武，切换五个页签，完成横版武库换装和升�
   await expect(stage.getByRole('button', { name: '查看已穿戴的青钢长剑', exact: true })).toBeVisible()
 })
 
+test('大屏流式铺满，修行保留三栏', async ({ page }) => {
+  await page.setViewportSize({ width: 1920, height: 1080 })
+  await page.goto(guestUrl('demo'))
+  const shell = page.locator('.wuxia-shell')
+  await expect(shell).toBeVisible()
+  const bounds = await shell.boundingBox()
+  expect(bounds).toEqual({ x: 0, y: 0, width: 1920, height: 1080 })
+  const rails = shell.getByRole('complementary', { name: /^(人物卷|江湖卷)$/ })
+  await expect(rails).toHaveCount(2)
+  const railLimit = await page.locator('html').evaluate((element) => 24 * parseFloat(getComputedStyle(element).fontSize))
+  for (const rail of await rails.all()) {
+    await expect(rail).toBeInViewport({ ratio: 1 })
+    expect((await rail.boundingBox())?.width).toBeLessThanOrEqual(railLimit + 1)
+  }
+  await expect(page.getByRole('region', { name: '江湖舞台' })).toBeInViewport({ ratio: 1 })
+})
+
+test('界面设置跨刷新，鬼市夜色只作用于工作台', async ({ page }) => {
+  await page.goto(guestUrl('demo'))
+  const settings = page.getByRole('button', { name: '界面设置' })
+  await settings.click()
+  const dialog = page.getByRole('dialog', { name: '界面设置' })
+  await expect(dialog.getByRole('button', { name: '关闭界面设置' })).toBeFocused()
+  await dialog.getByRole('combobox', { name: '界面主题' }).selectOption({ label: '宋宣' })
+  await page.keyboard.press('Escape')
+  await expect(dialog).toBeHidden()
+  await expect(settings).toBeFocused()
+
+  const root = page.locator('html')
+  await tab(page, '市井').click()
+  await page.getByRole('tab', { name: '子时鬼市' }).click()
+  await expect(page.locator('.ghost-night-scope')).toHaveClass(/theme-midnight/)
+  await expect(root).not.toHaveClass(/theme-midnight/)
+  await page.getByRole('tab', { name: '醉仙客栈' }).click()
+  await expect(page.locator('.ghost-night-scope')).toHaveCount(0)
+  await page.reload()
+  await expect(settings).toBeVisible()
+  await expect(root).not.toHaveClass(/theme-midnight/)
+  const mapTrigger = page.getByRole('button', { name: '选择地图', exact: true })
+  await mapTrigger.click()
+  const map = page.getByRole('dialog', { name: '江湖地图' })
+  await expect(map.getByRole('button', { name: '关上地图' })).toBeFocused()
+  await page.keyboard.press('Escape')
+  await expect(map).toBeHidden()
+  await expect(mapTrigger).toBeFocused()
+
+  await page.goto('/')
+  await page.getByRole('button', { name: '设置', exact: true }).click()
+  await expect(dialog.getByRole('combobox', { name: '界面主题' })).toHaveValue('false')
+})
+
+test('手机竖屏可直接登录、打开人物卷并使用底栏', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/')
+  await expect(page.getByRole('heading', { name: '账号登录' })).toBeInViewport()
+  await page.getByRole('button', { name: '游客进入' }).click()
+  await enter(page)
+  await page.getByRole('button', { name: /演武模式/ }).click()
+
+  const character = page.getByRole('button', { name: '查看角色' })
+  await expect(character).toBeInViewport({ ratio: 1 })
+  const rail = page.getByRole('complementary', { name: '人物卷', exact: true })
+  await expect(rail).toBeHidden()
+  await character.click()
+  await expect(rail).toBeInViewport({ ratio: 1 })
+  await page.keyboard.press('Escape')
+  await expect(rail).toBeHidden()
+
+  const navigation = page.getByRole('tablist', { name: '主导航', exact: true })
+  await expect(navigation).toBeInViewport({ ratio: 1 })
+  const arsenal = navigation.getByRole('tab', { name: '武库' })
+  await arsenal.click()
+  await expect(arsenal).toHaveAttribute('aria-selected', 'true')
+  await page.getByRole('tab', { name: '角色', exact: true }).click()
+  await page.getByRole('button', { name: '查看已穿戴的牛家村玄铁匕首' }).click()
+  await expect(page.getByRole('heading', { name: '武器详情' })).toBeInViewport()
+  await expect(page.getByRole('tab', { name: '背包', exact: true })).toBeInViewport()
+  expect(await page.locator('.wuxia-header').evaluate((element) => element.scrollWidth)).toBe(390)
+})
+
 test('横版来信与任务各自独立，武库查看物品，任务框查看赏赐和副本掉落', async ({ page }) => {
   await page.setViewportSize({ width: 844, height: 390 })
-  await page.goto('/?mode=guest')
-  const game = page.frameLocator('#game-frame')
+  await page.goto('/?mode=guest') // 兼容部署版已有的游客链接。
+  const game = page
   await enter(game)
   await game.getByRole('button', { name: /演武模式/ }).click()
   await game.getByRole('button', { name: '江湖来信', exact: true }).click()
@@ -212,7 +298,7 @@ test('联机注册、创角、同图聊天、私聊、领取收益、换装读�
       contexts.map(async (context, index) => {
         const page = await context.newPage()
         await page.goto(index ? '/' : '/?mode=online', { waitUntil: 'domcontentloaded' })
-        const game = page.frameLocator('#game-frame')
+        const game = page
         await game.getByRole('button', { name: '注册账号', exact: true }).click()
         const id = randomUUID().split('-')[0]
         const login = `e2e_${id}`
@@ -248,7 +334,7 @@ test('联机注册、创角、同图聊天、私聊、领取收益、换装读�
     await alice.game.getByRole('button', { name: '发送', exact: true }).click()
     await expect(bob.game.getByText(message, { exact: true })).toBeVisible()
     // 同图名单：连上时拿一份，之后的进出只推变动，两边都要看到对方
-    const nearby = (game: FrameLocator) => game.getByRole('list', { name: '附近侠客' })
+    const nearby = (game: Page) => game.getByRole('list', { name: '附近侠客' })
     for (const [viewer, other] of [[alice, bob], [bob, alice]]) {
       await expect(nearby(viewer.game).getByText(other.nickname, { exact: true })).toBeVisible()
     }
@@ -327,7 +413,20 @@ test('联机注册、创角、同图聊天、私聊、领取收益、换装读�
     await letter.getByRole('button', { name: '纹银', exact: true }).click()
     await expect(letter.getByRole('dialog', { name: '纹银' })).toContainText('×200')
     await letter.getByRole('button', { name: '关闭道具浮窗' }).click()
-    await letter.getByRole('button', { name: '领取附件' }).click()
+    const claim = letter.getByRole('button', { name: '领取附件' })
+    let finishClaim!: () => void
+    const claimGate = new Promise<void>((resolve) => { finishClaim = resolve })
+    await alice.game.route('**/api/v1/mail', async (route) => {
+      if (route.request().method() === 'POST') await claimGate
+      await route.continue()
+    })
+    try {
+      await claim.click()
+      await expect(claim).toHaveAttribute('aria-busy', 'true')
+      await expect(claim).toBeDisabled()
+    } finally { finishClaim() }
+    await expect(alice.game.locator('.toast-stack:popover-open').getByText(/已收下/)).toBeInViewport()
+    await expect(letter).toBeVisible()
     await letter.getByRole('button', { name: '在背包中查看' }).click()
     await expect(letter).toHaveCount(0)
     await expect(stage.getByRole('tab', { name: '背包' })).toHaveAttribute('aria-selected', 'true')

@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { computed, onScopeDispose, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, ref, watch } from 'vue'
+import { useGameClock } from '@/composables/useGameClock'
 import { storeToRefs } from 'pinia'
 import { Lock } from 'lucide-vue-next'
 import { useGameStore } from '@/stores/gameStore'
-import { IS_MOCK_MODE } from '@/network/apiClient'
-import { ADVENTURES, EXPANSION_VOLUMES_PREVIEW, getChapterDrops, ONLINE_STORY_CHAPTERS, STORY_ARCS, STORY_CHAPTERS, type AdventureConfig } from '@/config/gameData'
+import { ADVENTURES, EXPANSION_VOLUMES_PREVIEW, getChapterDrops, STORY_ARCS, type AdventureConfig } from '@/config/gameData'
 import { openToOrigin } from '../../../shared/origins.ts'
 import { canChooseStorySnake, STORY_SNAKE_ADVENTURE, storyEncounter } from '../../../shared/storySnake.ts'
 import { storyFirstClearReward } from '../../../shared/storyData.ts'
@@ -14,11 +14,13 @@ import RaidLobbyPanel from '@/components/RaidLobbyPanel.vue'
 import RaidRewardTray from '@/components/RaidRewardTray.vue'
 import TrialWorkbench from '@/components/TrialWorkbench.vue'
 import { trialPartId, TRIAL_STAGES } from '../../../shared/trialStages.ts'
-import XiangyangDefense from '@/components/XiangyangDefense.vue'
-import BountyBoard from '@/components/BountyBoard.vue'
-import MapIntel from '@/components/MapIntel.vue'
+
+const XiangyangDefense = defineAsyncComponent(() => import('@/components/XiangyangDefense.vue'))
+const BountyBoard = defineAsyncComponent(() => import('@/components/BountyBoard.vue'))
+const MapIntel = defineAsyncComponent(() => import('@/components/MapIntel.vue'))
 
 const store = useGameStore()
+const mode = store.modeCapabilities
 const { jianghuTab: sub } = storeToRefs(store)
 const tabs = [
   { k: 'TRIAL', l: '三十关历练' },
@@ -29,9 +31,9 @@ const tabs = [
   { k: 'BOUNTY', l: '江湖悬赏榜' },
 ] as const
 // 悬赏榜只在联机；历练、地图、副本、悬赏随剧情开放
-const visibleTabs = computed(() => tabs.filter((tab) => !(IS_MOCK_MODE && tab.k === 'BOUNTY') && store.jianghuTabOpen(tab.k)))
+const visibleTabs = computed(() => tabs.filter((tab) => (mode.hasBounty || tab.k !== 'BOUNTY') && store.jianghuTabOpen(tab.k)))
 
-const chapters = IS_MOCK_MODE ? STORY_CHAPTERS : ONLINE_STORY_CHAPTERS
+const chapters = mode.storyChapters
 const storyGroups = STORY_ARCS.map((arc) => ({ ...arc, nodes: chapters.filter((node) => node.chapter === arc.chapter) }))
 const storyGuards = computed(() => Object.fromEntries(chapters.map((chapter) => [
   chapter.id, storyEncounter(chapter, store.player.storySnakeChoice).enemyGuards?.map((guard) => guard.name).join('、'),
@@ -40,7 +42,7 @@ type State = 'CLEARED' | 'CURRENT' | 'LOCKED'
 function stateOf(id: number): State | 'OPEN' {
   const max = store.player.maxChapterId
   if (id > max) return 'LOCKED'
-  if (IS_MOCK_MODE ? id < max : store.claimedNodeIds.includes(id)) return 'CLEARED'
+  if (mode.isLocal ? id < max : store.claimedNodeIds.includes(id)) return 'CLEARED'
   return id === max ? 'CURRENT' : 'OPEN'
 }
 const cleared = computed(() => chapters.filter((chapter) => stateOf(chapter.id) === 'CLEARED').length)
@@ -54,9 +56,10 @@ const progressLabel = computed(() => sub.value === 'TRIAL'
   ? `${trialCleared.value} / ${TRIAL_STAGES.length}`
   : `${cleared.value} / ${chapters.length}`)
 const wearsRetreatBoots = computed(() => store.currentLoadout.bootsId === trialPartId('qianying_mixing', 'BOOTS'))
-store.mockSettlePatrol()
-const patrolTimer = setInterval(() => store.mockSettlePatrol(), 30_000)
-onScopeDispose(() => clearInterval(patrolTimer))
+const clock = useGameClock()
+watch([() => clock.minuteTick, () => clock.isPageVisible], ([, visible]) => {
+  if (visible) store.mockSettlePatrol(clock.now)
+}, { immediate: true })
 
 const currentArc = computed(() => chapters.find(({ id }) => id === store.player.maxChapterId)?.chapter
   ?? chapters[chapters.length - 1].chapter)
@@ -73,14 +76,14 @@ const CN_NUM = ['一', '二', '三', '四', '五']
 const arcCleared = (nodes: typeof chapters) => nodes.filter((n) => stateOf(n.id) === 'CLEARED').length
 /** 别家的家事不列出来 */
 const sideQuests = (nodeId: number) => ADVENTURES.filter((a) => a.afterNodeId === nodeId && openToOrigin(a, store.player))
-const onlineSideQuests = (nodeId: number) => sideQuests(nodeId).filter((a) => a.id !== STORY_SNAKE_ADVENTURE.id)
+const visibleSideQuests = (nodeId: number) => sideQuests(nodeId).filter((a) => !mode.inlineAdventures || a.id !== STORY_SNAKE_ADVENTURE.id)
 const firstClearRewards = Object.fromEntries(chapters.map((ch) => {
   const reward = storyFirstClearReward(ch)
   return [ch.id, { ...reward, drops: getChapterDrops({ dropItemIds: reward.items, dropSkillIds: reward.skills }) }]
 }))
 function advState(a: AdventureConfig): 'DONE' | 'PENDING' | 'OPEN' | 'LOCKED' {
   if (store.resolvedAdventureIds.includes(a.id)) return 'DONE'
-  if (!IS_MOCK_MODE) return !a.afterNodeId || store.claimedNodeIds.includes(a.afterNodeId) ? 'OPEN' : 'LOCKED'
+  if (!mode.isLocal) return !a.afterNodeId || store.claimedNodeIds.includes(a.afterNodeId) ? 'OPEN' : 'LOCKED'
   if (store.pendingAdventure?.templateId === a.id || store.adventureQueue.includes(a.id)) return 'PENDING'
   return a.afterNodeId < store.player.maxChapterId ? 'OPEN' : 'LOCKED'
 }
@@ -104,7 +107,7 @@ function advState(a: AdventureConfig): 'DONE' | 'PENDING' | 'OPEN' | 'LOCKED' {
 
       <template v-else-if="sub === 'STORY'">
         <nav class="grid shrink-0 grid-cols-5 gap-1.5" aria-label="射雕章回">
-          <button v-for="arc in storyGroups" :key="arc.chapter" class="workbench-entry !justify-center"
+          <button v-for="arc in storyGroups" :key="arc.chapter" class="workbench-entry justify-center"
             :aria-pressed="focusedArc.chapter === arc.chapter" @click="pickedArc = arc.chapter">
             <span class="font-brush text-xl text-gold sm:text-2xl">{{ CN_NUM[arc.chapter - 1] }}</span>
             <span class="min-w-0 text-xs">
@@ -187,36 +190,37 @@ function advState(a: AdventureConfig): 'DONE' | 'PENDING' | 'OPEN' | 'LOCKED' {
               </div>
 
               <!-- 该节点首通后解锁的支线 -->
-              <div v-if="IS_MOCK_MODE && sideQuests(ch.id).length" class="flex flex-wrap items-center gap-1.5 text-xs">
-                <span class="text-ink3">支线</span>
-                <span
-                  v-for="a in sideQuests(ch.id)" :key="a.id" class="chip"
-                  :class="{ 'chip-jade': advState(a) === 'DONE', 'chip-gold': advState(a) === 'PENDING' || advState(a) === 'OPEN' }"
-                  :title="{ DONE: '已了结', PENDING: '正等你在纪事卷轴中抉择', OPEN: '已开启，可在修行页「游历寻访机缘」触发', LOCKED: '通关本节点后开启' }[advState(a)]"
-                >
-                  {{ a.title }} · {{ { DONE: '已了结', PENDING: '待抉择', OPEN: '可触发', LOCKED: '未开启' }[advState(a)] }}
-                </span>
-              </div>
-
-              <details v-for="a in !IS_MOCK_MODE ? onlineSideQuests(ch.id) : []" :key="a.id" class="clear-both rounded border border-line p-2.5" :open="advState(a) === 'OPEN'">
-                <summary class="cursor-pointer text-sm font-semibold text-gold">
-                  {{ a.title }} · {{ { DONE: '已了结', PENDING: '待抉择', OPEN: '可触发', LOCKED: '首通后开启' }[advState(a)] }}
-                </summary>
-                <p class="hint mt-2">{{ a.location }} · {{ a.description }}</p>
-                <template v-if="advState(a) === 'OPEN'">
-                  <div v-for="option in a.choices" :key="option.key" class="mt-2 flex flex-wrap items-center gap-2">
-                    <button class="btn btn-sm" :disabled="store.onlineActionBusy || store.isBattlePlaying || !store.canChooseAdventure(option)"
-                      @click="store.resolveAdventureChoice(option.key, a.id)">{{ option.label }}</button>
-                    <span class="hint">{{ option.requirementText }}</span>
-                  </div>
+              <div v-if="visibleSideQuests(ch.id).length" :class="mode.inlineAdventures ? 'space-y-2' : 'flex flex-wrap items-center gap-1.5 text-xs'">
+                <span v-if="!mode.inlineAdventures" class="text-ink3">支线</span>
+                <template v-for="a in visibleSideQuests(ch.id)" :key="a.id">
+                  <details v-if="mode.inlineAdventures" class="clear-both rounded border border-line p-2.5" :open="advState(a) === 'OPEN'">
+                    <summary class="cursor-pointer text-sm font-semibold text-gold">
+                      {{ a.title }} · {{ { DONE: '已了结', PENDING: '待抉择', OPEN: '可触发', LOCKED: '首通后开启' }[advState(a)] }}
+                    </summary>
+                    <p class="hint mt-2">{{ a.location }} · {{ a.description }}</p>
+                    <template v-if="advState(a) === 'OPEN'">
+                      <div v-for="option in a.choices" :key="option.key" class="mt-2 flex flex-wrap items-center gap-2">
+                        <button class="btn btn-sm" :disabled="store.onlineActionBusy || store.isBattlePlaying || !store.canChooseAdventure(option)"
+                          @click="store.resolveAdventureChoice(option.key, a.id)">{{ option.label }}</button>
+                        <span class="hint">{{ option.requirementText }}</span>
+                      </div>
+                    </template>
+                    <p v-else-if="advState(a) === 'DONE'" class="hint mt-2">{{ a.choices.find((option) => option.key === store.player.storyAdventureChoices?.[a.id])?.label }}</p>
+                  </details>
+                  <span
+                    v-else class="chip"
+                    :class="{ 'chip-jade': advState(a) === 'DONE', 'chip-gold': advState(a) === 'PENDING' || advState(a) === 'OPEN' }"
+                    :title="{ DONE: '已了结', PENDING: '正等你在纪事卷轴中抉择', OPEN: '已开启，可在修行页「游历寻访机缘」触发', LOCKED: '通关本节点后开启' }[advState(a)]"
+                  >
+                    {{ a.title }} · {{ { DONE: '已了结', PENDING: '待抉择', OPEN: '可触发', LOCKED: '未开启' }[advState(a)] }}
+                  </span>
                 </template>
-                <p v-else-if="advState(a) === 'DONE'" class="hint mt-2">{{ a.choices.find((option) => option.key === store.player.storyAdventureChoices?.[a.id])?.label }}</p>
-              </details>
+              </div>
 
               <div class="clear-both flex flex-wrap items-center gap-2 border-t border-line pt-2.5">
               <button
                 class="btn w-full sm:w-auto sm:min-w-[6.5rem]"
-                :class="stateOf(ch.id) === 'CURRENT' ? 'btn-seal !min-h-[2.6rem]' : ''"
+                :class="stateOf(ch.id) === 'CURRENT' ? 'btn-seal min-h-[2.6rem]' : ''"
                 :disabled="stateOf(ch.id) === 'LOCKED' || store.onlineActionBusy || store.isBattlePlaying"
                 @click="store.challengeChapter(ch.id)"
               >
@@ -238,7 +242,7 @@ function advState(a: AdventureConfig): 'DONE' | 'PENDING' | 'OPEN' | 'LOCKED' {
 
       <!-- ============ 结义 + 后续长卷 ============ -->
       <div v-else class="view-scroll -mr-1 space-y-4 pr-1">
-        <article v-if="IS_MOCK_MODE" class="well relative overflow-hidden p-4">
+        <article v-if="mode.isLocal" class="well relative overflow-hidden p-4">
           <div class="pointer-events-none absolute inset-0 opacity-70" style="background: radial-gradient(ellipse at 85% 50%, var(--gold-soft), transparent 60%)" />
           <div class="relative grid items-center gap-4 md:grid-cols-[1fr_auto]">
             <div class="space-y-2">

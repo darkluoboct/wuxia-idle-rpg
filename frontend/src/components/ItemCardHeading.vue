@@ -9,7 +9,7 @@ defineEmits<{ close: [] }>()
 
 <template>
   <header class="item-card-heading" :class="tier && TIER_META[tier].cls">
-    <ItemIcon :item-id="icon" />
+    <ItemIcon :item-id="icon" size="full" />
     <div class="min-w-0 flex-1">
       <h3 class="font-brush text-2xl leading-tight" :class="tier ? 'tier-text' : 'text-gold'">{{ name }}<small v-if="stars"> +{{ stars }} 星</small></h3>
       <span v-if="tier" class="chip tier-chip">{{ TIER_META[tier].label }}</span>

@@ -2,7 +2,8 @@ import gearAtlas from '@/assets/gear-atlas.webp'
 import { ITEMS } from './gameData'
 
 const sheetUrls = import.meta.glob<string>('../assets/item-icons/*.webp', { eager: true, import: 'default', query: '?url' })
-const illustrations = import.meta.glob<string>('../assets/item-illustrations/*.webp', { eager: true, import: 'default', query: '?url' })
+const illustrations = import.meta.glob<string>('../assets/_optimized/item-illustrations/*.webp', { eager: true, import: 'default', query: '?url' })
+const thumbnails = import.meta.glob<string>('../assets/_optimized/item-thumbs/*.webp', { eager: true, import: 'default', query: '?url' })
 
 // 图集按从左到右、从上到下记录，null 表示空格。
 const sheets: Record<string, readonly (string | null)[]> = {
@@ -153,6 +154,8 @@ export function itemIcon(id: string) {
   return icons.get(ITEMS[id]?.baseItemId ?? id)
 }
 
-export function itemIllustration(id: string): string | undefined {
-  return illustrations[`../assets/item-illustrations/${ITEMS[id]?.baseItemId ?? id}.webp`]
+export function itemIllustration(id: string, size: 'thumb' | 'full' = 'thumb'): string | undefined {
+  const name = ITEMS[id]?.baseItemId ?? id
+  return size === 'full' ? illustrations[`../assets/_optimized/item-illustrations/${name}.webp`]
+    : thumbnails[`../assets/_optimized/item-thumbs/${name}.webp`]
 }

@@ -1,13 +1,14 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
-import { Bell, Check, ChevronDown, ChevronRight, Eye, EyeOff, Gamepad2, LoaderCircle, LockKeyhole, Maximize2, Settings, ShieldCheck, Swords, UserRound, UserRoundPlus, X } from 'lucide-vue-next'
+import { computed, defineAsyncComponent, ref, watch } from 'vue'
+import { Bell, Check, ChevronDown, ChevronRight, Eye, EyeOff, Gamepad2, LoaderCircle, LockKeyhole, Settings, ShieldCheck, Swords, UserRound, UserRoundPlus, X } from 'lucide-vue-next'
 import { useOnlineStore } from '@/stores/onlineStore'
-import { IS_MOCK_MODE } from '@/network/apiClient'
-import loginScene from '@/assets/login-jiaxing.webp'
+import { gameEntryUrl, IS_GUEST_BUILD, IS_MOCK_MODE, SEPARATE_GUEST_ENTRY } from '@/network/apiClient'
+import loginScene from '@/assets/_optimized/scenes/login-jiaxing.webp'
+import ScenePetals from './ScenePetals.vue'
+import { useInterfacePrefs } from '@/stores/interfacePrefs'
 
 const emit = defineEmits<{ guest: [] }>()
 const store = useOnlineStore()
-const gameWindow = window.frameElement?.id === 'game-frame' ? window.parent : window
 const mode = ref<'login' | 'register'>('login')
 let rememberedName = ''
 try { rememberedName = localStorage.getItem('wuxia.loginName') ?? '' } catch { /* 存储不可用时仍可登录。 */ }
@@ -21,9 +22,10 @@ const formError = ref('')
 const busy = computed(() => submitting.value || store.authBusy)
 const errorMessage = computed(() => formError.value || store.authError)
 const modal = ref<HTMLDialogElement>()
-const modalKind = ref<'settings' | 'notice' | 'server'>('notice')
-const sceneMotion = ref(true)
-const settingsError = ref('')
+const modalKind = ref<'notice' | 'server'>('notice')
+const prefs = useInterfacePrefs()
+const settingsOpen = ref(false)
+const SceneSettingsDialog = defineAsyncComponent(() => import('./SceneSettingsDialog.vue'))
 
 watch(rememberName, (remember) => {
   if (!remember) {
@@ -59,9 +61,9 @@ async function submit() {
     confirmPassword.value = ''
     // 试玩入口完成认证后重新载入联机客户端，后续操作使用服务端存档。
     if (IS_MOCK_MODE) {
-      const url = new URL(gameWindow.location.href)
+      const url = IS_GUEST_BUILD ? gameEntryUrl('') : new URL(window.location.href)
       url.searchParams.set('mode', 'online')
-      gameWindow.location.replace(url)
+      window.location.replace(url)
     }
   } finally {
     submitting.value = false
@@ -71,29 +73,21 @@ async function submit() {
 function enterGuest() {
   if (IS_MOCK_MODE) emit('guest')
   else {
-    const url = new URL(gameWindow.location.href)
+    const url = SEPARATE_GUEST_ENTRY ? gameEntryUrl('guest/') : new URL(window.location.href)
     url.searchParams.set('mode', 'guest')
-    gameWindow.location.assign(url)
+    window.location.assign(url)
   }
 }
 
 function openModal(kind: typeof modalKind.value) {
   modalKind.value = kind
-  settingsError.value = ''
   modal.value?.showModal()
 }
 
-async function toggleFullscreen() {
-  try {
-    const gameDocument = gameWindow.document
-    if (gameDocument.fullscreenElement) await gameDocument.exitFullscreen()
-    else await gameDocument.documentElement.requestFullscreen()
-  } catch { settingsError.value = '当前窗口不支持全屏显示' }
-}
 </script>
 
 <template>
-  <main class="login-scene" :class="{ 'login-scene-still': !sceneMotion }" aria-label="登录江湖">
+  <main class="login-scene" :class="{ 'login-scene-still': !prefs.sceneMotion }" aria-label="登录江湖">
     <img class="login-landscape" :src="loginScene" alt="晨光中的嘉兴南湖，一位戴笠旅人沿石桥走向烟雨楼" fetchpriority="high" />
     <div class="login-vignette" aria-hidden="true" />
     <header class="login-header">
@@ -102,7 +96,7 @@ async function toggleFullscreen() {
         <p><span aria-hidden="true" />问 道 武 林<span aria-hidden="true" /></p>
       </div>
       <nav class="login-tools" aria-label="登录工具">
-        <button aria-label="设置" @click="openModal('settings')"><Settings aria-hidden="true" /><span>设置</span></button>
+        <button aria-label="设置" aria-haspopup="dialog" @click="settingsOpen = true"><Settings aria-hidden="true" /><span>设置</span></button>
         <button aria-label="江湖公告" @click="openModal('notice')"><Bell aria-hidden="true" /><span>江湖公告</span></button>
       </nav>
     </header>
@@ -131,17 +125,17 @@ async function toggleFullscreen() {
       <div class="login-panel-flourish" aria-hidden="true"><span />◆<span /></div>
     </section>
 
-    <div class="login-petals" aria-hidden="true"><i v-for="n in 7" :key="n" :style="{ '--petal': n }" /></div>
+    <ScenePetals v-if="prefs.sceneMotion" variant="login" />
     <footer class="login-footer"><span>金庸群侠 · 问道武林</span><span>散人启程<span class="footer-divider">／</span>三人同行<span class="footer-divider">／</span>文字演武</span></footer>
     <dialog ref="modal" class="login-dialog" aria-labelledby="login-dialog-title" @click.self="modal?.close()">
       <div class="login-dialog-content">
         <button class="login-dialog-close" aria-label="关闭弹窗" @click="modal?.close()"><X /></button>
-        <h2 id="login-dialog-title" class="font-brush">{{ { settings: '界面设置', notice: '江湖公告', server: '江湖区服' }[modalKind] }}</h2>
-        <template v-if="modalKind === 'settings'"><label class="login-setting"><span>飘花与场景动态</span><input v-model="sceneMotion" type="checkbox" /></label><button class="fullscreen-setting" @click="toggleFullscreen"><Maximize2 aria-hidden="true" />切换全屏</button><p v-if="settingsError" class="login-error" role="status">{{ settingsError }}</p></template>
-        <div v-else-if="modalKind === 'notice'" class="login-notice"><span class="notice-kicker">第一卷 · 射雕英雄传</span><h3 class="font-brush">江湖始于嘉兴烟雨</h3><p>从无门无派的散人出发，沿射雕主线历练，结识郭靖、黄蓉等江湖同道。</p><ul><li>打坐吐纳，积累修为，冲穴破境。</li><li>一位主角、两位伙伴，结伴文字演武。</li><li>联机可同图聊天、双人共修、三人结义。</li></ul><button class="notice-confirm" @click="modal?.close()">知晓，启程<ChevronRight aria-hidden="true" /></button></div>
+        <h2 id="login-dialog-title" class="font-brush">{{ { notice: '江湖公告', server: '江湖区服' }[modalKind] }}</h2>
+        <div v-if="modalKind === 'notice'" class="login-notice"><span class="notice-kicker">第一卷 · 射雕英雄传</span><h3 class="font-brush">江湖始于嘉兴烟雨</h3><p>从无门无派的散人出发，沿射雕主线历练，结识郭靖、黄蓉等江湖同道。</p><ul><li>打坐吐纳，积累修为，冲穴破境。</li><li>一位主角、两位伙伴，结伴文字演武。</li><li>联机可同图聊天、双人共修、三人结义。</li></ul><button class="notice-confirm" @click="modal?.close()">知晓，启程<ChevronRight aria-hidden="true" /></button></div>
         <div v-else class="login-server-list"><p>当前开放区服</p><button @click="modal?.close()"><i class="login-server-dot" /><span>嘉兴烟雨 · 江湖在线<small>第一卷 · 射雕英雄传</small></span><Check aria-hidden="true" /></button></div>
       </div>
     </dialog>
+    <SceneSettingsDialog v-if="settingsOpen" open @close="settingsOpen = false" />
   </main>
 </template>
 
@@ -216,8 +210,6 @@ async function toggleFullscreen() {
 .login-panel-flourish { display: flex; align-items: center; justify-content: center; gap: .7rem; color: #ac8b51; font-size: .55rem; }
 .login-panel-flourish > span { width: 25%; height: 1px; background: linear-gradient(90deg, transparent, #94734480); }
 .login-panel-flourish > span:last-child { rotate: 180deg; }
-.login-petals { position: absolute; z-index: 3; inset: 0; overflow: hidden; pointer-events: none; }
-.login-petals > i { position: absolute; top: -3%; left: calc(var(--petal) * 13%); width: calc(6px + var(--petal) * .6px); height: 6px; border-radius: 90% 10% 80% 20%; background: #f4b8cb; opacity: 0; animation: login-petal-fall calc(13s + var(--petal) * 1.2s) calc(var(--petal) * -3s) linear infinite; }
 .login-footer { position: absolute; z-index: 2; left: 2rem; right: 2rem; bottom: .8rem; display: flex; justify-content: space-between; gap: 1rem; color: #d6d7cd; font-size: .75rem; letter-spacing: .14em; text-shadow: 0 1px 4px #14252a; }
 .footer-divider { padding-inline: .65rem; color: #d5b97c; }
 .login-dialog { width: min(27rem, calc(100vw - 2rem)); max-height: calc(100dvh - 2rem); overflow: auto; padding: 0; margin: auto; border: 1px solid #b99a61; border-radius: 4px 16px; background: url('../assets/cloud-etch.svg') right bottom / 18rem auto no-repeat, #20272d; color: #e7dcc5; box-shadow: inset 0 0 0 4px #20272d, inset 0 0 0 5px #b99a6130, 0 20px 80px #0009; }
@@ -226,10 +218,6 @@ async function toggleFullscreen() {
 .login-dialog h2 { margin: 0 0 1.2rem; font-size: 2rem; color: var(--login-pale); }
 .login-dialog-close { position: absolute; top: .7rem; right: .7rem; display: grid; place-items: center; padding: .4rem; color: var(--login-gold); }
 .login-dialog-close > svg { width: 1.15rem; height: 1.15rem; }
-.login-setting, .fullscreen-setting { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding-block: .75rem; font-size: .9rem; }
-.login-setting input { width: 1.1rem; height: 1.1rem; accent-color: #c3a365; }
-.fullscreen-setting { justify-content: flex-start; width: 100%; margin-top: .5rem; border-top: 1px solid #a58a5840; color: #e1cba2; }
-.fullscreen-setting svg { width: 1rem; height: 1rem; }
 .login-notice { font-size: .9rem; line-height: 1.9; color: #c0b7a5; }
 .notice-kicker { font-size: .75rem; letter-spacing: .15em; color: #cab17c; }
 .login-notice h3 { margin: .45rem 0; color: #ead9b4; font-size: 1.6rem; }
@@ -246,8 +234,6 @@ async function toggleFullscreen() {
 @keyframes login-spin { to { rotate: 360deg; } }
 @keyframes login-landscape-in { from { opacity: .5; scale: 1.025; } to { opacity: 1; scale: 1; } }
 @keyframes login-panel-in { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
-@keyframes login-petal-fall { 0% { opacity: 0; transform: translate(0, 0) rotate(0); } 10% { opacity: .8; } 90% { opacity: .6; } 100% { opacity: 0; transform: translate(calc(120px + var(--petal) * 18px), 103vh) rotate(360deg); } }
-.login-scene-still .login-petals { display: none; }
 .login-scene-still .login-landscape, .login-scene-still .login-brand, .login-scene-still .login-location, .login-scene-still .login-panel { animation: none; }
 @media (min-width: 1900px) { .login-panel { right: 8%; } .login-brand { padding-inline: 1.5rem; } }
 @media (max-height: 800px) and (min-width: 761px) { .login-panel { padding: 1.2rem 1.65rem .9rem; max-height: calc(100dvh - 6rem); translate: 0 -44%; } .login-panel-heading { margin-bottom: .9rem; } .login-panel-heading h2 { font-size: 2.2rem; } .login-heading-rule { margin-top: .25rem; } .login-fields { gap: .7rem; } .login-field, .login-server { min-height: 3rem; } .login-message { min-height: 2.4rem; } .login-primary { min-height: 3.8rem; font-size: 2.2rem; margin-bottom: 1.1rem; } .guest-note { margin-top: .6rem; } .login-location { bottom: 4rem; } }
@@ -303,5 +289,5 @@ async function toggleFullscreen() {
   .login-footer > span:first-child { display: none; }
 }
 @media (max-height: 620px) and (min-width: 761px) { .login-scene { overflow-y: auto; min-height: 0; } .login-panel { position: relative; top: auto; right: auto; margin: 5rem 6% 2rem auto; translate: none; max-height: none; } }
-@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } .login-petals { display: none; } }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 </style>

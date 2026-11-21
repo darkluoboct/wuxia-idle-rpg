@@ -1,8 +1,17 @@
 import type { ChatSendDTO, WsServerEvent } from './protocol'
 
 const entryMode = typeof window === 'undefined' ? null : new URLSearchParams(window.location.search).get('mode')
-export const IS_GUEST_ENTRY = entryMode === 'guest'
-export const IS_MOCK_MODE = IS_GUEST_ENTRY || (entryMode !== 'online' && import.meta.env.MODE !== 'online' && import.meta.env.VITE_USE_MOCK !== 'false')
+export const SEPARATE_GUEST_ENTRY = import.meta.env.PROD && import.meta.env.MODE === 'online'
+export const IS_GUEST_BUILD = import.meta.env.MODE === 'guest'
+export const IS_GUEST_ENTRY = entryMode === 'guest' || IS_GUEST_BUILD
+export const IS_MOCK_MODE = !SEPARATE_GUEST_ENTRY && (IS_GUEST_ENTRY
+  || (entryMode !== 'online' && import.meta.env.MODE !== 'online' && import.meta.env.VITE_USE_MOCK !== 'false'))
+
+export function gameEntryUrl(path: '' | 'guest/') {
+  const url = new URL(window.location.href)
+  url.pathname = new URL(path, new URL(import.meta.env.BASE_URL, url.origin)).pathname
+  return url
+}
 
 export class ApiError extends Error {
   constructor(readonly status: number, readonly code: string, message: string) {

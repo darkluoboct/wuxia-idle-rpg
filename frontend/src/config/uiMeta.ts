@@ -4,13 +4,15 @@ import type { PlayerAvatarId } from '@/network/protocol'
 import { EQUIP_SLOT_META, formatBattleStatBonuses, isWeaponForm, type BattleStatBonuses } from '../../../shared/combatMeta.ts'
 import type { TrialDropDTO } from '../../../shared/protocol.ts'
 import { trialAffixLabel, trialAffixQuality } from '../../../shared/trialStages.ts'
-import heroine from '@/assets/selection-heroine.webp'
-import hero from '@/assets/selection-hero.webp'
+import heroine from '@/assets/_optimized/avatars-full/selection-heroine.webp'
+import hero from '@/assets/_optimized/avatars-full/selection-hero.webp'
+import heroineThumb from '@/assets/_optimized/avatars/selection-heroine.webp'
+import heroThumb from '@/assets/_optimized/avatars/selection-hero.webp'
 export { EQUIP_SLOT_META, STANCE_META, stanceRelation } from '../../../shared/combatMeta.ts'
 
-export const PLAYER_AVATARS: Record<PlayerAvatarId, { label: string; image: string }> = {
-  hero_sword: { label: '女侠', image: heroine },
-  hero_sword_male: { label: '男侠', image: hero },
+export const PLAYER_AVATARS: Record<PlayerAvatarId, { label: string; image: string; thumbnail: string }> = {
+  hero_sword: { label: '女侠', image: heroine, thumbnail: heroineThumb },
+  hero_sword_male: { label: '男侠', image: hero, thumbnail: heroThumb },
 }
 
 /** 品质：五色阶 → 中文品名 / CSS 色阶类（见 style.css 的 .t-*） */

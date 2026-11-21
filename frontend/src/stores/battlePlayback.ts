@@ -1,4 +1,4 @@
-import { computed, onScopeDispose, ref } from 'vue'
+import { computed, onScopeDispose, ref, watch } from 'vue'
 import type { BattleEventDTO, BattleReportDTO, CombatUnitDTO, RichSegment } from '@/network/protocol'
 import { COMPANIONS, ITEMS, SKILLS } from '@/config/gameData'
 import { STANCE_META } from '@/config/uiMeta'
@@ -7,10 +7,11 @@ import { CHAPTER_ONE_TITLE } from '../../../shared/trialStages.ts'
 import { usePlayerStore } from './playerStore'
 import { storeToRefs } from 'pinia'
 import { useGameUiStore } from './gameUiStore'
+import { useInterfacePrefs } from './interfacePrefs'
 
 const DAMAGE_POPUP_LABELS: Partial<Record<string, string>> = { poison: '毒伤 ', bleed: '流血 ', reflect: '反伤 ', true: '真伤 ' }
 
-/** 战报每一步的间隔：只按一倍速播放，可以跳过回放直接看结果 */
+/** 一倍速时战报每一步的间隔 */
 export const BATTLE_STEP_MS = 920
 
 export function useBattlePlayback({ claimNodeFirstClear, onStoryNodeWon, playPendingDuel }: {
@@ -24,6 +25,7 @@ export function useBattlePlayback({ claimNodeFirstClear, onStoryNodeWon, playPen
   const uiStore = useGameUiStore()
   const { mobileDrawer } = storeToRefs(uiStore)
   const { appendLog, showToast } = uiStore
+  const prefs = useInterfacePrefs()
 
   // 战斗回放播放器状态与破屏书法招式/飘字状态
   const activeBattle = ref<BattleReportDTO | null>(null)
@@ -35,6 +37,7 @@ export function useBattlePlayback({ claimNodeFirstClear, onStoryNodeWon, playPen
   })
   let activeChapterId: number | null = null
   const battleEventCursor = ref(0)
+  const currentBattleEvent = computed(() => activeBattle.value?.events[battleEventCursor.value - 1])
   const isBattlePlaying = ref(false)
   const liveUnitStates = ref<Record<string, {
     hp: number; maxHp: number; rage: number; mp: number; maxMp: number; anim: 'NONE' | 'LUNGE_ALLY' | 'LUNGE_ENEMY' | 'HIT'
@@ -45,6 +48,15 @@ export function useBattlePlayback({ claimNodeFirstClear, onStoryNodeWon, playPen
   let battleOnWin: (() => void) | null = null
   let localBattle = false
   onScopeDispose(() => { if (battleTimer) clearTimeout(battleTimer) })
+  watch(() => prefs.battleSpeed, () => {
+    if (!isBattlePlaying.value || !battleTimer) return
+    clearTimeout(battleTimer)
+    queueBattleStep()
+  }, { flush: 'sync' })
+
+  function queueBattleStep() {
+    battleTimer = setTimeout(stepNextBattleEvent, Math.round(BATTLE_STEP_MS / prefs.battleSpeed))
+  }
 
   // ==================== 战斗播放器引擎 ====================
   const initialUnitState = (unit: CombatUnitDTO) => ({
@@ -188,7 +200,7 @@ export function useBattlePlayback({ claimNodeFirstClear, onStoryNodeWon, playPen
 
     applyBattleEvent(ev)
 
-    battleTimer = setTimeout(stepNextBattleEvent, BATTLE_STEP_MS)
+    queueBattleStep()
   }
 
   function skipBattleToEnd() {
@@ -297,6 +309,7 @@ export function useBattlePlayback({ claimNodeFirstClear, onStoryNodeWon, playPen
     closeBattleStage,
     battleOpponentEntry,
     battleEventCursor,
+    currentBattleEvent,
     battleUnits,
     liveUnitStates,
     slashBanner,

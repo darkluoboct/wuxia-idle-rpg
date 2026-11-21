@@ -1,12 +1,17 @@
 import { COMPANIONS } from './gameData'
 
-const files = import.meta.glob<string>('../assets/portraits/*.webp', {
+const files = import.meta.glob<string>('../assets/_optimized/portraits/*.webp', {
+  eager: true, import: 'default', query: '?url',
+})
+const thumbnails = import.meta.glob<string>('../assets/_optimized/portraits-thumb/*.webp', {
   eager: true, import: 'default', query: '?url',
 })
 
-export const CHARACTER_PORTRAITS: Partial<Record<string, string>> = Object.fromEntries(
-  Object.entries(files).map(([path, url]) => [path.slice(path.lastIndexOf('/') + 1, -5), url]),
-)
+function portraitsById(urls: Record<string, string>): Partial<Record<string, string>> {
+  return Object.fromEntries(Object.entries(urls).map(([path, url]) => [path.slice(path.lastIndexOf('/') + 1, -5), url]))
+}
+export const CHARACTER_PORTRAITS = portraitsById(files)
+export const CHARACTER_THUMBNAILS = portraitsById(thumbnails)
 
 const npcNames = {
   wangjike: ['忘机客'],
@@ -72,9 +77,10 @@ const idsByName = new Map([
   ['梁长老', 'gaibang_liang'],
 ])
 
-export function portraitByName(name: string) {
+export function portraitByName(name: string, size: 'thumb' | 'full' = 'full') {
+  const portraits = size === 'thumb' ? CHARACTER_THUMBNAILS : CHARACTER_PORTRAITS
   for (const segment of name.split('·').reverse()) {
     const id = idsByName.get(segment.split(/[（(]/u, 1)[0].trim())
-    if (id && CHARACTER_PORTRAITS[id]) return CHARACTER_PORTRAITS[id]
+    if (id && portraits[id]) return portraits[id]
   }
 }

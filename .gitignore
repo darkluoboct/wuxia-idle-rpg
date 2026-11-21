@@ -6,6 +6,7 @@ node_modules/
 dist/
 dist-ssr/
 *.tsbuildinfo
+frontend/src/assets/_optimized/
 
 # 本地测试产物
 output/

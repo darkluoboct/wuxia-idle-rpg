@@ -1,23 +1,25 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, ref, watch } from 'vue'
 import { useGameStore } from '@/stores/gameStore'
 import { IS_MOCK_MODE } from '@/network/apiClient'
-import { computeDerivedStats, mockDuelOpponent } from '@/network/mockEngine'
+import { mockDuelOpponent } from '@/network/mockEngine'
+import { computeDerivedStats } from '../../../shared/battle.ts'
 import { STANCE_META, TIER_META } from '@/config/uiMeta'
 import { hasGhostCostume } from '../../../shared/player.ts'
 import { jianghuHour } from '../../../shared/combatMeta.ts'
 import type { StanceType } from '@/network/protocol'
-import InnWorkbench from '@/components/InnWorkbench.vue'
-import AlchemyWorkbench from '@/components/AlchemyWorkbench.vue'
 import WorkbenchDialog from '@/components/WorkbenchDialog.vue'
 import InkFigure from '@/components/InkFigure.vue'
-import HuashanLadder from '@/components/HuashanLadder.vue'
 import GhostAuction from '@/components/GhostAuction.vue'
 import GhostStalls from '@/components/GhostStalls.vue'
-import EquipmentForge from '@/components/EquipmentForge.vue'
-import ArtifactBoard from '@/components/ArtifactBoard.vue'
-import ShopPanel from '@/components/ShopPanel.vue'
 import ItemIcon from '@/components/ItemIcon.vue'
+
+const InnWorkbench = defineAsyncComponent(() => import('@/components/InnWorkbench.vue'))
+const AlchemyWorkbench = defineAsyncComponent(() => import('@/components/AlchemyWorkbench.vue'))
+const HuashanLadder = defineAsyncComponent(() => import('@/components/HuashanLadder.vue'))
+const EquipmentForge = defineAsyncComponent(() => import('@/components/EquipmentForge.vue'))
+const ArtifactBoard = defineAsyncComponent(() => import('@/components/ArtifactBoard.vue'))
+const ShopPanel = defineAsyncComponent(() => import('@/components/ShopPanel.vue'))
 
 const store = useGameStore()
 const sub = computed({
@@ -26,10 +28,6 @@ const sub = computed({
 })
 const ghostMasked = ref(store.player.wearingMask)
 watch(() => store.player.wearingMask, (masked) => { ghostMasked.value = masked })
-function enterGhostMarket() {
-  sub.value = 'GHOST'
-  store.toggleTheme(true) // 子时鬼市：自动切入玄墨夜色
-}
 
 const canAfford = (cost: number) => store.player.silver >= cost
 const ghostArea = ref<'暗拍与旧物' | '蒙面摊市' | '鬼市铁匠炉'>('暗拍与旧物')
@@ -63,12 +61,12 @@ function fiveGreatsOpponent(p: (typeof fiveGreats)[0]) {
 </script>
 <template>
   <div class="view">
-    <section class="panel flex min-h-0 flex-1 flex-col gap-3 p-3 md:p-4">
+    <section class="panel flex min-h-0 flex-1 flex-col gap-3 p-3 md:p-4" :class="{ 'theme-midnight ghost-night-scope': sub === 'GHOST' }">
       <div class="flex shrink-0 flex-wrap items-center justify-between gap-2">
         <div class="tabs flex-1" role="tablist">
           <button v-if="store.marketTabOpen('INN')" class="tab" role="tab" :aria-selected="sub === 'INN'" @click="sub = 'INN'">醉仙客栈</button>
-          <button v-if="!IS_MOCK_MODE && store.marketTabOpen('SHOP')" class="tab" role="tab" :aria-selected="sub === 'SHOP'" @click="sub = 'SHOP'">江湖商行</button>
-          <button v-if="store.marketTabOpen('GHOST')" class="tab" role="tab" :aria-selected="sub === 'GHOST'" @click="enterGhostMarket()">子时鬼市</button>
+          <button v-if="store.modeCapabilities.hasShop && store.marketTabOpen('SHOP')" class="tab" role="tab" :aria-selected="sub === 'SHOP'" @click="sub = 'SHOP'">江湖商行</button>
+          <button v-if="store.marketTabOpen('GHOST')" class="tab" role="tab" :aria-selected="sub === 'GHOST'" @click="sub = 'GHOST'">子时鬼市</button>
           <button v-if="store.marketTabOpen('ALCHEMY')" class="tab" role="tab" :aria-selected="sub === 'ALCHEMY'" @click="sub = 'ALCHEMY'">百草丹房</button>
           <button v-if="store.marketTabOpen('HUASHAN')" class="tab" role="tab" :aria-selected="sub === 'HUASHAN'" @click="sub = 'HUASHAN'">华山论剑</button>
           <button v-if="store.marketTabOpen('ARTIFACTS')" class="tab" role="tab" :aria-selected="sub === 'ARTIFACTS'" @click="sub = 'ARTIFACTS'">兵器谱</button>

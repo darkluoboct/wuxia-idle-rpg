@@ -62,7 +62,7 @@ onMounted(() => void store.refreshShop())
           <span v-if="goods.endsAt" class="chip tabular-nums">{{ date.format(goods.endsAt) }} 下架</span>
         </div>
         <button
-          class="btn btn-seal mt-auto" :disabled="!!blocked(goods) || store.onlineActionBusy"
+          class="btn btn-seal mt-auto" :aria-busy="store.isSubmitting('/shop', { goodsId: goods.id })" :disabled="!!blocked(goods) || store.onlineActionBusy"
           :aria-label="`购买${goods.title}`" @click="purchase(goods)"
         >
           {{ blocked(goods) || `购买 · ${priceText(goods)}` }}

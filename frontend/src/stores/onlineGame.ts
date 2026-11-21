@@ -15,7 +15,8 @@ export function useOnlineGame(callbacks: OnlineGameCallbacks, prepare: () => Pro
   const authBusy = ref(false)
   const authError = ref('')
   const roomConnected = ref(false)
-  const actionBusy = ref(false)
+  const submitting = shallowRef<{ path: string; body: unknown } | null>(null)
+  const actionBusy = computed(() => submitting.value !== null)
   const retryAction = shallowRef<(() => Promise<void>) | null>(null)
   const revision = ref(0)
   let lastServerTime = 0
@@ -37,7 +38,7 @@ export function useOnlineGame(callbacks: OnlineGameCallbacks, prepare: () => Pro
     clearTimeout(reconnectTimer)
     apiClient.closeWs()
     roomConnected.value = false
-    actionBusy.value = false
+    submitting.value = null
     retryAction.value = null
     revision.value = 0
     lastServerTime = 0
@@ -171,7 +172,7 @@ export function useOnlineGame(callbacks: OnlineGameCallbacks, prepare: () => Pro
     const started = session
     async function execute() {
       if (started !== session || actionBusy.value || phase.value !== 'ready') return
-      actionBusy.value = true
+      submitting.value = { path, body }
       try {
         const response = await apiClient.request<GameAction<T>>(method, path, body, requestId)
         if (started !== session) return
@@ -193,12 +194,18 @@ export function useOnlineGame(callbacks: OnlineGameCallbacks, prepare: () => Pro
         }
       } finally {
         if (started === session) {
-          actionBusy.value = false
+          submitting.value = null
           if (announcedRevision > revision.value) void refresh()
         }
       }
     }
     return execute()
+  }
+
+  function isSubmitting(path: string, fields: Record<string, unknown> = {}) {
+    if (submitting.value?.path !== path) return false
+    const body = submitting.value.body as Record<string, unknown> | undefined
+    return Object.entries(fields).every(([key, value]) => body?.[key] === value)
   }
 
   onScopeDispose(() => {
@@ -209,7 +216,7 @@ export function useOnlineGame(callbacks: OnlineGameCallbacks, prepare: () => Pro
 
   return {
     phase, authBusy, authError, roomConnected, revision,
-    actionBusy, canRetry: computed(() => retryAction.value !== null),
+    actionBusy, isSubmitting, canRetry: computed(() => retryAction.value !== null),
     resume, signIn, create, deleteCharacter, logout, action, retry: () => retryAction.value?.(),
   }
 }

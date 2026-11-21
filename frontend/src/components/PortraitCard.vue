@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed } from 'vue'
 import type { PortraitStyle } from '@/config/typesHelper'
 import type { PlayerAvatarId } from '@/network/protocol'
 import { PLAYER_AVATARS } from '@/config/uiMeta'
@@ -48,16 +48,6 @@ const animClass = computed(() => {
   return ''
 })
 
-// 样式没变时浏览器不会重播动画，先摘掉动画、强制排版一次再还回去
-const animEl = ref<HTMLElement>()
-watch(() => props.animKey, () => {
-  const el = animEl.value
-  if (!el || !animClass.value) return
-  el.style.animation = 'none'
-  void el.offsetWidth
-  el.style.animation = ''
-}, { flush: 'post' })
-
 const popupClass = computed(() => {
   if (!props.popup) return ''
   if (props.popup.category === 'dodge') return 'text-jade text-lg'
@@ -79,7 +69,7 @@ const verticalName = computed(() => {
     class="relative select-none transition-opacity duration-300"
     :class="[
       bare ? '' : 'well',
-      !bare && isMain ? 'border-t-2 !border-t-[var(--gold)]' : '',
+      !bare && isMain ? 'border-t-2 border-t-[var(--gold)]' : '',
       rageFull ? 'anim-pulse-glow' : '',
       isDown ? 'opacity-45 grayscale' : '',
     ]"
@@ -111,7 +101,7 @@ const verticalName = computed(() => {
         </svg>
       </template>
 
-      <div ref="animEl" class="relative flex h-full items-end justify-center" :class="animClass">
+      <div :key="animClass ? animKey : 'idle'" class="relative flex h-full items-end justify-center" :class="animClass">
         <div class="h-full" :class="[isEnemy ? '[transform:scaleX(-1)]' : '', pose === 'sit' ? 'anim-breathe' : '']">
           <img v-if="avatarId" :src="PLAYER_AVATARS[avatarId].image" alt="" class="h-full w-auto object-contain" />
           <InkFigure v-else :style-type="styleType" :pose="pose ?? 'stand'" :name="name" :portrait-id="portraitId" />

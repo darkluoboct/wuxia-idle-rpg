@@ -1,10 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { Lock, X } from 'lucide-vue-next'
-import { MAPS, ONLINE_MAPS } from '@/config/gameData'
-import { IS_MOCK_MODE } from '@/network/apiClient'
 import { useGameStore } from '@/stores/gameStore'
 import type { MapZoneConfig } from '../../../shared/gameData.ts'
+import BaseModal from './ui/BaseModal.vue'
 
 /** 江湖地图（弹出）：九州方位的罗盘与城镇要地，点哪里就动身去哪里 */
 const store = useGameStore()
@@ -19,14 +18,14 @@ const COMPASS: { id: string; dir: Dir; cls: string }[] = [
   { id: 'heizhao_swamp', dir: '南', cls: 'col-start-2 row-start-3' },
   { id: 'taohua_isle', dir: '东南', cls: 'col-start-3 row-start-3' },
 ]
-const all = computed(() => IS_MOCK_MODE ? MAPS : ONLINE_MAPS)
+const all = computed(() => store.modeCapabilities.availableMaps)
 const view = (map: MapZoneConfig) => {
   const locked = !store.canTravelTo(map)
   const here = store.player.currentMapId === map.id
   return {
     map, locked, here,
     name: map.name.replace(/（.*?）/, ''),
-    hint: locked ? (IS_MOCK_MODE ? map.unlockHint : map.onlineUnlockHint) ?? '尚未开放' : '',
+    hint: locked ? (store.modeCapabilities.isLocal ? map.unlockHint : map.onlineUnlockHint) ?? '尚未开放' : '',
     seconds: locked || here ? 0 : Math.max(0, Math.ceil(store.mapTravelTime(map.id))),
   }
 }
@@ -43,17 +42,16 @@ function go(entry: ReturnType<typeof view>) {
   void store.travelTo(entry.map.id)
 }
 const close = () => { store.mapPickerOpen = false }
-const vFocus = { mounted: (el: HTMLElement) => el.focus() }
 </script>
 
 <template>
-  <div class="fixed inset-0 z-[65] flex items-center justify-center bg-[var(--scrim)] p-4 backdrop-blur-[2px]" @click.self="close">
-    <article class="panel anim-modal map-dialog" role="dialog" aria-modal="true" aria-labelledby="map-dialog-title" @keydown.esc="close">
+  <BaseModal open title="江湖地图" @close="close">
+    <article class="map-dialog">
       <header class="flex items-center gap-2">
         <span class="seal h-7 w-7 shrink-0 text-base">图</span>
-        <h4 id="map-dialog-title" class="font-brush text-2xl leading-tight text-gold">江湖地图</h4>
+        <h4 class="font-brush text-2xl leading-tight text-gold">江湖地图</h4>
         <span class="truncate text-sm text-ink3">现在在「{{ store.currentMap.name }}」</span>
-        <button v-focus class="wuxia-icon ml-auto" aria-label="关上地图" @click="close"><X /></button>
+        <button class="wuxia-icon ml-auto" aria-label="关上地图" autofocus @click="close"><X /></button>
       </header>
       <p v-if="store.journeyMap" class="text-sm text-gold">正在前往「{{ store.journeyMap.name }}」，抵达后才能再动身。</p>
 
@@ -65,7 +63,7 @@ const vFocus = { mounted: (el: HTMLElement) => el.focus() }
           </svg>
           <button
             v-for="spot in compass" :key="spot.map.id" class="map-spot" :class="[spot.cls, { 'is-here': spot.here, 'is-locked': spot.locked }]"
-            :disabled="spot.locked || spot.here || busy" :title="spot.hint || spot.map.ambientDesc"
+            :disabled="spot.locked || spot.here || busy"
             :aria-label="`${spot.dir}·${spot.name}${spot.here ? '（所在）' : spot.locked ? `（未开放：${spot.hint}）` : `，路程约 ${spot.seconds} 秒`}`"
             @click="go(spot)"
           >
@@ -74,7 +72,7 @@ const vFocus = { mounted: (el: HTMLElement) => el.focus() }
             <b>{{ spot.name }}</b>
             <small>{{ spot.map.baseQiPerHour.toLocaleString() }} 真气/时</small>
             <small v-if="spot.here" class="text-gold">所在</small>
-            <small v-else-if="spot.locked" class="flex items-center gap-0.5"><Lock :size="11" aria-hidden="true" />未开放</small>
+            <small v-else-if="spot.locked"><Lock :size="11" class="inline" aria-hidden="true" /> {{ spot.hint }}</small>
             <small v-else>路程约 {{ spot.seconds }} 秒</small>
           </button>
           <div class="relative z-10 col-start-2 row-start-2 flex items-center justify-center" aria-hidden="true">
@@ -94,7 +92,7 @@ const vFocus = { mounted: (el: HTMLElement) => el.focus() }
         <div class="grid grid-cols-2 gap-2">
           <button
             v-for="town in towns" :key="town.map.id" class="map-spot map-town" :class="{ 'is-here': town.here, 'is-locked': town.locked }"
-            :disabled="town.locked || town.here || busy" :title="town.hint || town.map.ambientDesc"
+            :disabled="town.locked || town.here || busy"
             :aria-label="`${town.name}${town.here ? '（所在）' : town.locked ? `（未开放：${town.hint}）` : `，路程约 ${town.seconds} 秒`}`"
             @click="go(town)"
           >
@@ -108,7 +106,7 @@ const vFocus = { mounted: (el: HTMLElement) => el.focus() }
         </div>
       </section>
 
-      <p class="text-xs text-ink3">「争」为纷争区：可劫镖、追捕通缉；其余为和平区，可共修。没开放的地方，悬停看开放条件。</p>
+      <p class="text-xs text-ink3">「争」标记纷争区，可劫镖、追捕通缉。和平区可共修。</p>
     </article>
-  </div>
+  </BaseModal>
 </template>

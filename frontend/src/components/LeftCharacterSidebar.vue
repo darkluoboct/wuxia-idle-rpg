@@ -3,9 +3,10 @@ import { computed } from 'vue'
 import { Backpack, ChevronRight, Sparkles, Swords, UsersRound } from 'lucide-vue-next'
 import { useGameStore } from '@/stores/gameStore'
 import { PLAYER_AVATARS } from '@/config/uiMeta'
-import { CHARACTER_PORTRAITS } from '@/config/characterPortraits'
+import { CHARACTER_THUMBNAILS } from '@/config/characterPortraits'
 import { CHAPTER_ONE_TITLE } from '../../../shared/trialStages.ts'
 import { ORIGINS } from '../../../shared/origins.ts'
+import InfoTip from './ui/InfoTip.vue'
 
 const store = useGameStore()
 const p = computed(() => store.player)
@@ -14,11 +15,11 @@ const origin = computed(() => p.value.origin && ORIGINS[p.value.origin])
 const qiPct = computed(() => Math.min(100, Math.round(p.value.qiExp / Math.max(1, p.value.nextLevelQi) * 100)))
 
 const party = computed(() => {
-  const members = [{ id: p.value.id, name: p.value.nickname, detail: `Lv.${p.value.level}`, role: '主角', image: PLAYER_AVATARS[p.value.avatarId].image }]
+  const members = [{ id: p.value.id, name: p.value.nickname, detail: `Lv.${p.value.level}`, role: '主角', image: PLAYER_AVATARS[p.value.avatarId].thumbnail }]
   const l = store.currentLoadout
   for (const [id, role] of [[l.leftCompanionId, '追击'], [l.rightCompanionId, '挡招']] as const) {
     const companion = id ? store.companionOf(id) : undefined
-    if (companion) members.push({ id: companion.id, name: companion.name, detail: companion.title, role, image: CHARACTER_PORTRAITS[companion.id] ?? '' })
+    if (companion) members.push({ id: companion.id, name: companion.name, detail: companion.title, role, image: CHARACTER_THUMBNAILS[companion.id] ?? '' })
   }
   return members.map((m) => {
     const unit = store.activeBattle?.units.find((u) => u.id === m.id)
@@ -38,14 +39,17 @@ function openArsenal(tab: typeof store.arsenalTab) {
   <div class="character-sheet">
     <header class="character-profile">
       <div class="hero-portrait">
-        <i class="art art-portrait art-player" :style="{ backgroundImage: `url(${PLAYER_AVATARS[p.avatarId].image})` }" aria-hidden="true" />
+        <i class="art art-portrait art-player" :style="{ backgroundImage: `url(${PLAYER_AVATARS[p.avatarId].thumbnail})` }" aria-hidden="true" />
         <span class="hero-seal font-brush">侠</span>
       </div>
       <div class="hero-details">
         <h2 class="font-brush">{{ p.nickname }}</h2>
         <p v-if="p.chapterOneChampion" class="text-xs text-gold">{{ CHAPTER_ONE_TITLE }}</p>
         <p v-if="title" class="text-xs text-gold">{{ title.titleName }}</p>
-        <p v-if="origin" class="text-xs text-ink3" :title="`家学：${origin.perk.text}`">{{ origin.name }} · {{ origin.house }}</p>
+        <div v-if="origin" class="flex items-center gap-1 text-xs text-ink3">
+          <span>{{ origin.name }} · {{ origin.house }}</span>
+          <InfoTip label="家学说明" :text="origin.perk.text" class="origin-tip" />
+        </div>
         <p class="hero-level"><b>Lv.{{ p.level }}</b><span>{{ store.currentRealm.name }}</span></p>
         <div class="hero-progress" :title="`真气 ${p.qiExp.toLocaleString()} / ${p.nextLevelQi.toLocaleString()}`">
           <div class="wuxia-meter qi-meter" role="progressbar" aria-label="角色升级进度" :aria-valuenow="qiPct"><i :style="{ width: `${qiPct}%` }" /></div>
@@ -92,3 +96,7 @@ function openArsenal(tab: typeof store.arsenalTab) {
     </footer>
   </div>
 </template>
+
+<style scoped>
+.origin-tip :deep(.tip-content) { inset: calc(100% + .3rem) auto auto -3rem; }
+</style>

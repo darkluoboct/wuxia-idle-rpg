@@ -1,11 +1,16 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { defineAsyncComponent, nextTick, ref, shallowRef, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useGameStore } from '@/stores/gameStore'
-import EquipmentPanel from '@/components/EquipmentPanel.vue'
-import ArsenalSkills from '@/components/ArsenalSkills.vue'
-import ArsenalCompanions from '@/components/ArsenalCompanions.vue'
-import ArsenalMeridians from '@/components/ArsenalMeridians.vue'
+import RoleEquipmentPanel from '@/components/RoleEquipmentPanel.vue'
+import BackpackPanel from '@/components/BackpackPanel.vue'
+import { useEquipmentWearer, type EquipmentPane } from '@/composables/useEquipmentWearer'
+import type { EquipSlotType } from '@/network/protocol'
+import '@/styles/equipment.css'
+
+const ArsenalSkills = defineAsyncComponent(() => import('@/components/ArsenalSkills.vue'))
+const ArsenalCompanions = defineAsyncComponent(() => import('@/components/ArsenalCompanions.vue'))
+const ArsenalMeridians = defineAsyncComponent(() => import('@/components/ArsenalMeridians.vue'))
 
 defineProps<{ mailItem?: string }>()
 const emit = defineEmits<{ backToMail: [] }>()
@@ -13,6 +18,35 @@ const store = useGameStore()
 const { arsenalTab: sub } = storeToRefs(store)
 
 const skillFromBag = ref<string>()
+const wearer = useEquipmentWearer()
+const rolePanel = ref<InstanceType<typeof RoleEquipmentPanel>>()
+const pane = ref<EquipmentPane | null>(null)
+const slotRequest = shallowRef<{ slot: EquipSlotType } | null>(null)
+
+function selectWearer(id: string | null) {
+  wearer.companionId.value = id
+  pane.value = null
+  slotRequest.value = null
+}
+watch(wearer.companionId, (id) => { if (id === null) { pane.value = null; slotRequest.value = null } }, { flush: 'sync' })
+
+function changeEquipment(slot: EquipSlotType) {
+  slotRequest.value = { slot }
+  sub.value = 'BAG'
+}
+
+async function returnToRole(next: EquipmentPane | null = slotRequest.value?.slot ?? null) {
+  slotRequest.value = null
+  pane.value = next
+  sub.value = 'EQUIP'
+  await nextTick()
+  rolePanel.value?.focusDetail()
+}
+
+function openPreparation() {
+  selectWearer(null)
+  void returnToRole('PREPARE')
+}
 
 function selectSub(tab: typeof sub.value) {
   skillFromBag.value = undefined
@@ -42,7 +76,10 @@ function openBagSkill(id: string) {
 
       <KeepAlive>
         <ArsenalSkills v-if="sub === 'SKILLS'" :from-bag="skillFromBag" @back-to-bag="selectSub('BAG')" />
-        <EquipmentPanel v-else-if="sub === 'EQUIP' || sub === 'BAG'" :initial-item="mailItem" @skill="openBagSkill" />
+        <RoleEquipmentPanel v-else-if="sub === 'EQUIP'" ref="rolePanel" v-model:pane="pane" :context="wearer"
+          @change-equipment="changeEquipment" @select-wearer="selectWearer" />
+        <BackpackPanel v-else-if="sub === 'BAG'" :context="wearer" :slot-request="slotRequest" :initial-item="mailItem"
+          @skill="openBagSkill" @back-to-role="returnToRole()" @prepare="openPreparation" @select-wearer="selectWearer" />
         <ArsenalCompanions v-else-if="sub === 'SQUAD'" />
         <ArsenalMeridians v-else-if="sub === 'MERIDIAN'" />
       </KeepAlive>

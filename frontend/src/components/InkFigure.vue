@@ -4,7 +4,7 @@
  */
 import { computed, useId } from 'vue'
 import type { PortraitStyle } from '@/config/typesHelper'
-import { CHARACTER_PORTRAITS, portraitByName } from '@/config/characterPortraits'
+import { CHARACTER_PORTRAITS, CHARACTER_THUMBNAILS, portraitByName } from '@/config/characterPortraits'
 
 type Hair = 'bun' | 'ribbons' | 'messy' | 'long' | 'cap' | 'beard' | 'bald' | 'wrap'
 type Item = 'sword' | 'staff' | 'spear' | 'gourd' | 'flute' | 'snake' | 'claw' | 'taiji' | 'beads' | 'crutch' | 'palm'
@@ -61,6 +61,7 @@ const props = withDefaults(
     pose?: 'stand' | 'sit'
     portraitId?: string
     name?: string
+    imageSize?: 'thumb' | 'full'
   }>(),
   { pose: 'stand' }
 )
@@ -68,8 +69,8 @@ const props = withDefaults(
 const uid = useId().replace(/[^a-zA-Z0-9]/g, '')
 const picture = computed(() => {
   if (props.pose === 'sit') return undefined
-  if (props.portraitId) return CHARACTER_PORTRAITS[props.portraitId]
-  return props.name ? portraitByName(props.name) : undefined
+  if (props.portraitId) return (props.imageSize === 'thumb' ? CHARACTER_THUMBNAILS : CHARACTER_PORTRAITS)[props.portraitId]
+  return props.name ? portraitByName(props.name, props.imageSize) : undefined
 })
 const look = computed(() => LOOKS[props.styleType] ?? LOOKS.hero_sword)
 const skin = '#dcc6a8'

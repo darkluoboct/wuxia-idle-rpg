@@ -44,8 +44,8 @@ onScopeDispose(() => { request++ })
     <p v-if="error" class="well p-3 text-sm text-cinnabar" role="status">{{ error }}</p>
     <p v-else-if="!entries.length" class="well p-3 text-sm text-ink3" role="status">{{ loading ? '正在查看悬赏' : '暂无有效通缉令。' }}</p>
 
-    <article v-for="entry in entries" :key="`${entry.targetId}-${entry.expiresAt}`" class="well space-y-2 !border-double !border-4 p-3"
-      :class="entry.targetId === store.bountyTargetId ? '!border-gold' : ''">
+    <article v-for="entry in entries" :key="`${entry.targetId}-${entry.expiresAt}`" class="well space-y-2 border-double border-4 p-3"
+      :class="entry.targetId === store.bountyTargetId ? 'border-gold' : ''">
       <div class="flex flex-wrap items-center gap-2">
         <span class="seal h-8 w-8 text-lg" aria-hidden="true">缉</span>
         <h4 class="font-brush text-xl">{{ entry.nickname }}</h4>

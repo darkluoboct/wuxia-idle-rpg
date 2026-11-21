@@ -5,7 +5,7 @@ import { IS_MOCK_MODE } from '@/network/apiClient'
 import { COMPANIONS, ONLINE_STORY_CHAPTERS, STORY_CHAPTERS } from '@/config/gameData'
 import { STANCE_META, stanceRelation } from '@/config/uiMeta'
 import type { LoadoutPresetDTO } from '@/network/protocol'
-import dusk from '@/assets/jiaxing-dusk.webp'
+import dusk from '@/assets/_optimized/scenes/jiaxing-dusk.webp'
 import InkFigure from './InkFigure.vue'
 import { ORIGINS } from '../../../shared/origins.ts'
 

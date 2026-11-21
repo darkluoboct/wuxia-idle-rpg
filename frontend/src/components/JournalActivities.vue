@@ -99,13 +99,13 @@ function enter() {
       <RaidRewardTray v-else-if="entry.id === 'raid'" />
       <footer class="journal-actions">
         <template v-if="entry.id === 'guide' && quest"><small>{{ store.ftueReady ? '目标已完成' : '进行中' }}</small>
-          <button v-if="store.ftueReady" class="btn btn-seal" :disabled="store.onlineActionBusy" @click="store.claimFtueReward()">领赏</button>
+          <button v-if="store.ftueReady" class="btn btn-seal" :aria-busy="store.isSubmitting('/ftue/claim')" :disabled="store.onlineActionBusy" @click="store.claimFtueReward()">领赏</button>
           <button v-else class="btn btn-gold" @click="enter">前往{{ quest.jumpSub === 'TRIAL' ? '历练' : '目标' }}</button>
         </template>
         <button v-else-if="entry.id === 'story'" class="btn btn-gold" @click="enter">前往主线</button>
         <button v-else-if="entry.id === 'adventure' && !store.pendingAdventure" class="btn btn-gold" @click="store.triggerRandomAdventure()">寻访奇遇</button>
         <template v-else-if="entry.id === 'daily'"><small>{{ store.daily.claimed ? '今日赏赐已领取' : `已办 ${done} / ${store.daily.tasks.length}` }}</small>
-          <button v-if="!store.daily.claimed" class="btn btn-seal" :disabled="done !== store.daily.tasks.length || store.onlineActionBusy" @click="store.claimDailyIngot()">领赏</button>
+          <button v-if="!store.daily.claimed" class="btn btn-seal" :aria-busy="store.isSubmitting('/daily/claim')" :disabled="done !== store.daily.tasks.length || store.onlineActionBusy" @click="store.claimDailyIngot()">领赏</button>
         </template>
         <template v-else-if="page === 'play'">
           <button v-if="targetStage" class="btn btn-sm mr-auto" @click="emit('back')">返回任务</button>

@@ -73,7 +73,7 @@ onUnmounted(() => clearInterval(timer))
       <p class="hint">{{ item.signatureEffect }}</p>
 
       <div class="flex items-center gap-2.5 text-sm">
-        <span class="seal h-8 w-8 text-lg" :class="art.state === 'HELD' ? '' : '!bg-transparent !text-ink3 !shadow-none !outline-ink3'">{{ art.state === 'HELD' ? '执' : art.state === 'VACANT' ? '守' : '空' }}</span>
+        <span class="seal h-8 w-8 text-lg" :class="art.state === 'HELD' ? '' : 'bg-transparent text-ink3 shadow-none outline-ink3'">{{ art.state === 'HELD' ? '执' : art.state === 'VACANT' ? '守' : '空' }}</span>
         <div class="min-w-0">
           <div class="truncate font-bold" :class="art.state === 'HELD' ? (mine ? 'text-gold' : '') : 'text-ink3'">
             {{ art.state === 'HELD' ? (mine ? `${art.holderNickname}（你）` : art.holderNickname) : art.state === 'VACANT' ? '传功长老代守' : '尚未出世' }}

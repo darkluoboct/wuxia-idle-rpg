@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useGameStore } from '@/stores/gameStore'
-import { TIER_META } from '@/config/uiMeta'
+import RichLogSegments from './RichLogSegments.vue'
 import type { GameLogEntry } from '@/network/protocol'
 
 const store = useGameStore()
@@ -18,7 +18,6 @@ const list = ref<HTMLOListElement>()
 watch(filter, () => { if (list.value) list.value.scrollTop = 0 })
 watch(() => store.activeBattle?.battleId, (id) => { if (id) filter.value = 'BATTLE' }, { immediate: true })
 const filteredLogs = computed(() => store.logs.filter((entry) => filter.value === 'ALL' || entry.channel === filter.value))
-const DMG_LABEL = { phys: '外功', qi: '内力', true: '真伤', poison: '毒伤', bleed: '流血', reflect: '反伤', heal: '疗伤' } as const
 </script>
 
 <template>
@@ -33,23 +32,7 @@ const DMG_LABEL = { phys: '外功', qi: '内力', true: '真伤', poison: '毒�
         <span v-if="entry.round" class="log-time" :title="`第 ${entry.round} 回合`">{{ entry.round }}回</span>
         <span v-else class="log-time" :title="entry.timeLabel">{{ entry.timeLabel.split('·')[0] }}</span>
         <p>
-          <template v-for="(seg, idx) in entry.segments" :key="idx">
-            <span v-if="seg.type === 'text'">{{ seg.text }}</span>
-            <span v-else-if="seg.type === 'tag'" class="log-tag" :data-tone="seg.tone">【{{ seg.text }}】</span>
-            <b v-else-if="seg.type === 'actor'" :class="seg.isAlly ? 'text-jade' : 'text-cinnabar'">「{{ seg.name }}」</b>
-            <button
-              v-else-if="seg.type === 'skill' || seg.type === 'item'"
-              class="log-item tier-text" :class="TIER_META[seg.tier].cls"
-              :title="`${TIER_META[seg.tier].label} · 点击查看详情`" @click="store.inspectById(seg.type, seg.id)"
-            >{{ seg.name }}</button>
-            <b
-              v-else-if="seg.type === 'damage'" class="tabular-nums"
-              :class="seg.category === 'heal' ? 'text-jade' : seg.isCrit || seg.category === 'qi' || seg.category === 'true' ? 'text-gold' : 'text-cinnabar'"
-            >
-              {{ seg.isCrit ? '暴击 ' : '' }}{{ seg.value === 0 ? '' : seg.category === 'heal' ? '+' : '-' }}{{ seg.value.toLocaleString() }}
-              <small>({{ DMG_LABEL[seg.category] }})</small>
-            </b>
-          </template>
+          <RichLogSegments :segments="entry.segments" @inspect="store.inspectById" />
         </p>
       </li>
     </ol>

@@ -1,7 +1,8 @@
 import { defineStore } from 'pinia'
-import { computed, onScopeDispose, ref, shallowRef } from 'vue'
+import { computed, ref, shallowRef, watch } from 'vue'
+import { useGameClock } from '@/composables/useGameClock'
 import type { PlayerSnapshot, RateBoostDTO } from '@/network/protocol'
-import { computeDerivedStats, simulateServerBattle as simulateBattle } from '@/network/mockEngine'
+import { computeDerivedStats, simulateServerBattle as simulateBattle } from '../../../shared/battle.ts'
 import {
   activeJianghuTitle,
   activeSetBonuses,
@@ -138,12 +139,16 @@ export const usePlayerStore = defineStore('wuxiaPlayer', () => {
     const invite = onlineState.value?.snapshot.coCultivationInvite
     return invite && invite.expiresAt > onlineTime.value ? invite : null
   })
-  const clock = setInterval(() => {
-    if (player.value.mapJourney || (!IS_MOCK_MODE && (activeCoCultivation.value || coCultivationInvite.value || player.value.escortDart))) {
-      onlineClock.value = Date.now()
-    }
-  }, 1_000)
-  onScopeDispose(() => clearInterval(clock))
+  const clock = useGameClock()
+  const needsCountdown = computed(() => !!player.value.mapJourney || (!IS_MOCK_MODE
+    && !!(activeCoCultivation.value || coCultivationInvite.value || player.value.escortDart)))
+  watch([needsCountdown, () => clock.isPageVisible], ([needsSeconds, visible], _, onCleanup) => {
+    if (!visible) return
+    onlineClock.value = Date.now()
+    if (!needsSeconds) return
+    const timer = setInterval(() => { onlineClock.value = Date.now() }, 1_000)
+    onCleanup(() => clearInterval(timer))
+  }, { immediate: true })
 
   const currentLoadout = computed(() => presets.value[player.value.activePresetIdx])
   const currentRealm = computed(() => REALMS.find((r) => r.tier === player.value.realmTier) ?? REALMS[0])
@@ -225,8 +230,9 @@ export const usePlayerStore = defineStore('wuxiaPlayer', () => {
   const mapArrivedAt = ref(Date.now())
   /** 给“故地相候”进度条用的粗粒度时钟 */
   const nowTick = ref(Date.now())
-  const worldClock = setInterval(() => (nowTick.value = Date.now()), 30_000)
-  onScopeDispose(() => clearInterval(worldClock))
+  watch([() => Math.floor(clock.now / 30_000), () => clock.isPageVisible], ([, visible]) => {
+    if (visible) nowTick.value = clock.now
+  })
   const worldTime = computed(() => {
     const live = onlineState.value
     return live ? live.snapshot.serverTime + Math.max(0, nowTick.value - live.receivedAt) : nowTick.value

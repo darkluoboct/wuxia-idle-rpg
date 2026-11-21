@@ -66,10 +66,12 @@ pnpm dev           # 本地试玩
 pnpm lint          # 检查前端、后端与共享代码
 pnpm test          # 数据、剧情、战斗、抽卡、存档与组件测试
 pnpm build         # 类型检查并构建本地试玩客户端
-pnpm build:online  # 类型检查并构建联机客户端
+pnpm build:online  # 类型检查并构建联机客户端与独立游客入口
 ```
 
-从登录页进入试玩并选择角色后，可以从 Lv.1 开始新游戏，或进入 Lv.32 演武模式。试玩进度自动保存到浏览器，开局时可继续最近游玩的角色。设置 `VITE_LOCAL_SAVE=false` 可关闭试玩存档。开发时使用 `?mode=new` 或 `?mode=demo` 可直接进入对应开局。
+从登录页进入试玩并选择角色后，可以从 Lv.1 开始新游戏，或进入 Lv.32 演武模式。试玩进度自动保存到浏览器，开局时可继续最近游玩的角色。设置 `VITE_LOCAL_SAVE=false` 可关闭试玩存档。开发时使用 `?mode=new` 或 `?mode=demo` 可直接进入对应开局。部署版保留 `dist/guest/` 子目录，旧的 `?mode=guest` 链接会跳转到该入口。
+
+首次开发或构建时会在 `frontend/src/assets/_optimized/` 生成 WebP 详情图和缩略图。更新原画后，下一次运行 Vite 会重新生成对应资源。
 
 在 `server/` 下运行 `pnpm check` 检查类型。设置 `GAME_TEST_DATABASE_URL` 指向专用 PostgreSQL 测试库后，运行 `pnpm test:game` 验证联机接口。仓库根目录可运行 `node scripts/validate_trial_data.ts` 校验 30 关历练配置。
 

@@ -1,5 +1,5 @@
 import { defineStore, storeToRefs } from 'pinia'
-import { onScopeDispose, ref } from 'vue'
+import { ref, watch } from 'vue'
 import type { GameLogEntry, RichSegment, TierColor } from '@/network/protocol'
 import { ITEMS, SKILLS } from '@/config/gameData'
 import { EQUIP_SLOT_META, itemBonusLabels, shichenIdxFromDate, SKILL_SLOT_META } from '@/config/uiMeta'
@@ -9,6 +9,8 @@ import { temperedItem } from '../../../shared/equipmentForge.ts'
 import { sectEquipmentSetOf } from '../../../shared/sectEquipment.ts'
 import { trialAffixLabel, trialAffixQuality, trialSetOf } from '../../../shared/trialStages.ts'
 import { usePlayerStore } from './playerStore'
+import { useInterfacePrefs } from './interfacePrefs'
+import { useGameClock } from '@/composables/useGameClock'
 
 export type MainTab = 'CULTIVATE' | 'JIANGHU' | 'ARSENAL' | 'SECT' | 'MARKET'
 
@@ -24,7 +26,7 @@ export const useGameUiStore = defineStore('wuxiaUi', () => {
   const { learnedSkills, player } = storeToRefs(playerStore)
 
   // 主题与响应式抽屉状态（默认启动采用燕云玄墨深色护眼主题）
-  const isMidnightTheme = ref(true)
+  const { isMidnightTheme } = storeToRefs(useInterfacePrefs())
   const activeTab = ref<MainTab>('CULTIVATE')
   const jianghuTab = ref<'STORY' | 'TRIAL' | 'MAPS' | 'RAID' | 'XIANGYANG' | 'BOUNTY'>('TRIAL')
   const bountyTargetId = ref<string>()
@@ -36,10 +38,8 @@ export const useGameUiStore = defineStore('wuxiaUi', () => {
   const mapPickerOpen = ref(false)
   // 时辰随真实时间流转（驱动场景昼夜与日志时间标签）
   const shichenIdx = ref(shichenIdxFromDate())
-  const shichenClock = setInterval(() => {
-    shichenIdx.value = shichenIdxFromDate()
-  }, 60_000)
-  onScopeDispose(() => clearInterval(shichenClock))
+  const clock = useGameClock()
+  watch(() => clock.minuteTick, () => { shichenIdx.value = shichenIdxFromDate(new Date(clock.now)) })
   const toasts = ref<{ id: number; text: string; tone: ToastTone }[]>([])
   let toastSeq = 0
 
@@ -115,9 +115,7 @@ export const useGameUiStore = defineStore('wuxiaUi', () => {
   }
 
   function toggleTheme(forceMidnight?: boolean) {
-    isMidnightTheme.value = forceMidnight !== undefined ? forceMidnight : !isMidnightTheme.value
-    // 无 DOM 环境（测试 / 服务端渲染）下只更新状态
-    if (typeof document !== 'undefined') document.documentElement.classList.toggle('theme-midnight', isMidnightTheme.value)
+    isMidnightTheme.value = forceMidnight ?? !isMidnightTheme.value
   }
 
   function openInspect(payload: InspectDetails) {

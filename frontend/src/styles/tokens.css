@@ -1,0 +1,106 @@
+/* ---------- 1. 令牌：默认=宋宣（浅色），.theme-midnight=玄墨（深色，默认启动） ---------- */
+@font-face {
+  font-family: "Wuxia Kai Fallback";
+  src: local("KaiTi"), local("STKaiti"), local("Kaiti SC");
+  size-adjust: 100%;
+  ascent-override: 95%;
+  descent-override: 25%;
+  line-gap-override: 0%;
+}
+
+:root {
+  --bg-0: #e3ddcf;
+  --bg-1: #f6f2e8;
+  --bg-2: #eee8da;
+  --bg-3: #e6dfcd;
+  --ink: #231f1a;
+  --ink-2: #4c453b;
+  --ink-3: #6b6356;
+  --line: rgba(60, 48, 30, 0.16);
+  --line-strong: rgba(60, 48, 30, 0.32);
+  --gold: #7f5c1a;
+  --gold-fill: #b58a3a;
+  --gold-soft: rgba(150, 108, 36, 0.13);
+  --gold-faint: rgba(150, 108, 36, 0.07);
+  --cinnabar: #a42d26;
+  --cinnabar-text: #a42d26;
+  --jade: #2d6b5b;
+  --tier-green: #3f7a4f;
+  --tier-blue: #2f6a96;
+  --tier-purple: #7a4a9a;
+  --tier-orange: #b2601a;
+  --tier-red: #b3261e;
+  --shadow: 0 0.5rem 1.5rem -0.75rem rgba(60, 40, 10, 0.35);
+  --scrim: rgba(30, 24, 14, 0.5);
+  --noise-op: 0.5;
+  --stone-a: #ddd5c2;
+  --stone-b: #aaa08a;
+  --font-body: "LXGW WenKai Screen", "LXGW WenKai", "Wuxia Kai Fallback", "Noto Serif SC", serif;
+  --font-brush: "Ma Shan Zheng", "Wuxia Kai Fallback", "Noto Serif SC", serif;
+  --frame-edge: oklch(56% .07 71);
+  --frame-light: oklch(82% .078 76);
+  --rail-gutter: clamp(.75rem, 1.25vw, 1.3rem);
+  --section-fill: oklch(91% .026 80);
+  --tab-active: oklch(79% .073 77);
+  --tab-ink: oklch(25% .031 70);
+  --stage-ink: oklch(94% .025 82);
+  --stage-muted: oklch(79% .04 81);
+  --stage-surface: oklch(20% .017 251);
+  --amber: oklch(78% .127 66);
+  --stage-border: oklch(81% .062 77 / .35);
+  --stage-panel: oklch(23% .015 252 / .91);
+  --z-header: 20;
+  --z-floating: 30;
+  --z-scrim: 35;
+  --z-drawer: 40;
+  --z-sheet: 45;
+  color-scheme: light;
+}
+
+.theme-midnight {
+  --bg-0: oklch(18% .014 251);
+  --bg-1: oklch(22% .013 254);
+  --bg-2: oklch(25% .014 254);
+  --bg-3: oklch(30% .015 254);
+  --ink: oklch(93% .026 83);
+  --ink-2: oklch(83% .03 80);
+  --ink-3: oklch(72% .026 77);
+  --line: rgba(222, 202, 160, 0.14);
+  --line-strong: rgba(222, 202, 160, 0.3);
+  --gold: oklch(84% .08 78);
+  --gold-fill: #c9a05a;
+  --gold-soft: rgba(214, 176, 106, 0.14);
+  --gold-faint: rgba(214, 176, 106, 0.06);
+  --cinnabar: #b83b32;
+  --cinnabar-text: #e8705f;
+  --jade: oklch(79% .115 138);
+  --tier-green: #67a877;
+  --tier-blue: #5f9ccb;
+  --tier-purple: #aa7fcf;
+  --tier-orange: #e8913f;
+  --tier-red: #ee5348;
+  --shadow: 0 0.75rem 2rem -0.75rem rgba(0, 0, 0, 0.8);
+  --scrim: rgba(0, 0, 0, 0.66);
+  --noise-op: 0.035;
+  --stone-a: #3a3f46;
+  --stone-b: #14171b;
+  --section-fill: oklch(29% .012 61);
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-bg0: var(--bg-0);
+  --color-panel: var(--bg-1);
+  --color-raised: var(--bg-2);
+  --color-hover: var(--bg-3);
+  --color-ink: var(--ink);
+  --color-ink2: var(--ink-2);
+  --color-ink3: var(--ink-3);
+  --color-line: var(--line);
+  --color-linestrong: var(--line-strong);
+  --color-gold: var(--gold);
+  --color-goldfill: var(--gold-fill);
+  --color-cinnabar: var(--cinnabar-text);
+  --color-seal: var(--cinnabar);
+  --color-jade: var(--jade);
+}
