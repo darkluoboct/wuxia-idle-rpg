@@ -95,6 +95,26 @@ function chooseCharacter() {
   choosingCharacter.value = true
 }
 
+/** 退出、换角色、回开局都先确认一次，免得误点；默认焦点在「取消」 */
+function confirmChooseCharacter() {
+  store.askConfirm({
+    title: '返回选择角色', body: '离开江湖，回到选择角色界面。已开始的挂机不会中断。',
+    confirmText: '返回选择角色', tone: 'gold', onConfirm: chooseCharacter,
+  })
+}
+function confirmLogout() {
+  store.askConfirm({
+    title: '退出登录', body: '退出当前账号，回到登录界面。已开始的挂机照常累计，最多攒 24 小时，下次登录再领取。',
+    confirmText: '退出登录', tone: 'gold', onConfirm: () => store.logout(),
+  })
+}
+function confirmBackToTitle() {
+  store.askConfirm({
+    title: '存档并返回开局', body: '保存当前进度，回到开局界面，之后点「继续」接着玩。',
+    confirmText: '存档并返回', tone: 'gold', onConfirm: () => store.backToTitle(),
+  })
+}
+
 function returnFromSelection() {
   if (hasEnteredJianghu.value && store.characterList.some((role) => role.id === store.player.id)) enterJianghu()
   else emit('back')
@@ -230,7 +250,7 @@ const TOAST_GLYPH = { gold: '喜', danger: '警', info: '讯' } as const
             <b class="sm:hidden">{{ compact(store.player.goldIngot) }}</b><b class="hidden sm:inline">{{ store.player.goldIngot.toLocaleString() }}</b>
           </span>
         </div>
-        <button v-if="IS_MOCK_MODE" class="wuxia-icon" aria-label="存档并返回开局" title="存档并返回开局" @click="store.backToTitle()"><House /></button>
+        <button v-if="IS_MOCK_MODE" class="wuxia-icon" aria-label="存档并返回开局" title="存档并返回开局" @click="confirmBackToTitle"><House /></button>
         <button
           class="wuxia-icon relative" :aria-label="store.unreadMail ? `江湖来信，${store.unreadMail} 封未读` : '江湖来信'" title="江湖来信"
           aria-haspopup="dialog" :disabled="inBattle" @click="openMail()"
@@ -248,8 +268,8 @@ const TOAST_GLYPH = { gold: '喜', danger: '警', info: '讯' } as const
           <b v-if="store.chatPrivateUnread" class="absolute -right-0.5 -top-0.5 min-w-4 rounded-full bg-[var(--cinnabar)] px-1 text-[0.75rem] leading-4 text-white tabular-nums">{{ store.chatPrivateUnread }}</b>
           <i v-else-if="store.chatPublicUnread" class="absolute right-0.5 top-0.5 h-2 w-2 rounded-full bg-[var(--cinnabar)]" aria-hidden="true" />
         </button>
-        <button class="wuxia-icon" aria-label="选择角色" title="选择角色" @click="chooseCharacter"><UserRound /></button>
-        <button v-if="!IS_MOCK_MODE" class="wuxia-icon" aria-label="退出登录" title="退出登录" :disabled="store.authBusy" @click="store.logout()"><LogOut /></button>
+        <button class="wuxia-icon" aria-label="选择角色" title="选择角色" @click="confirmChooseCharacter"><UserRound /></button>
+        <button v-if="!IS_MOCK_MODE" class="wuxia-icon" aria-label="退出登录" title="退出登录" :disabled="store.authBusy" @click="confirmLogout"><LogOut /></button>
         <button v-if="!arsenalWorkspace" class="wuxia-icon" :class="{ 'md:hidden': !wideWorkspace }" aria-label="查看角色" title="人物卷" aria-controls="character-rail" :aria-expanded="store.mobileDrawer === 'CHAR'" @click="toggleDrawer('CHAR')"><UserRound /></button>
         <button v-if="!arsenalWorkspace" class="wuxia-icon" :class="{ 'xl:hidden': !wideWorkspace }" aria-label="江湖卷" title="江湖卷" aria-controls="world-rail" :aria-expanded="store.mobileDrawer === 'WORLD'" @click="toggleDrawer('WORLD')"><Compass /></button>
         <button

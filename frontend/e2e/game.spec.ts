@@ -132,6 +132,10 @@ test('游客进入演武，切换五个页签，完成横版武库换装和升�
   await expect(worldRail).toBeVisible()
 
   await game.getByRole('button', { name: '存档并返回开局' }).click()
+  // 先弹确认，默认焦点在「取消」，免得误点
+  const leave = game.getByRole('alertdialog', { name: '存档并返回开局' })
+  await expect(leave.getByRole('button', { name: '取消' })).toBeFocused()
+  await leave.getByRole('button', { name: '存档并返回' }).click()
   await expect(game.getByRole('button', { name: '继续', exact: true })).toBeVisible()
   await page.goto('/', { waitUntil: 'domcontentloaded' })
   await game.getByRole('button', { name: '游客进入' }).click()
@@ -342,6 +346,7 @@ test('联机注册、创角、同图聊天、私聊、领取收益、换装读�
 
     // 删除角色：输入角色名与账号密码，删后回到建角
     await alice.game.getByRole('button', { name: '选择角色' }).click()
+    await alice.game.getByRole('alertdialog', { name: '返回选择角色' }).getByRole('button', { name: '返回选择角色' }).click()
     await alice.game.getByRole('button', { name: '删除角色' }).click()
     const confirm = alice.game.getByRole('button', { name: '确认删除' })
     await alice.game.getByLabel(/^输入角色名/).fill(alice.nickname)
