@@ -562,7 +562,7 @@ export interface CombatUnitDTO {
   weaponName?: string
 }
 
-/** 单步战斗事件（服务端一次算完下发，前端按 1x/2x 节奏逐帧演绎） */
+/** 服务端下发的单步战斗事件，供前端逐步播放战报 */
 export interface BattleEventDTO {
   round: number
   type: 'STANCE_CLASH' | 'SKILL_CAST' | 'ASSIST_ATTACK' | 'GUARD_BLOCK' | 'DODGE' | 'DOT_TICK' | 'BOSS_ENRAGE' | 'EFFECT'

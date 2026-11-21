@@ -31,7 +31,6 @@ import { damageAfterDefense } from '../../shared/combatMeta.ts'
 import { MEDICINES, SHAOSHI_RAID, SKILLS, VIP_SKILL_REWARDS } from '../../shared/gameData.ts'
 import { TRIAL_PATROL_HOURS, trialPartId, trialStageOf } from '../../shared/trialStages.ts'
 import { BATTLE_STEP_MS } from '@/stores/battlePlayback'
-import { useInterfacePrefs } from '@/stores/interfacePrefs'
 import { newStore } from './helpers'
 import { player, loadout, pomiaoSet, pomiaoPieces, flaskId, nanBei, enemy, agileEnemy, baseCompanion, fight, effectEvents, mainUnit, mainCast, equipped } from './battleFixtures'
 
@@ -1796,10 +1795,10 @@ describe('醉仙短打与荒山煞风的流血、中毒联动', () => {
   })
 })
 
-it('一倍速、二倍速与跳过回放得到同样的气血、反伤、怒气和战报', () => {
+it('逐步播放和跳过回放得到同样的气血、反伤、怒气和战报', () => {
   vi.useFakeTimers()
   try {
-    function replay(speed: 1 | 2 | 'skip') {
+    function replay(mode: 'play' | 'skip') {
       const store = newStore('DEMO')
       store.companionAffinity.yideng.recruited = true
       store.updateLoadout({ ...pomiaoPieces, ...nanBei, accId: flaskId, stance: 'TAICHI' })
@@ -1809,17 +1808,15 @@ it('一倍速、二倍速与跳过回放得到同样的气血、反伤、怒气�
       expect(healIndex).toBeGreaterThan(0)
       expect(report.events.some((event) => event.reflectDelta)).toBe(true)
       expect(report.events.some((event) => event.rageTargetSlot === 'ALLY_MAIN')).toBe(true)
-      if (speed === 'skip') {
+      if (mode === 'skip') {
         store.skipBattleToEnd()
       } else {
-        useInterfacePrefs().battleSpeed = speed
-        const delay = BATTLE_STEP_MS / speed
-        vi.advanceTimersByTime(delay - 1)
+        vi.advanceTimersByTime(BATTLE_STEP_MS - 1)
         expect(store.battleEventCursor).toBe(1)
-        vi.advanceTimersByTime((healIndex - 1) * delay + 1)
+        vi.advanceTimersByTime((healIndex - 1) * BATTLE_STEP_MS + 1)
         expect(store.currentBattleEvent).toEqual(report.events[healIndex])
         expect(store.floatingPopups.ALLY_MAIN).toMatchObject({ category: 'heal', text: `+${report.events[healIndex].hpDelta}` })
-        vi.advanceTimersByTime((report.events.length - healIndex) * delay)
+        vi.advanceTimersByTime((report.events.length - healIndex) * BATTLE_STEP_MS)
       }
       expect(store.isBattlePlaying).toBe(false)
       const result = {
@@ -1829,9 +1826,7 @@ it('一倍速、二倍速与跳过回放得到同样的气血、反伤、怒气�
       store.closeBattleStage()
       return result
     }
-    const normal = replay(1)
-    expect(replay(2)).toEqual(normal)
-    expect(replay('skip')).toEqual(normal)
+    expect(replay('skip')).toEqual(replay('play'))
   } finally {
     vi.useRealTimers()
   }

@@ -26,12 +26,6 @@ const { fullscreenError, toggleFullscreen } = useFullscreen()
       <label class="flex items-center justify-between gap-3">场景动态
         <input v-model="prefs.sceneMotion" class="h-5 w-5 accent-gold" type="checkbox" />
       </label>
-      <label class="flex items-center justify-between gap-3">战斗回放倍速
-        <select v-model="prefs.battleSpeed" class="field" aria-label="战斗回放倍速">
-          <option :value="1">1 倍速</option>
-          <option :value="2">2 倍速</option>
-        </select>
-      </label>
       <button class="btn w-full" type="button" @click="toggleFullscreen"><Maximize2 :size="16" aria-hidden="true" />切换全屏</button>
       <p v-if="fullscreenError" class="text-sm text-cinnabar" role="status">{{ fullscreenError }}</p>
     </div>

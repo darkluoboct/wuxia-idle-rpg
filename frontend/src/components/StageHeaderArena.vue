@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useGameStore } from '@/stores/gameStore'
-import { useInterfacePrefs } from '@/stores/interfacePrefs'
 import { COMPANIONS, COOP_RAIDS, SKILLS } from '@/config/gameData'
 import { TIER_META } from '@/config/uiMeta'
 import PortraitCard from './PortraitCard.vue'
@@ -10,7 +9,6 @@ import ItemIcon from './ItemIcon.vue'
 import RichLogSegments from './RichLogSegments.vue'
 
 const store = useGameStore()
-const prefs = useInterfacePrefs()
 
 const SLOT_ORDER = ['LEFT', 'MAIN', 'RIGHT', 'REAR']
 const DEMO_MIRRORS = new Set(['shaoshi_demo_qiao', 'shaoshi_demo_qingfeng'])
@@ -84,8 +82,6 @@ function inspectReward(id: string) {
         </div>
         <div class="flex flex-wrap items-center gap-1.5">
           <span class="text-xs tabular-nums text-[var(--stage-muted)]">第 {{ Math.max(1, store.currentBattleEvent?.round ?? 1) }} / {{ totalRounds }} 回合</span>
-          <button v-if="store.isBattlePlaying" class="btn btn-sm" type="button" :aria-label="`回放倍速 ${prefs.battleSpeed} 倍`"
-            @click="prefs.battleSpeed = prefs.battleSpeed === 1 ? 2 : 1">{{ prefs.battleSpeed }} 倍速</button>
           <button class="btn btn-sm xl:hidden" @click="store.mobileDrawer = 'WORLD'">战报</button>
           <button v-if="store.isBattlePlaying" class="btn btn-sm btn-gold" @click="store.skipBattleToEnd()">跳过回放</button>
           <button v-else class="btn btn-sm btn-seal" @click="store.closeBattleStage()">

@@ -8,7 +8,6 @@ export function readPreference(key: string) {
 export const useInterfacePrefs = defineStore('wuxiaInterface', () => {
   const isMidnightTheme = ref(readPreference('theme') !== 'paper')
   const sceneMotion = ref(readPreference('sceneMotion') !== 'off')
-  const battleSpeed = ref<1 | 2>(readPreference('battleSpeed') === '2' ? 2 : 1)
 
   function write(key: string, value: string) {
     try { localStorage.setItem(`wuxia.${key}`, value) } catch { /* 仍可在当前页面使用设置。 */ }
@@ -18,7 +17,6 @@ export const useInterfacePrefs = defineStore('wuxiaInterface', () => {
     write('theme', dark ? 'midnight' : 'paper')
   }, { flush: 'sync' })
   watch(sceneMotion, (moving) => write('sceneMotion', moving ? 'on' : 'off'), { flush: 'sync' })
-  watch(battleSpeed, (speed) => write('battleSpeed', String(speed)), { flush: 'sync' })
 
-  return { isMidnightTheme, sceneMotion, battleSpeed }
+  return { isMidnightTheme, sceneMotion }
 })
