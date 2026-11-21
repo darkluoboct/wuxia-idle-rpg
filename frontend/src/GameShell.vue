@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch, type Component } from 'vue'
-import { Compass, House, Landmark, LogOut, Mail, MessageCircle, Mountain, ScrollText, Settings, Store, Swords, UserRound } from 'lucide-vue-next'
+import { Compass, House, Landmark, LogOut, Mail, MessageCircle, Mountain, ScrollText, Settings, Store, Swords, UserRound, UsersRound } from 'lucide-vue-next'
 import { useGameStore, type MainTab } from '@/stores/gameStore'
 import { IS_MOCK_MODE } from '@/network/apiClient'
 import { TIER_META } from '@/config/uiMeta'
@@ -268,7 +268,7 @@ const TOAST_GLYPH = { gold: '喜', danger: '警', info: '讯' } as const
           <b v-if="store.chatPrivateUnread" class="absolute -right-0.5 -top-0.5 min-w-4 rounded-full bg-[var(--cinnabar)] px-1 text-[0.75rem] leading-4 text-white tabular-nums">{{ store.chatPrivateUnread }}</b>
           <i v-else-if="store.chatPublicUnread" class="absolute right-0.5 top-0.5 h-2 w-2 rounded-full bg-[var(--cinnabar)]" aria-hidden="true" />
         </button>
-        <button class="wuxia-icon" aria-label="选择角色" title="选择角色" @click="confirmChooseCharacter"><UserRound /></button>
+        <button class="wuxia-icon" aria-label="选择角色" title="选择角色" @click="confirmChooseCharacter"><UsersRound /></button>
         <button v-if="!IS_MOCK_MODE" class="wuxia-icon" aria-label="退出登录" title="退出登录" :disabled="store.authBusy" @click="confirmLogout"><LogOut /></button>
         <button v-if="!arsenalWorkspace" class="wuxia-icon" :class="{ 'md:hidden': !wideWorkspace }" aria-label="查看角色" title="人物卷" aria-controls="character-rail" :aria-expanded="store.mobileDrawer === 'CHAR'" @click="toggleDrawer('CHAR')"><UserRound /></button>
         <button v-if="!arsenalWorkspace" class="wuxia-icon" :class="{ 'xl:hidden': !wideWorkspace }" aria-label="江湖卷" title="江湖卷" aria-controls="world-rail" :aria-expanded="store.mobileDrawer === 'WORLD'" @click="toggleDrawer('WORLD')"><Compass /></button>
