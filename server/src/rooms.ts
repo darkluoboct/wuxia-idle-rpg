@@ -56,6 +56,8 @@ function publicPlayer(snapshot: PlayerSnapshot): RoomPlayerDTO {
   return {
     id: player.id,
     nickname: player.nickname,
+    avatarId: player.avatarId,
+    weaponName: ITEMS[loadouts[player.activePresetIdx - 1].weaponId ?? '']?.name,
     sectName: SECTS.find((sect) => sect.id === player.currentSectId)?.name ?? '逍遥散人',
     realmName: REALMS.find((realm) => realm.tier === player.realmTier)?.name ?? REALMS[0].name,
     level: player.level,

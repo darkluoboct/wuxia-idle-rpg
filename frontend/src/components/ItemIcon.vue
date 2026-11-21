@@ -5,11 +5,13 @@ import { itemIcon, itemIllustration } from '@/config/itemIcons'
 const props = defineProps<{ itemId?: string | null; glyph?: string }>()
 const illustration = computed(() => props.itemId ? itemIllustration(props.itemId) : undefined)
 const art = computed(() => props.itemId ? itemIcon(props.itemId) : undefined)
+const currencyArt: Record<string, string> = { silver: 'coin', qiExp: 'inner', ingot: 'ingot' }
 </script>
 
 <template>
   <span class="item-icon" :class="{ 'item-icon-standalone': illustration }" aria-hidden="true">
     <img v-if="illustration" class="item-icon-illustration" :src="illustration" alt="" loading="lazy" />
+    <i v-else-if="itemId && currencyArt[itemId]" class="art h-full w-full" :class="`art-${currencyArt[itemId]}`" />
     <i v-else-if="art" class="item-icon-art" :style="art" />
     <span v-else-if="glyph" class="font-brush">{{ glyph }}</span>
   </span>

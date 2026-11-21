@@ -318,8 +318,69 @@ button.chat-name:hover { text-decoration: underline; text-underline-offset: 2px;
 .wuxia-arsenal-workspace > .wuxia-rail { display: none; }
 .wuxia-arsenal-workspace > .wuxia-stage { overflow: hidden; padding-inline: .7rem; }
 .wuxia-arsenal-workspace .view { height: 100%; }
+.wuxia-layout.wuxia-wide-workspace { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
+.wuxia-wide-workspace > .wuxia-stage { overflow: hidden; padding-inline: .7rem; }
+.wuxia-wide-workspace > .wuxia-rail { position: fixed; z-index: 40; width: min(92vw, 24rem); }
+.wuxia-wide-workspace > .wuxia-rail[data-open="false"] { visibility: hidden; }
+.wuxia-wide-workspace > .character-rail[data-open="false"] { transform: translateX(-100%); }
+.wuxia-wide-workspace > .world-rail[data-open="false"] { transform: translateX(100%); }
+.wuxia-wide-workspace .view { height: 100%; }
+.wuxia-wide-workspace .view-scroll, .workbench-scroll { flex: 1 1 0%; min-height: 0; overflow: auto; }
+
+.workbench {
+  display: grid;
+  grid-template-columns: minmax(13rem, 23%) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  flex: 1 1 0%;
+  min-height: 0;
+  gap: .8rem;
+}
+.workbench-index, .workbench-detail {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+}
+.workbench-index { padding: .65rem; gap: .5rem; background: var(--bg-2); }
+.workbench-detail { background: var(--bg-1); }
+.workbench-detail > .workbench-scroll { padding: 1rem; }
+.workbench-entry {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  width: 100%;
+  padding: .55rem .5rem;
+  border: 1px solid transparent;
+  border-bottom-color: var(--line);
+  text-align: left;
+}
+.workbench-entry:hover { background: var(--gold-faint); }
+.workbench-entry[aria-pressed=true] { border-color: var(--gold); background: var(--gold-soft); }
+.workbench-entry:focus-visible { outline: 2px solid var(--gold); outline-offset: -2px; }
+.workbench-actions {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: .5rem;
+  padding: .65rem .9rem;
+  border-top: 1px solid var(--line);
+  background: var(--bg-2);
+}
+.workbench-toolbar { display: flex; flex: none; flex-wrap: wrap; align-items: center; gap: .5rem; }
+.workbench-toolbar > .tabs { flex: 1 1 auto; }
+.workbench-portrait { background: radial-gradient(ellipse at 50% 75%, var(--gold-soft), transparent 70%); }
+
 @media (max-width: 767px) {
   .wuxia-arsenal-workspace .view-scroll { flex: 1 1 0%; min-height: 0; overflow-y: auto; }
+  .wuxia-wide-workspace > .wuxia-stage { padding-inline: .3rem; }
+  .workbench { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, auto) minmax(0, 1fr); gap: .5rem; }
+  .workbench-index { max-height: max(6rem, 24dvh); padding: .4rem; }
+  .workbench-detail > .workbench-scroll { padding: .65rem; }
+  .workbench-actions { padding: .45rem; justify-content: flex-start; }
   .wuxia-header { grid-template-columns: minmax(0, 1fr) auto; height: 3.12rem; }
   .wuxia-navigation { display: none; }
   .wuxia-wordmark h1 { font-size: clamp(1.25rem, 5.5vw, 1.75rem); }

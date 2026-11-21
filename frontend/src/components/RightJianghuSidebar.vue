@@ -1,25 +1,18 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { ChevronRight, Circle, CircleCheck, Diamond, Store, Swords } from 'lucide-vue-next'
+import { storeToRefs } from 'pinia'
+import { ChevronRight, Store, Swords } from 'lucide-vue-next'
 import { useGameStore } from '@/stores/gameStore'
-import { COOP_RAIDS, ONLINE_STORY_CHAPTERS, STORY_CHAPTERS } from '@/config/gameData'
+import { COOP_RAIDS } from '@/config/gameData'
 import { IS_MOCK_MODE } from '@/network/apiClient'
 import RichLogStream from './RichLogStream.vue'
 import { featureRequirementText } from '../../../shared/features.ts'
 
 const store = useGameStore()
-/** 江湖卷四个栏目：任务与活动下挂江湖快报，系统日志单独一栏占满余下的高度 */
 const panes = [
-  { key: 'TASKS', label: '任务' }, { key: 'EVENTS', label: '活动' }, { key: 'SOCIAL', label: '附近' }, { key: 'LOGS', label: '日志' },
+  { key: 'SOCIAL', label: '附近' }, { key: 'EVENTS', label: '活动' }, { key: 'LOGS', label: '日志' },
 ] as const
-const pane = ref<(typeof panes)[number]['key']>(IS_MOCK_MODE ? 'TASKS' : 'SOCIAL')
-const chapters = IS_MOCK_MODE ? STORY_CHAPTERS : ONLINE_STORY_CHAPTERS
-const chapter = computed(() => chapters.find((ch) => ch.id === store.player.maxChapterId) ??
-  (IS_MOCK_MODE ? undefined : chapters.find((ch) => !store.claimedNodeIds.includes(ch.id))))
-const clearedChapters = computed(() => chapters.filter((ch) => IS_MOCK_MODE
-  ? ch.id < store.player.maxChapterId : store.claimedNodeIds.includes(ch.id)))
-const cleared = computed(() => clearedChapters.value.length)
-const lastCleared = computed(() => clearedChapters.value.at(-1))
+const { worldPane: pane } = storeToRefs(store)
 const news = computed(() => {
   const groups = new Map<string, string[]>()
   for (const full of store.marqueeBulletin.split('　　·　　')) {
@@ -42,10 +35,6 @@ watch(pane, (value) => { if (value === 'LOGS') unreadLogs.value = false })
 
 const mapsHint = computed(() => `${featureRequirementText('MAPS')}后开放`)
 
-function openStory() {
-  store.selectTab('JIANGHU')
-  store.jianghuTab = 'STORY'
-}
 
 /** 对方战力 / 我方战力，用于判断切磋、劫掠是否划算 */
 const myPower = computed(() => Math.max(1, store.derivedStats.combatPower))
@@ -119,46 +108,7 @@ const coCultivationTimeLeft = computed(() => {
       三人副本队伍 {{ store.raidLobby.team.members.length }} / 3 · 查看准备
     </button>
 
-    <div v-if="pane === 'TASKS'" class="world-tasks">
-      <button v-if="chapter" class="quest-row quest-main" @click="openStory">
-        <span class="quest-mark"><Diamond :size="18" aria-hidden="true" /></span>
-        <span class="quest-copy">
-          <strong><em>主线</em> {{ chapter.title }}</strong>
-          <small>第 {{ chapter.code }} 关 · 推荐 {{ chapter.recLevel }} 级</small>
-        </span>
-        <ChevronRight class="quest-arrow" aria-hidden="true" />
-      </button>
-
-      <details v-if="IS_MOCK_MODE && store.pendingAdventure" :key="store.pendingAdventure.id" class="quest-detail">
-        <summary class="quest-row quest-adventure">
-          <span class="quest-mark"><Circle :size="16" aria-hidden="true" /></span>
-          <span class="quest-copy">
-            <strong><em>奇遇</em> {{ store.pendingAdventure.title }}</strong>
-            <small>{{ store.pendingAdventure.location }} · 等你选择</small>
-          </span>
-          <ChevronRight class="quest-arrow" aria-hidden="true" />
-        </summary>
-        <div class="quest-options">
-          <p>{{ store.pendingAdventure.description }}</p>
-          <button v-for="opt in store.pendingAdventure.options" :key="opt.key" class="btn" :disabled="store.isBattlePlaying || !opt.canSelect" @click="store.resolveAdventure(opt.key)">
-            {{ opt.label }}<small v-if="opt.requirementText">{{ opt.requirementText }}</small>
-          </button>
-          <button class="quest-link" @click="store.triggerRandomAdventure()">换个奇遇</button>
-        </div>
-      </details>
-      <button v-else-if="IS_MOCK_MODE" class="quest-row quest-adventure" @click="store.triggerRandomAdventure()">
-        <span class="quest-mark"><Circle :size="16" aria-hidden="true" /></span>
-        <span class="quest-copy"><strong><em>奇遇</em> 寻找新奇遇</strong><small>游历江湖，看看会遇到什么</small></span>
-        <ChevronRight class="quest-arrow" aria-hidden="true" />
-      </button>
-
-      <div v-if="lastCleared" class="quest-row quest-done">
-        <span class="quest-mark"><CircleCheck :size="18" aria-hidden="true" /></span>
-        <span class="quest-copy"><strong><em>已通关</em> {{ lastCleared.title }}</strong><small>射雕主线已过 {{ cleared }} / {{ chapters.length }} 关</small></span>
-      </div>
-    </div>
-
-    <div v-else-if="pane === 'EVENTS'" class="world-tasks">
+    <div v-if="pane === 'EVENTS'" class="world-tasks">
       <p v-if="!store.featureOpen('RAID') && (!IS_MOCK_MODE || !store.mainTabOpen('MARKET'))" class="hint px-1">江湖上的活动会随剧情陆续开放。</p>
       <button v-if="!IS_MOCK_MODE && store.featureOpen('RAID')" class="quest-row quest-main" @click="store.openRaidLobby()">
         <span class="quest-mark"><Swords :size="18" aria-hidden="true" /></span>
@@ -301,7 +251,7 @@ const coCultivationTimeLeft = computed(() => {
       </ul>
     </div>
 
-    <template v-if="pane === 'TASKS' || pane === 'EVENTS'">
+    <template v-if="pane === 'EVENTS'">
       <section class="world-bulletins">
         <h2 class="rail-heading"><span>江湖快报</span></h2>
         <div class="news-list">

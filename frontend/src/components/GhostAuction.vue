@@ -2,6 +2,8 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useGameStore } from '@/stores/gameStore'
 import { TIER_META } from '@/config/uiMeta'
+import WorkbenchDialog from './WorkbenchDialog.vue'
+import ItemIcon from './ItemIcon.vue'
 import type { AuctionLotDTO } from '@/network/protocol'
 import { AUCTION_BID_STEP, AUCTION_DIVIDEND, auctionLotInfo, ownsAuctionLot } from '../../../shared/ghostAuction.ts'
 
@@ -68,19 +70,19 @@ onUnmounted(() => clearInterval(timer))
         <div class="flex items-center gap-2">
           <span class="seal h-8 w-8 text-lg">拍</span>
           <h4 class="font-brush text-xl leading-none">子时压轴暗拍</h4>
-        </div>
-        <p class="hint mt-1.5">
+          <WorkbenchDialog title="鬼市暗拍规则"><p>
           子时开拍，次日 21:00 落槌，每口加 {{ AUCTION_BID_STEP }} 元宝。出价填心理价，元宝按心理价先冻结；有人来压，鬼市按每口替你跟到心理价为止，不必守在落槌前。
           被人压过原数退还，落槌按成交价结算、多冻的退还；落槌前 5 分钟有人出价顺延 5 分钟。
           成交价的 {{ AUCTION_DIVIDEND.percent }}% 作红封，子时分给当日领过每日江湖事的侠客，每人至多 {{ AUCTION_DIVIDEND.maxShare }} 元宝。
-        </p>
+        </p></WorkbenchDialog>
+        </div>
       </div>
       <span class="chip shrink-0" :class="closed ? '' : 'chip-gold'">{{ closed ? `已于 ${time.format(lot.closesAt)} 落槌` : `距落槌 ${countdown}` }}</span>
     </div>
 
     <div class="space-y-1">
       <div class="flex flex-wrap items-center gap-2">
-        <b class="font-brush tier-text text-2xl leading-tight">{{ info.name }}</b>
+        <ItemIcon :item-id="lot.itemId" :glyph="info.kind === 'SKILL' ? '诀' : '器'" /><b class="font-brush tier-text text-2xl leading-tight">{{ info.name }}</b>
         <span class="chip tier-chip">{{ TIER_META[info.tier].label }}</span>
       </div>
       <p class="hint">{{ info.desc }}</p>

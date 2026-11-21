@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { ITEMS } from '@/config/gameData'
 import { EQUIP_SLOT_META, itemBonusLabels, TIER_META } from '@/config/uiMeta'
+import WorkbenchDialog from './WorkbenchDialog.vue'
 import ItemIcon from './ItemIcon.vue'
 import { useGameStore } from '@/stores/gameStore'
 import { formatBattleStatBonuses } from '../../../shared/combatMeta.ts'
@@ -32,6 +33,13 @@ const block = computed(() => selected.value && forgeBlockReason(store.player, se
 const salvageBlock = computed(() => selected.value && forgeBlockReason(store.player, selected.value,
   { action: 'salvage', itemId: selected.value.id }, store.worldTime, Object.values(store.presets)))
 
+const query = ref('')
+const matchingGear = computed(() => available.value.filter((item) => (item.name + EQUIP_SLOT_META[item.slot].label).includes(query.value.trim())))
+const beforeReforge = ref<{ id: string; primary: string; secondary: string }>()
+function forgeSelected() {
+  const before = { id: selectedId.value, primary: primary.value || '无', secondary: secondary.value || '无' }
+  return store.changeEquipmentForge(input.value, () => { beforeReforge.value = before })
+}
 function salvage() {
   const item = selected.value
   const materials = dismantled.value
@@ -56,7 +64,18 @@ function salvage() {
       </p>
       <p class="hint">每次巡历遭遇各得 1 份材料，分解闲置的凡品、良品装备也可获得。每星提升 10% 基础属性。</p>
     </template>
-    <label class="block space-y-1 text-sm">
+    <WorkbenchDialog v-if="reforge" title="选择重铸装备" :label="selected ? '选装 · ' + selected.name : '选择重铸装备'" wide v-slot="{ close }">
+      <input v-model="query" class="field w-full" type="search" aria-label="搜索装备名称或部位" placeholder="搜索装备名称或部位" />
+      <div class="grid gap-2 sm:grid-cols-3">
+        <button v-for="item in matchingGear" :key="item.id" class="workbench-entry" :aria-pressed="selectedId === item.id"
+          @click="selectedId = item.id; lock = ''; query = ''; close()">
+          <ItemIcon :item-id="item.id" :class="TIER_META[item.tier].cls" />
+          <span>{{ item.name }}<small class="block text-ink3">{{ EQUIP_SLOT_META[item.slot].label }} · {{ TIER_META[item.tier].label }}</small></span>
+        </button>
+      </div>
+      <p v-if="!matchingGear.length" class="hint">没有符合条件的装备。</p>
+    </WorkbenchDialog>
+    <label v-else class="block space-y-1 text-sm">
       <span>选择装备</span>
       <select v-model="selectedId" class="field w-full" @change="lock = ''">
         <option value="" disabled>选择一件已持有的装备</option>
@@ -67,20 +86,26 @@ function salvage() {
     </label>
     <template v-if="selected">
       <p class="hint flex items-center gap-2"><ItemIcon :item-id="selected.id" />{{ baseStats }}</p>
+      <div v-if="reforge && beforeReforge?.id === selected.id" class="grid grid-cols-2 gap-3 border-y border-line py-3 text-sm" aria-label="重铸词条对比">
+        <div><b>重铸前</b><p class="hint">主词条 · {{ beforeReforge.primary }}</p><p class="hint">副词条 · {{ beforeReforge.secondary }}</p></div>
+        <div><b class="text-gold">重铸后</b><p class="hint">主词条 · {{ primary || '无' }}</p><p class="hint">副词条 · {{ secondary || '无' }}</p></div>
+      </div>
+      <template v-else>
       <p v-if="primary" class="hint">主词条 · {{ primary }}</p>
       <p v-if="secondary" class="hint">副词条 · {{ secondary }}</p>
+      </template>
       <label v-if="reforge" class="block space-y-1 text-sm">
         <span>锁定词条</span>
         <select v-model="lock" class="field w-full">
           <option value="">不锁定</option>
-          <option value="primary" :disabled="!primary">保留主词条</option>
+          <option value="primary" :disabled="!store.player.equipmentAffixes?.[selected.id]">保留主词条</option>
           <option value="secondary" :disabled="!secondary">保留副词条</option>
         </select>
       </label>
       <p v-else-if="cost" class="hint">升至 {{ (state?.stars ?? 0) + 1 }} 星 · 成功率 {{ cost.rate }}% · {{ forgeMaterialLabel(cost.iron, cost.stones) }}</p>
       <p v-if="block" class="hint text-cinnabar">{{ block }}</p>
       <div class="flex flex-wrap gap-2">
-        <button class="btn btn-sm btn-gold" :disabled="!!block || store.onlineActionBusy" @click="store.changeEquipmentForge(input)">
+        <button class="btn btn-sm btn-gold" :disabled="!!block || store.onlineActionBusy" @click="forgeSelected">
           {{ reforge ? `重铸 · ${reforgeCost(!!lock)} 两纹银` : '淬炼升星' }}
         </button>
         <button v-if="!reforge && dismantled" class="btn btn-sm" :disabled="!!salvageBlock || store.onlineActionBusy" @click="salvage">

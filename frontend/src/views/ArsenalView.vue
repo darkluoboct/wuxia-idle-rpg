@@ -7,6 +7,8 @@ import ArsenalSkills from '@/components/ArsenalSkills.vue'
 import ArsenalCompanions from '@/components/ArsenalCompanions.vue'
 import ArsenalMeridians from '@/components/ArsenalMeridians.vue'
 
+defineProps<{ mailItem?: string }>()
+const emit = defineEmits<{ backToMail: [] }>()
 const store = useGameStore()
 const { arsenalTab: sub } = storeToRefs(store)
 
@@ -34,12 +36,13 @@ function openBagSkill(id: string) {
           <button v-if="store.arsenalTabOpen('SQUAD')" class="tab" role="tab" :aria-selected="sub === 'SQUAD'" @click="selectSub('SQUAD')">伙伴</button>
           <button class="tab" role="tab" :aria-selected="sub === 'MERIDIAN'" @click="selectSub('MERIDIAN')">经脉冲穴</button>
         </div>
+        <button v-if="sub === 'BAG' && mailItem" class="btn btn-sm" @click="emit('backToMail')">返回来信</button>
         <span v-if="sub === 'SKILLS' || sub === 'MERIDIAN'" class="text-xs tabular-nums text-jade font-brush">现有真气 {{ store.player.qiExp.toLocaleString() }}</span>
       </div>
 
       <KeepAlive>
         <ArsenalSkills v-if="sub === 'SKILLS'" :from-bag="skillFromBag" @back-to-bag="selectSub('BAG')" />
-        <EquipmentPanel v-else-if="sub === 'EQUIP' || sub === 'BAG'" @skill="openBagSkill" />
+        <EquipmentPanel v-else-if="sub === 'EQUIP' || sub === 'BAG'" :initial-item="mailItem" @skill="openBagSkill" />
         <ArsenalCompanions v-else-if="sub === 'SQUAD'" />
         <ArsenalMeridians v-else-if="sub === 'MERIDIAN'" />
       </KeepAlive>

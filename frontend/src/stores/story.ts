@@ -51,7 +51,6 @@ export function useStory({ cultivation, battle, actions }: {
   const { learnSkill, gainItem, recruitable, simulateServerBattle } = playerStore
   const { changeMockKarma } = cultivation
   const uiStore = useGameUiStore()
-  const { activeTab } = storeToRefs(uiStore)
   const { appendLog, showToast } = uiStore
   const { isBattlePlaying, startBattlePlayback, startLocalBattle } = battle
 
@@ -204,9 +203,8 @@ export function useStory({ cultivation, battle, actions }: {
 
   // 游历寻访：从“主线已推进到、且尚未了结”的支线中随机抽取
   function triggerRandomAdventure() {
-    activeTab.value = 'CULTIVATE'
     if (pendingAdventureId.value) {
-      showToast('尚有奇遇等你抉择，请先在纪事卷轴中做出选择', 'info')
+      showToast('尚有奇遇等你抉择，请先在任务框中做出选择', 'info')
       return
     }
     const pool = ADVENTURES.filter(

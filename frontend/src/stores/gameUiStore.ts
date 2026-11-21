@@ -30,6 +30,7 @@ export const useGameUiStore = defineStore('wuxiaUi', () => {
   const bountyTargetId = ref<string>()
   const arsenalTab = ref<'SKILLS' | 'SQUAD' | 'EQUIP' | 'BAG' | 'MERIDIAN'>('SKILLS')
   // 窄屏下左 / 右侧栏以抽屉形式呈现
+  const worldPane = ref<'SOCIAL' | 'EVENTS' | 'LOGS'>('SOCIAL')
   const mobileDrawer = ref<'NONE' | 'CHAR' | 'WORLD' | 'CHAT'>('NONE')
   /** 江湖地图弹窗：右栏与舞台顶上的地名都能打开 */
   const mapPickerOpen = ref(false)
@@ -165,6 +166,7 @@ export const useGameUiStore = defineStore('wuxiaUi', () => {
 
   return {
     mobileDrawer,
+    worldPane,
     mapPickerOpen,
     appendLog,
     showToast,

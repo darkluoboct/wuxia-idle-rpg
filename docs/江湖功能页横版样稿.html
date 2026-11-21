@@ -1,0 +1,488 @@
+<!doctype html>
+<html lang="zh-CN" class="theme-midnight">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" href="../frontend/src/assets/favicon.svg">
+<link rel="stylesheet" href="../frontend/src/wuxia.css">
+<title>问道武林 · 功能页横版样稿</title>
+<style>
+  * { box-sizing:border-box }
+  :root {
+    --font-body:"LXGW WenKai Screen","LXGW WenKai","KaiTi","STKaiti","Noto Serif SC",serif;
+    --font-brush:"Ma Shan Zheng","STKaiti","KaiTi","Noto Serif SC",serif;
+    --line:rgba(222,202,160,.14); --line-strong:rgba(222,202,160,.30);
+    --gold-soft:rgba(214,176,106,.14); --gold-faint:rgba(214,176,106,.06);
+    --cinnabar:#b83b32; --tier-purple:#aa7fcf; --tier-blue:#5f9ccb; --tier-green:#67a877;
+    color-scheme:dark
+  }
+  body { margin:0; background:var(--bg-0); color:var(--ink); font:16px/1.55 var(--font-body) }
+  button { appearance:none; color:inherit; font:inherit; cursor:pointer; background:transparent; border:0 }
+  button:focus-visible { outline:2px solid var(--gold); outline-offset:-2px }
+  h1,h2,h3,p,figure,blockquote { margin:0 }
+  .sample { height:100svh; display:grid; grid-template-rows:auto minmax(0,1fr) }
+  .wuxia-header { grid-template-columns:1fr auto 1fr }
+  .wuxia-wordmark strong { font:clamp(1.5rem,2.8vw,2.65rem)/1 var(--font-brush); letter-spacing:.05em }
+  .seal { display:grid; place-items:center; color:#f6ece0; writing-mode:vertical-rl; background:var(--cinnabar); outline:1px solid #ffeacf70; outline-offset:-3px }
+  .wuxia-nav > button { width:auto; padding-inline:clamp(12px,2vw,32px) }
+  .wuxia-nav > button:last-child { border-right:1px solid var(--line) }
+  .wuxia-nav > button[aria-pressed=true] { color:var(--gold); background:radial-gradient(ellipse at 50% 100%,var(--gold-soft),transparent 80%); box-shadow:inset 0 -2px var(--frame-edge) }
+  .wuxia-currency { justify-self:end; font-variant-numeric:tabular-nums }
+  .icon { width:1.25em; height:1.25em; flex:none; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round }
+  .workspace { position:relative; display:grid; grid-template-rows:auto minmax(0,1fr); gap:.75rem; min-height:0; margin:.7rem; padding:1rem; border:1px solid var(--line); background:linear-gradient(var(--gold-faint), transparent 4rem),var(--bg-1) }
+  .workspace::after { position:absolute; inset:4px; pointer-events:none; content:""; --stroke:linear-gradient(var(--frame-edge),var(--frame-edge)); background:var(--stroke) top left/12px 1px,var(--stroke) top left/1px 12px,var(--stroke) top right/12px 1px,var(--stroke) top right/1px 12px,var(--stroke) bottom left/12px 1px,var(--stroke) bottom left/1px 12px,var(--stroke) bottom right/12px 1px,var(--stroke) bottom right/1px 12px; background-repeat:no-repeat }
+  .tabs { display:flex; align-items:center; gap:.25rem; border-bottom:1px solid var(--line) }
+  .tabs button { position:relative; padding:.4rem .9rem; color:var(--ink-3) }
+  .tabs button[aria-pressed=true] { font-weight:700; color:var(--gold) }
+  .tabs button[aria-pressed=true]::after { content:""; position:absolute; inset:auto .6rem -1px; height:3px; background:linear-gradient(90deg,transparent,var(--gold) 15% 85%,transparent); border-radius:80% 60% 0 0 }
+  main { display:grid; grid-template-columns:minmax(170px,27%) minmax(0,1fr); gap:.8rem; min-height:0 }
+  main.bag-layout { grid-template-columns:minmax(0,1fr) }
+  aside,article { min-width:0; min-height:0; border:1px solid var(--line); background:var(--bg-1) }
+  aside { overflow:auto; padding:clamp(10px,1.2vw,18px) }
+  .section { display:flex; align-items:center; gap:.5rem; font:1.12rem/1.3 var(--font-brush); letter-spacing:.06em; color:var(--ink) }
+  .section::before { content:""; width:.36rem; height:.36rem; flex:none; transform:rotate(45deg); background:var(--cinnabar) }
+  .section::after { content:""; height:1px; flex:1; background:linear-gradient(90deg,var(--line-strong),transparent) }
+  .entries { display:grid; gap:4px; margin-top:.85rem }
+  .row { display:flex; align-items:center; gap:.7rem; width:100%; text-align:left; padding:.65rem .55rem; border:1px solid transparent; border-bottom-color:var(--line); color:var(--ink-2) }
+  .row .icon { color:var(--gold) }
+  .row b,.row small { display:block }.row small,.muted,footer small { color:var(--ink-3); font-size:.84rem }
+  .row[aria-pressed=true] { border-color:var(--frame-edge); background:var(--gold-soft); color:var(--gold) }
+  article { display:grid; grid-template-rows:minmax(0,1fr) auto auto; padding:clamp(10px,1.4vw,22px); overflow:hidden }
+  .body { overflow:auto; min-height:0; padding-right:.3rem; scrollbar-width:thin; scrollbar-color:var(--line-strong) transparent }
+  .body:focus { outline:none }
+  .identity { display:grid; align-items:end; grid-template-columns:1fr auto; gap:.4rem; padding:.2rem 0 .8rem; border-bottom:1px solid var(--line) }
+  .meta,.sub { color:var(--ink-3); font-size:.85rem }.meta { color:var(--gold); letter-spacing:.07em }
+  h1 { font:clamp(1.55rem,3.05vw,2.65rem)/1.2 var(--font-brush); letter-spacing:.045em; margin:.22rem 0 }
+  .letter { position:relative; isolation:isolate; margin-top:.75rem; padding:clamp(14px,2.4vw,32px); border:1px solid var(--line); background:var(--bg-2) }
+  .letter { min-height:min(28vh,220px); background:linear-gradient(90deg,var(--bg-2) 5%,color-mix(in srgb,var(--bg-2) 92%,transparent) 49%,color-mix(in srgb,var(--bg-2) 57%,transparent)),url("../frontend/src/assets/jiaxing-spring.webp") 50% 55%/cover }
+  .letter p { max-width:30em; margin:.65rem 0; color:var(--ink-2); line-height:1.85 }
+  .letter .signature { color:var(--gold); margin:.7rem 0 0 }
+  .dossier { display:grid; grid-template-columns:minmax(0,1fr) minmax(115px,27%); gap:clamp(10px,1.4vw,22px); margin-top:.8rem }
+  .notes { padding:.4rem 0 }.notes p { margin:.55rem 0 .9rem; color:var(--ink-2) }
+  blockquote { color:var(--gold); font:clamp(1.05rem,1.52vw,1.4rem)/1.6 var(--font-brush); margin:.25rem 0 1.15rem; max-width:24em }
+  .portrait { position:relative; overflow:hidden; height:clamp(110px,25vh,230px); border:1px solid var(--line); background:linear-gradient(0deg,var(--bg-2),color-mix(in srgb,var(--bg-2) 80%,transparent)),var(--scene) center / cover }
+  .portrait img { height:100%; width:100%; object-fit:contain; filter:drop-shadow(0 3px 4px #1118) }
+  .portrait figcaption { position:absolute; inset:auto 0 0; text-align:center; padding:1px; color:var(--ink-2); background:color-mix(in srgb,var(--bg-1) 89%,transparent); font-size:.8rem }
+  .rewards { padding:.75rem 0 .65rem; margin-top:.6rem; border-top:1px solid var(--line) }
+  .rewards[hidden] { display:none }
+  .slots { display:flex; flex-wrap:wrap; align-items:start; gap:.55rem; margin-top:.5rem }
+  .loot { --edge:var(--line-strong); width:clamp(52px,6.3vw,80px); aspect-ratio:1; position:relative; display:grid; place-items:center; padding:3px; overflow:hidden; border:1px solid var(--edge); background:var(--bg-0) }
+  .loot .art,.loot img,.loot .sheet { display:block; width:100%; height:100%; object-fit:contain }
+  .loot .qty { position:absolute; bottom:2px; right:2px; min-width:1.2em; padding:0 .23em; border-radius:2px; background:#121518df; color:#f5ead3; text-align:right; font:700 clamp(12px,1.2vw,16px)/1.25 var(--font-body); font-variant-numeric:tabular-nums }
+  .loot:hover,.loot:focus-visible { border-color:var(--gold); box-shadow:inset 0 0 0 1px var(--gold-soft) }
+  .loot.purple { --edge:var(--tier-purple) }.loot.green { --edge:var(--tier-green) }.loot.resource { --edge:var(--frame-edge) }
+  .sheet { background-repeat:no-repeat; background-size:400% 400% }
+  .bag-toolbar,.bag-filters { display:flex; align-items:center; gap:.55rem; flex-wrap:wrap }
+  .bag-toolbar .section { flex:1; font-size:1.35rem }
+  .bag-filters { margin:.8rem 0; padding:.65rem 0; border-block:1px solid var(--line) }
+  .bag-filters button { padding:.2rem .75rem; border:1px solid transparent; font-size:.88rem; color:var(--ink-2) }
+  .bag-filters button[aria-pressed=true] { border-color:var(--frame-edge); color:var(--gold); background:var(--gold-soft) }
+  .items { display:grid; grid-template-columns:repeat(auto-fill,minmax(min(100%,clamp(7.5rem,16vw,12rem)),1fr)); gap:clamp(.35rem,1vw,.8rem) }
+  .tile { display:grid; grid-template-rows:auto 1fr; padding:0; min-width:0; text-align:center; border:1px solid var(--line-strong); background:var(--bg-2) }
+  .tile:hover,.tile:focus-visible { border-color:var(--frame-light) }
+  .tile-art { position:relative; display:grid; place-items:center; padding:.35rem; background:radial-gradient(ellipse,var(--bg-2),var(--bg-0) 85%); border-bottom:1px solid var(--line) }
+  .tile-art :is(img,.sheet) { display:block; width:clamp(3.5rem,14vh,7.5rem); aspect-ratio:1; max-width:100%; object-fit:contain }
+  .tile strong { align-self:center; padding:.4rem .2rem; font:600 .95rem/1.3 var(--font-body); color:var(--item-color,var(--ink)) }
+  .tile-count,.worn-tag { position:absolute; padding:0 .3rem; background:#121518eb; font-size:.74rem; line-height:1.6; font-variant-numeric:tabular-nums }
+  .tile-count { right:3px; bottom:3px; color:var(--ink) }.worn-tag { left:3px; top:3px; color:var(--jade); border:1px solid var(--line) }
+  .bag-status:not(:empty) { display:block; margin-top:.6rem }
+  .loot.red { --edge:#ee5348 }
+  .wuxia-navigation { display:flex }
+  .detail-art { width:clamp(70px,14vw,170px); aspect-ratio:1; flex:none; padding:3px; border:1px solid var(--line-strong); background:var(--bg-0) }
+  .detail-art > :is(img,.art,.sheet) { display:block; width:100%; height:100%; object-fit:contain }
+  .item-popover {
+    --item-color:var(--gold); position:fixed; inset:auto; margin:0; width:min(27.5rem,calc(100vw - 20px));
+    max-height:calc(100dvh - 20px); overflow:auto; overscroll-behavior:contain;
+    padding:0; color:var(--ink); border:1px solid var(--frame-edge); border-top:2px solid var(--item-color);
+    background:var(--bg-1); box-shadow:0 .5rem 1.8rem #000a;
+  }
+  .item-popover:popover-open { display:flex; flex-direction:column }
+  [data-tier=purple] { --item-color:var(--tier-purple) }
+  [data-tier=blue] { --item-color:var(--tier-blue) }
+  [data-tier=green] { --item-color:var(--tier-green) }
+  .item-popover[data-tier=red] { --item-color:#ee5348 }
+  .popup-head { flex:none; display:grid; grid-template-columns:5.25rem minmax(0,1fr) auto; gap:.8rem; align-items:center; padding:.8rem;
+    background:url("../frontend/src/assets/cloud-etch.svg") right top/10rem auto no-repeat,linear-gradient(115deg,color-mix(in srgb,var(--item-color) 12%,var(--bg-2)),var(--bg-1) 85%); border-bottom:1px solid var(--line) }
+  .popup-head .detail-art { width:100%; padding:.2rem; border-color:var(--item-color); background:radial-gradient(ellipse at center,var(--bg-3),var(--bg-0) 78%) }
+  .popup-title { display:flex; flex-wrap:wrap; align-items:center; gap:.22rem .55rem }
+  .popup-head h2 { font:1.4rem/1.18 var(--font-brush); color:var(--item-color) }
+  .quality { border:1px solid currentColor; color:var(--item-color); padding:0 .3rem; font-size:.75rem; line-height:1.45 }
+  .popup-id,.popup-properties { margin:0; font-size:.88rem }
+  .popup-id { display:grid; grid-template-columns:auto 1fr; gap:.02rem .7rem; margin-top:.28rem }
+  .item-popover dt { color:var(--ink-3) }.item-popover dd { margin:0 }
+  .popup-close { align-self:start; width:2rem; height:2rem; color:var(--ink-2); font:1.4rem/1 sans-serif }
+  .popup-body { min-height:0; overflow:auto; overscroll-behavior:contain; padding:.6rem .85rem; scrollbar-width:thin }
+  .popup-body section + section,.popup-lore { margin-top:.5rem }
+  .popup-body h3 { margin-bottom:.25rem; font:1rem/1.25 var(--font-brush); color:var(--gold) }
+  .popup-properties { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:1px; background:var(--line) }
+  .popup-properties div { display:flex; justify-content:space-between; align-items:baseline; gap:.3rem; padding:.25rem .55rem; background:var(--bg-2) }
+  .equipment-number { color:#83ddeb; font-weight:700; font-family:Consolas,var(--font-body); font-variant-numeric:tabular-nums; white-space:nowrap }
+  .popup-lines { display:grid; gap:.18rem; margin:0; font-size:.9rem; line-height:1.45 }
+  .popup-lines div { display:grid; grid-template-columns:4.2em 1fr; gap:.4rem }
+  .popup-lines dd { color:var(--ink-2) }.popup-lore { color:var(--ink-3); font-size:.85rem }
+  .popup-base { display:flex; align-items:center; justify-content:space-between; flex:none; gap:.45rem; padding:.45rem .8rem; background:var(--bg-2); border-top:1px solid var(--line); font-size:.8rem; color:var(--ink-2) }
+  .popup-base span:first-child { color:var(--ink-3); margin-right:.45rem }
+  .popup-base .action { flex:none }
+  .popup-actions { display:flex; gap:.4rem }
+  .item-popover.is-comparing { width:min(39rem,calc(100vw - 20px)) }
+  .pair { margin-top:.7rem; width:100%; table-layout:fixed; border-collapse:collapse; text-align:left }.pair th,.pair td { border:1px solid var(--line); padding:.4rem .55rem; vertical-align:top }.pair thead th { color:var(--gold); background:var(--bg-2) }
+  .pair thead th:first-child { width:20% }.pair tbody th { color:var(--ink-3); font-weight:400 }.pair td { color:var(--ink-2) }
+  .daily { display:grid; gap:.45rem; padding:0; list-style:none }.daily li { display:flex; align-items:center; gap:.6rem; color:var(--ink-2) }.daily .done { color:var(--jade) }
+  footer { display:flex; gap:.6rem; flex-wrap:wrap; min-height:2.7rem; align-items:center; justify-content:flex-end; border-top:1px solid var(--line); padding-top:.55rem }
+  footer small { margin-right:auto }.state { color:var(--jade) }
+  footer:empty { display:none }
+  .action { padding:.35rem .8rem; border:1px solid var(--line-strong); border-radius:2px; font-size:.9rem; line-height:1.4 }
+  .primary { color:var(--gold); border-color:var(--frame-edge); background:var(--gold-soft); font-weight:700 }
+  .action[data-act=claim],.action[data-act=reward] { color:#f6ece0; background:linear-gradient(#ffffff19,transparent 60%),var(--cinnabar); border-color:#bd6655 }
+  button:hover { color:var(--gold) }
+  @media(max-height:540px) {
+    .popup-head { grid-template-columns:3.7rem minmax(0,1fr) auto; padding:.45rem .6rem; gap:.55rem }
+    .popup-head h2 { font-size:1.22rem }.popup-id { font-size:.8rem; line-height:1.3 }
+    .popup-body { padding:.4rem .65rem }.popup-base { padding:.25rem .65rem }
+    .popup-body section + section,.popup-lore { margin-top:.35rem }
+    .bag-filters { margin:.35rem 0; padding:.3rem 0 }
+    .wuxia-header { height:2.6rem }.wuxia-wordmark strong { font-size:1.55rem }
+    .workspace { margin:.28rem; padding:.4rem .6rem; gap:.35rem }.tabs button { padding:.14rem .65rem }
+    main { gap:.4rem } aside,article { padding:.45rem .65rem }.entries { margin-top:.35rem }.row { padding:.35rem }
+    .identity { padding:0 0 .25rem } h1 { font-size:1.45rem; margin:.05rem 0 }.letter { margin-top:.4rem; padding:.5rem .7rem; min-height:0 }
+    .letter p,.letter .signature { margin:.15rem 0; line-height:1.4 }.dossier { margin-top:.35rem }
+    .notes { padding:0 }.notes p,blockquote { margin:.2rem 0 .4rem }.portrait { height:clamp(84px,25vh,130px) }
+    .rewards { padding:.2rem 0 .28rem; margin-top:.2rem; display:flex; align-items:center; gap:.7rem }.rewards .section { flex:none }.slots { margin:0 }.loot { width:44px }
+    footer { min-height:2.15rem; padding-top:.2rem }.action { padding:.2rem .65rem }.sub,.meta,.row small { font-size:.78rem }
+  }
+  @media(max-width:760px) { main { grid-template-columns:minmax(130px,25%) minmax(0,1fr) }.wuxia-header { grid-template-columns:1fr auto auto }.wuxia-nav > button { padding-inline:.55rem; font-size:.95rem }.wuxia-currency > span { font-size:.75rem } }
+</style>
+<body>
+<svg width="0" height="0" aria-hidden="true" style="position:absolute"><defs><symbol id="i-mail" viewBox="0 0 24 24"><rect width="20" height="16" x="2" y="4" rx="2"></rect><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"></path></symbol>
+<symbol id="i-compass" viewBox="0 0 24 24"><path d="m16.24 7.76-1.804 5.411a2 2 0 0 1-1.265 1.265L7.76 16.24l1.804-5.411a2 2 0 0 1 1.265-1.265z"></path><circle cx="12" cy="12" r="10"></circle></symbol>
+<symbol id="i-scrolltext" viewBox="0 0 24 24"><path d="M15 12h-5"></path><path d="M15 8h-5"></path><path d="M19 17V5a2 2 0 0 0-2-2H4"></path><path d="M8 21h12a2 2 0 0 0 2-2v-1a1 1 0 0 0-1-1H11a1 1 0 0 0-1 1v1a2 2 0 1 1-4 0V5a2 2 0 1 0-4 0v2a1 1 0 0 0 1 1h3"></path></symbol>
+<symbol id="i-calendardays" viewBox="0 0 24 24"><path d="M8 2v4"></path><path d="M16 2v4"></path><rect width="18" height="18" x="3" y="4" rx="2"></rect><path d="M3 10h18"></path><path d="M8 14h.01"></path><path d="M12 14h.01"></path><path d="M16 14h.01"></path><path d="M8 18h.01"></path><path d="M12 18h.01"></path><path d="M16 18h.01"></path></symbol>
+<symbol id="i-swords" viewBox="0 0 24 24"><polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5"></polyline><line x1="13" x2="19" y1="19" y2="13"></line><line x1="16" x2="20" y1="16" y2="20"></line><line x1="19" x2="21" y1="21" y2="19"></line><polyline points="14.5 6.5 18 3 21 3 21 6 17.5 9.5"></polyline><line x1="5" x2="9" y1="14" y2="18"></line><line x1="7" x2="4" y1="17" y2="20"></line><line x1="3" x2="5" y1="19" y2="21"></line></symbol>
+<symbol id="i-usersround" viewBox="0 0 24 24"><path d="M18 21a8 8 0 0 0-16 0"></path><circle cx="10" cy="8" r="5"></circle><path d="M22 20c0-3.37-2-6.5-4-8a5 5 0 0 0-.45-8.3"></path></symbol>
+<symbol id="i-circlecheck" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><path d="m9 12 2 2 4-4"></path></symbol>
+<symbol id="i-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle></symbol>
+<symbol id="i-mails" viewBox="0 0 24 24"><rect width="16" height="13" x="6" y="4" rx="2"></rect><path d="m22 7-7.1 3.78c-.57.3-1.23.3-1.8 0L6 7"></path><path d="M2 8v11c0 1.1.9 2 2 2h14"></path></symbol></defs></svg>
+<div class="sample">
+  <header class="wuxia-header">
+    <div class="wuxia-wordmark"><strong>金庸群侠</strong><span class="seal">问道</span></div>
+    <div class="wuxia-navigation"><div class="wuxia-nav" aria-label="样稿切换">
+      <button data-group="mail"><svg class="icon" aria-hidden="true"><use href="#i-mail"/></svg>信件与物品</button>
+      <button data-group="quest"><svg class="icon" aria-hidden="true"><use href="#i-compass"/></svg>任务与玩法</button>
+    </div></div>
+    <div class="wuxia-currency" aria-label="示例资产"><span title="纹银"><i class="art art-coin" aria-hidden="true"></i><b id="wallet" aria-label="纹银 18,600">18,600</b></span><span title="元宝"><i class="art art-ingot" aria-hidden="true"></i><b aria-label="元宝 520">520</b></span></div>
+  </header>
+  <div class="workspace"><nav class="tabs" aria-label="栏目"></nav>
+    <main><aside aria-label="条目"></aside><article><div class="body" tabindex="-1"></div><section class="rewards" hidden></section><footer></footer></article></main>
+  </div>
+</div>
+<div id="item-popover" class="item-popover" popover="auto" role="dialog" aria-labelledby="popup-name">
+  <div class="popup-head">
+    <div class="detail-art" id="popup-art"></div>
+    <div>
+      <div class="popup-title"><h2 id="popup-name"></h2><span class="quality" hidden></span></div>
+      <dl class="popup-id"><dt>类型</dt><dd id="popup-type"></dd><dt>数量</dt><dd id="popup-quantity"></dd></dl>
+    </div>
+    <button class="popup-close" type="button" autofocus popovertarget="item-popover" popovertargetaction="hide" aria-label="关闭道具浮窗">×</button>
+  </div>
+  <div class="popup-body" tabindex="0" aria-label="道具属性与用途"></div>
+  <div class="popup-base">
+    <div><span id="popup-origin-label"></span><span id="popup-origin"></span></div>
+    <div class="popup-actions">
+      <button class="action popup-compare" type="button" hidden>同部位对比</button>
+      <button class="action primary popup-equip" type="button" hidden>穿戴</button>
+    </div>
+  </div>
+</div>
+<script>
+  const root = '../frontend/src/assets/';
+  const pages = { mail:'江湖来信', bag:'随身物品', quest:'任务', play:'玩法' };
+  const groupOf = page => ['mail','bag'].includes(page) ? ['mail','bag'] : ['quest','play'];
+  const tierNames = { green:'凡品', blue:'良品', purple:'上品', orange:'绝品', red:'神品' };
+  const loot = {
+    dagger:{
+      name:'牛家村玄铁匕首', type:'武器 · 匕首', image:'xuantie_dagger', tier:'purple',
+      stats:{攻击:'+95', 暴击率:'+15%'},
+      effects:{破甲:'常规外功先破甲 45 点，再穿透余下护体防御的 25%。', 缴械:'常规外功命中持凡品或良品武器的敌人时，20% 概率缴械 1 回合。', 制敌:'陈玄风盾破并露出罩门时，可一击制敌。'},
+      lore:'丘处机赠给郭杨两家的信物，刃上刻着一个「靖」字。'
+    },
+    sword:{
+      name:'青钢长剑', type:'武器 · 长剑', image:'qinggang_sword', tier:'blue',
+      stats:{攻击:'+45', 暴击率:'+3%', 身法:'+5'}, lore:'嘉兴名匠以百炼精钢铸成。'
+    },
+    blade:{
+      name:'草莽劈柴刀', type:'武器 · 刀', image:'pomiao_caomang_weapon', tier:'green',
+      stats:{攻击:'+22', 命中率:'+2%'}, set:'破庙蓑衣草莽套装'
+    },
+    coat:{
+      name:'蓑草风雨衣', type:'防具 · 衣甲', sheet:'trial-01', col:2, row:0, tier:'green',
+      stats:{防御:'+18', 气血:'+110'}, effects:{风雨夜行:'雨天或黑夜时出手速度 +8%，与同套装的加成取高。'}, set:'破庙蓑衣草莽套装'
+    },
+    relic:{
+      name:'岳武穆遗书', type:'秘宝 · 兵书', sheet:'named-gear-and-relics', col:0, row:1, tier:'red',
+      stats:{全队防御:'+150', 全队气血上限:'+2,000'},
+      effects:{御掌:'太极御掌时，全队额外减免 40% 掌风伤害。', 合击:'主角命中后，郭靖以 150% 威力的降龙掌跟进。', 破骑:'开战时卸去敌方骑兵的护体防御。'},
+      lore:'岳飞留下的兵书。'
+    },
+    pill:{
+      name:'纯阳·通脉破障丹', type:'丹药 · 突破', sheet:'medicine-and-tools', col:1, row:0, tier:'purple',
+      use:{使用时机:'冲击大境界时选用。', 单枚效果:'本次突破成功率提高 35 个百分点。'}
+    },
+    herb:{
+      name:'车前草', type:'材料 · 药材', sheet:'herbs', col:1, row:0, tier:'green',
+      use:{入药:'炼制玄门·聚气通脉丹，每炉需 2 株。', 采集地:'嘉兴烟雨楼外。'}
+    },
+    fragment:{
+      name:'《越女剑法》残页', type:'武学材料 · 残页', sheet:'medicine-and-tools', col:3, row:2, tier:'green',
+      use:{使用条件:'已习得越女剑法。', 参悟:'提升越女剑法重数时，抵扣本次所需真气。'}
+    },
+    silver:{name:'纹银', type:'货币', art:'coin', use:{市井:'购买以纹银标价的货品。', 炼制:'支付炼丹工本或装备重铸费用。'}},
+    qi:{name:'真气', type:'修为资源', art:'inner', use:{修炼:'提升等级、参悟武学或打通穴位。'}},
+    ingot:{name:'元宝', type:'货币', art:'ingot', use:{结缘:'在醉仙客栈结交伙伴。', 商行:'购买以元宝标价的货品。'}}
+  };
+  const rows = {
+    mail:[['gift','嘉兴来信','mail'],['notice','驿站告示','mails']],
+    quest:[['guide','荒山练手','scrolltext'],['daily','每日江湖事','calendardays']],
+    play:[['trial','三十关历练','swords'],['raid','结义副本','usersround']]
+  };
+  const pick = {mail:'gift', quest:'guide', play:'trial'};
+  const pageFromHash=()=>Object.hasOwn(pages,location.hash.slice(1)) ? location.hash.slice(1) : 'mail';
+  let page=pageFromHash(), bagFilter='全部';
+  let claimed=false, read=false, worn='sword', from='', cleared=false, rewarded=false, readyRoom=false;
+  const bagWeapons=()=>claimed?['sword','dagger']:['sword'];
+  const bagDescription=(id,count)=>'数量 '+count+(id===worn?'，已穿戴':'');
+  const el = selector => document.querySelector(selector);
+  const sigil = name => '<svg class="icon" aria-hidden="true"><use href="#i-'+name+'"/></svg>';
+  const popup=el('#item-popover');
+  let popupAnchor;
+  const itemTrigger=(id,count) => 'data-loot="'+id+'" data-count="'+count+'" aria-haspopup="dialog" aria-controls="item-popover"';
+  function art(key, cls='') {
+    const item=loot[key];
+    if (item.art) return '<i aria-hidden="true" class="art art-'+item.art+' '+cls+'"></i>';
+    if (item.image) return '<img alt="" class="'+cls+'" src="'+root+'item-illustrations/'+item.image+'.webp">';
+    return '<i aria-hidden="true" class="sheet '+cls+'" style="background-image:url('+root+'item-icons/'+item.sheet+'.webp);background-position:'+item.col*100/3+'% '+item.row*100/3+'%"></i>';
+  }
+  const btn = (label, action, primary=false) => '<button class="action '+(primary?'primary':'')+'" data-act="'+action+'">'+label+'</button>';
+  const heading = (over,name,sub='') => '<header class="identity"><div><span class="meta">'+over+'</span><h1>'+name+'</h1>'+(sub?'<p class="sub">'+sub+'</p>':'')+'</div></header>';
+  const section = name => '<h2 class="section">'+name+'</h2>';
+  const hint = text => '<small role="status">'+text+'</small>';
+  // 数值与单位一起着色；中文数字仅在量词前识别，保留招式名原色。
+  function equipmentNumbers(text) {
+    const amount=/[+＋−－-]?\d+(?:[,，]\d{3})*(?:\.\d+)?(?:[%％]|\s*(?:个百分点|回合|点|层|秒|次|倍|击))?|[零〇一二两三四五六七八九十百千万]+(?:个百分点|回合|点|层|秒|次|倍|击)/g;
+    return text.replace(amount,'<strong class="equipment-number">$&</strong>');
+  }
+  function comparisonRows(current={},candidate={}) {
+    const labels=new Set([...Object.keys(current),...Object.keys(candidate)]);
+    return [...labels].map(label=>'<tr><th scope="row">'+label+'</th><td>'+equipmentNumbers(current[label]??'—')+'</td><td>'+equipmentNumbers(candidate[label]??'—')+'</td></tr>').join('');
+  }
+  function comparisonTable(id) {
+    const current=loot[worn], candidate=loot[id];
+    return '<table class="pair" aria-label="同部位对比"><thead><tr><th scope="col">词条</th><th scope="col">当前 · '+current.name+'</th><th scope="col">选中 · '+candidate.name+'</th></tr></thead><tbody>'+comparisonRows(current.stats,candidate.stats)+comparisonRows(current.effects,candidate.effects)+'</tbody></table>';
+  }
+  // 固定展示顺序。所有文案与字段均来自上面的静态道具表。
+  function itemSections(item) {
+    const sections=[];
+    function fields(title, values, cls, format=value=>value) {
+      if (!values) return;
+      const rows=Object.entries(values).map(([label,value])=>'<div><dt>'+label+'</dt><dd>'+format(value)+'</dd></div>').join('');
+      sections.push('<section><h3>'+title+'</h3><dl class="'+cls+'">'+rows+'</dl></section>');
+    }
+    fields('基础属性',item.stats,'popup-properties',equipmentNumbers);
+    fields('装备效果',item.effects,'popup-lines',equipmentNumbers);
+    fields('用途',item.use,'popup-lines');
+    if (item.set) fields('所属套装',{套装:item.set},'popup-lines');
+    if (item.lore) sections.push('<p class="popup-lore">'+item.lore+'</p>');
+    return sections.join('');
+  }
+  function placePopup() {
+    if (!popup.matches(':popover-open')) return;
+    const anchor=popupAnchor.getBoundingClientRect();
+    const gap=8, edge=10;
+    if(page==='bag') {
+      popup.style.maxHeight='min(85dvh,calc(100dvh - 20px))';
+      const {width,height}=popup.getBoundingClientRect();
+      let left=(innerWidth-width)/2;
+      if(anchor.right+gap+width<=innerWidth-edge) left=anchor.right+gap;
+      else if(anchor.left-gap-width>=edge) left=anchor.left-gap-width;
+      popup.style.left=left+'px';
+      popup.style.top=Math.max(edge,Math.min(anchor.top,innerHeight-height-edge))+'px';
+      return;
+    }
+    const above=anchor.top-gap-edge, below=innerHeight-anchor.bottom-gap-edge;
+    // 给相邻图标留出点按空间。矮屏只滚动词条，标题和操作仍可见。
+    const available=Math.max(above,below);
+    popup.style.maxHeight=(available>=170 ? available : innerHeight-2*edge)+'px';
+    const {width,height}=popup.getBoundingClientRect();
+    let left=anchor.left, top=anchor.top-height-gap;
+    if (top<edge) {
+      top=anchor.bottom+gap;
+      if (top+height>innerHeight-edge) {
+        left=anchor.right+gap+width<=innerWidth-edge ? anchor.right+gap : anchor.left-width-gap;
+        top=anchor.top+(anchor.height-height)/2;
+      }
+    }
+    popup.style.left=Math.max(edge, Math.min(left,innerWidth-width-edge))+'px';
+    popup.style.top=Math.max(edge, Math.min(top,innerHeight-height-edge))+'px';
+  }
+  function inspectItem(button) {
+    const {loot:id,count}=button.dataset, item=loot[id];
+    popupAnchor=button;
+    popup.classList.remove('is-comparing');
+    popup.dataset.tier=item.tier || 'resource';
+    el('#popup-art').innerHTML=art(id);
+    el('#popup-name').textContent=item.name;
+    el('#popup-type').textContent=item.type;
+    el('#popup-quantity').textContent='×'+count;
+    const quality=el('.quality');
+    quality.hidden=!item.tier;
+    quality.textContent=item.tier ? tierNames[item.tier] : '';
+    const content=popup.querySelector('.popup-body');
+    content.innerHTML=itemSections(item);
+    content.scrollTop=0;
+    el('#popup-origin-label').textContent=page==='bag'?'所在位置':'本次来源';
+    el('#popup-origin').textContent=page==='bag'?(id===worn?'随身物品 · 已穿戴':'随身物品'):el('article h1').textContent;
+    const compare=el('.popup-compare');
+    const canEquip=page==='bag' && bagWeapons().includes(id) && id!==worn;
+    compare.hidden=!canEquip;
+    compare.textContent='同部位对比';
+    compare.setAttribute('aria-pressed','false');
+    el('.popup-equip').hidden=!canEquip;
+    popup.showPopover({source:button});
+    placePopup();
+  }
+  el('.popup-compare').addEventListener('click',()=>{
+    const id=popupAnchor.dataset.loot;
+    const comparing=popup.classList.toggle('is-comparing');
+    const content=popup.querySelector('.popup-body');
+    content.innerHTML=comparing?comparisonTable(id):itemSections(loot[id]);
+    content.scrollTop=0;
+    el('.popup-compare').textContent=comparing?'查看详情':'同部位对比';
+    el('.popup-compare').setAttribute('aria-pressed',String(comparing));
+    placePopup();
+  });
+  el('.popup-equip').addEventListener('click',()=>{
+    worn=popupAnchor.dataset.loot;
+    popup.hidePopover();
+    for(const tile of el('.items').querySelectorAll('.tile')) {
+      tile.querySelector('.worn-tag').hidden=tile.dataset.loot!==worn;
+      tile.setAttribute('aria-description',bagDescription(tile.dataset.loot,tile.dataset.count));
+    }
+    el('.bag-status').textContent='已穿戴「'+loot[worn].name+'」';
+    popupAnchor.focus({preventScroll:true});
+  });
+  window.addEventListener('resize',placePopup);
+  document.addEventListener('scroll',event=>{
+    if(popup.matches(':popover-open') && event.target.contains(popupAnchor)) placePopup();
+  },true);
+  function portrait(file,name,scene) {
+    return '<figure class="portrait" style="--scene:url('+root+scene+'.webp)"><img class="figure" src="'+root+'portraits/'+file+'.webp" alt="'+name+'"><figcaption>'+name+'</figcaption></figure>';
+  }
+  function showLoot(label, entries) {
+    const slots=entries.map(([key,count])=>{
+      const item=loot[key];
+      return '<button class="loot '+(item.tier||'resource')+'" '+itemTrigger(key,count)+' aria-label="'+item.name+'" aria-description="数量 '+count+'，查看详情">'+art(key)+'<span class="qty" aria-hidden="true">×'+count+'</span></button>';
+    });
+    const tray=el('.rewards');
+    tray.hidden=false;
+    tray.innerHTML=section(label)+'<div class="slots" role="group" aria-label="'+label+'">'+slots.join('')+'</div>';
+  }
+  function info(key) {
+    return {gift:claimed?'附件已领':'待领取 · 2 份附件',notice:read?'已读':'告知 · 待读',guide:rewarded?'已领赏':cleared?'江湖行历 · 可领赏':'江湖行历 · 进行中',daily:'今日已办 3 / 4',trial:'当前第 01 关',raid:'少室山 · 三人同行'}[key];
+  }
+  function bagContents() {
+    const entries=[...bagWeapons().map(id=>[id,1,'装备']),['pill',2,'丹药'],['herb',2,'药材'],['fragment',1,'残页']];
+    const visible=entries.filter(([, ,category])=>bagFilter==='全部' || category===bagFilter);
+    const filters=['全部','装备','丹药','药材','残页'].map(category=>'<button data-filter="'+category+'" aria-pressed="'+(category===bagFilter)+'">'+category+'</button>').join('');
+    const tiles=visible.map(([id,count])=>{
+      const item=loot[id];
+      return '<button class="tile" '+itemTrigger(id,count)+' data-tier="'+item.tier+'" aria-label="'+item.name+'" aria-description="'+bagDescription(id,count)+'"><span class="tile-art">'+art(id)+'<span class="worn-tag" '+(id===worn?'':'hidden')+'>已穿戴</span><span class="tile-count">×'+count+'</span></span><strong>'+item.name+'</strong></button>';
+    }).join('');
+    return '<header class="bag-toolbar"><h1 class="section">随身物品</h1><small class="muted">'+visible.length+' 种</small>'+(from==='mail'?btn('返回来信','backMail'):'')+'</header><div class="bag-filters" role="group" aria-label="物品分类">'+filters+'</div><div class="items" role="group" aria-label="物品格">'+tiles+'</div><small class="bag-status state" role="status"></small>';
+  }
+  function paint() {
+    const group=groupOf(page), key=pick[page];
+    document.querySelectorAll('[data-group]').forEach(b=>b.setAttribute('aria-pressed',group[0]===b.dataset.group));
+    el('nav.tabs').innerHTML=group.map(k=>'<button data-page="'+k+'" aria-pressed="'+(k===page)+'">'+pages[k]+'</button>').join('');
+    const balance=(18600+(claimed?200:0)+(rewarded?200:0)).toLocaleString('zh-CN');
+    el('#wallet').textContent=balance;
+    el('#wallet').setAttribute('aria-label','纹银 '+balance);
+    el('main').classList.toggle('bag-layout',page==='bag');
+    el('aside').hidden=page==='bag';
+    if(page!=='bag') {
+      const side=rows[page].map(([k,name,icon])=>'<button class="row" data-pick="'+k+'" aria-pressed="'+(k===key)+'">'+sigil(icon)+'<span><b>'+name+'</b><small>'+info(k)+'</small></span></button>').join('');
+      el('aside').innerHTML=section({mail:'驿站收件簿',quest:'任务目录',play:'玩法目录'}[page])+'<div class="entries">'+side+'</div>';
+    }
+    const tray=el('.rewards');
+    tray.hidden=true;
+    tray.replaceChildren();
+    let body='', foot='';
+    if (page==='mail') {
+      const gift=key==='gift';
+      body=heading('江湖来信 · 嘉兴驿站',gift?'嘉兴来信':'驿站告示',gift?'十一月二十日送达 · 十一月二十七日前有效':'十一月二十日送达')+
+        '<div class="letter">侠士亲启：<p>'+(gift?'随信捎去一柄匕首，另有纹银作盘缠。路过嘉兴时，记得来驿站歇脚。':'南湖渡口今日照常摆渡，行路的客人可于岸边候船。')+'</p><p class="signature">嘉兴驿站　谨上</p></div>';
+      if(gift) {
+        showLoot('随信附件',[['dagger',1],['silver',200]]);
+        foot=claimed?hint('附件已领取')+btn('在背包中查看','toBag',true):hint('共 2 份附件')+btn('领取附件','claim',true);
+      } else foot=hint('本封信没有附件')+(read?'<span class="state">已读</span>':btn('标为已读','read',true));
+    } else if (page==='bag') {
+      body=bagContents();
+    } else if (page==='quest' && key==='guide') {
+      body=heading('江湖行历 · 卷一','荒山练手','嘉兴烟雨')+'<div class="dossier"><div class="notes"><blockquote>「城外荒山有草寇出没，先拿他们练练手。」</blockquote>'+section('当前目标')+'<p>首胜历练第 01 关「破庙夜雨 · 荒山草贼」</p></div>'+portrait('wangjike','忘机客','jiaxing-spring')+'</div>';
+      showLoot('行历赏赐',[['qi',600],['silver',200]]);
+      foot=hint(rewarded?'本步赏赐已领取':cleared?'目标已完成':'首胜进度　0 / 1')+(rewarded?'':cleared?btn('领赏','reward',true):btn('前往历练','toTrial',true));
+    } else if (page==='quest') {
+      const tasks=['收功一次','客栈请酒或送礼','主线、历练或奇遇出战','采药或炼丹'];
+      body=heading('江湖日课','每日江湖事','子时刷新 · 今日已办 3 / 4')+'<ul class="daily">'+tasks.map((t,i)=>'<li class="'+(i<3?'done':'')+'"><span aria-label="'+(i<3?'已完成':'待完成')+'">'+sigil(i<3?'circlecheck':'circle')+'</span>'+t+'</li>').join('')+'</ul>';
+      showLoot('今日赏赐',[['ingot',60]]);
+      foot=hint('尚差一项 · 采药或炼丹');
+    } else if (key==='trial') {
+      body=heading('三十关历练 · 第 01 关','破庙夜雨 · 荒山草贼','雨夜 · 对手「黑风寨逃寇·赖三」')+'<div class="dossier"><div class="notes">'+section('破敌要诀')+'<p>越女剑或开山掌命中可破刀势，使他的攻击降低 30%。</p></div>'+portrait('laisan','赖三','jiaxing-dusk')+'</div>';
+      showLoot('首胜掉落',[['blade',1],['coat',1]]);
+      foot=(from==='quest'?btn('返回任务','backQuest'):'')+(cleared?'<span class="state">已首胜</span>':btn('模拟首胜','win',true));
+    } else {
+      body=heading('结义副本 · 少室山','金刚伏魔圈','三人同行 · 个人通关 0 次')+'<div class="dossier"><div class="notes">'+section(readyRoom?'队伍准备':'出发条件')+'<p>'+(readyRoom?'队长已就位，待两位队友加入。':'邀请同图的两位侠客，三人一起迎战少林三渡。')+'</p>'+section('阵中对手')+'<p>渡厄主阵，渡难守左，渡劫绕右。</p></div>'+portrait('npc_monk','少林阵主','zhongnan')+'</div>';
+      showLoot('下次通关可得',[['relic',1]]);
+      foot=readyRoom?btn('返回副本详情','lobby'):btn('查看组队准备','lobby',true);
+    }
+    el('.body').innerHTML=body;
+    el('.body').scrollTop=0;
+    el('footer').innerHTML=foot;
+  }
+  function act(action) {
+    switch(action) {
+      case 'claim': claimed=true; break;
+      case 'read': read=true; break;
+      case 'toBag': page='bag'; bagFilter='全部'; from='mail'; break;
+      case 'backMail': page='mail'; from=''; break;
+      case 'toTrial': page='play'; pick.play='trial'; from='quest'; break;
+      case 'backQuest': page='quest'; from=''; break;
+      case 'win': cleared=true; break;
+      case 'reward': rewarded=true; break;
+      case 'lobby': readyRoom=!readyRoom; break;
+    }
+  }
+  document.addEventListener('click', event=>{
+    const b=event.target.closest('button'); if(!b || popup.contains(b)) return;
+    if(b.dataset.loot) { inspectItem(b); return }
+    if(b.dataset.act) act(b.dataset.act);
+    else {
+      if(b.dataset.page || b.dataset.group) { page=b.dataset.page || b.dataset.group; from='' }
+      if(b.dataset.pick) { pick[page]=b.dataset.pick; readyRoom=false }
+      if(b.dataset.filter) bagFilter=b.dataset.filter;
+    }
+    paint();
+    if(b.dataset.act==='toBag') {
+      const item=el('.tile[data-loot="dagger"]');
+      item.focus();
+      inspectItem(item);
+      return;
+    }
+    const key=['page','group','pick','filter'].find(k=>b.dataset[k]);
+    const target = key ? el('[data-'+key+'="'+b.dataset[key]+'"]') : el('.body');
+    target?.focus({preventScroll:true});
+  });
+  window.addEventListener('hashchange',()=>{
+    if(popup.matches(':popover-open')) popup.hidePopover();
+    page=pageFromHash(); from=''; paint();
+  });
+  paint();
+</script>
+</body></html>

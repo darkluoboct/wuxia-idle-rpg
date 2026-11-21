@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onScopeDispose, ref, watch } from 'vue'
 import { useGameStore } from '@/stores/gameStore'
+import WorkbenchDialog from './WorkbenchDialog.vue'
 import { SKILLS } from '@/config/gameData'
 import { STANCE_META } from '@/config/uiMeta'
 import type { XiangyangGateId } from '@/network/protocol'
@@ -59,9 +60,14 @@ onScopeDispose(() => {
   <section class="view-scroll -mr-1 space-y-3 pr-1" aria-label="襄阳守卫战">
     <p v-if="store.xiangyangError" class="well p-3 text-sm text-cinnabar" role="alert">{{ store.xiangyangError }}</p>
 
-    <header v-if="war && drum && orders" class="well space-y-1 p-3">
+    <header v-if="war && drum && orders" class="workbench-toolbar justify-between border-b border-line pb-2">
       <div class="flex items-center gap-2">
         <h3 class="font-brush text-2xl leading-none">襄阳守卫战</h3>
+        <WorkbenchDialog title="襄阳守城规则"><p class="hint">军令每 {{ orderHours }} 小时回一道、最多攒 {{ XIANGYANG_ORDER_CAP }} 道。攒满还没用时，每回一道就由镜像替你出战一次；收兵时把余下的打完。挂机不吃亏，在线可以自己挑时机、换配装出战。</p>
+<p v-if="board" class="hint">
+      第一次出战（或值守出战）时定下本场的城门，本场不能换；改值守从下一场起算。战功按打掉的敌军气血折算（首领三份、兵卒各一份，打赢再加 5）；全门战功攒够一波所需就击退一波，所需随守军人数增加。
+      敌军强弱随出战者的等级。收兵后凭战功领元宝、百炼玄铁与淬火石，残页落在最近一次出战时装着的外功上<template v-if="outerSkill">（现在是《{{ outerSkill }}》）</template>；收功时也会顺带领。
+    </p></WorkbenchDialog>
         <span class="chip" :class="drum.active ? 'chip-red' : 'chip-gold'">{{ drum.active ? '城头擂鼓' : '鏖战中' }}</span>
       </div>
       <p class="hint">本周之围 {{ time.format(war.closesAt) }} 收兵，还剩 <b class="tabular-nums text-ink">{{ span(war.closesAt) }}</b></p>
@@ -69,7 +75,7 @@ onScopeDispose(() => {
         <template v-if="drum.active">正在擂鼓：亲自出战战功加 {{ drumPercent }}%，还剩 <b class="tabular-nums text-ink">{{ span(drum.closesAt) }}</b></template>
         <template v-else>下次擂鼓 {{ time.format(drum.opensAt) }}，一个时辰内亲自出战战功加 {{ drumPercent }}%</template>
       </p>
-      <p class="text-sm">
+      <p class="text-sm"><span class="chip">值守 · {{ post ? gateName(post.gate) : '未登记' }}</span>
         军令 <b class="tabular-nums" :class="orders.count ? 'text-gold' : ''">{{ orders.count }}</b> / {{ XIANGYANG_ORDER_CAP }}
         <span class="text-ink3">· {{ orders.nextAt ? `下一道 ${clock.format(orders.nextAt)}` : '已攒满' }}</span>
         <template v-if="self">
@@ -87,7 +93,7 @@ onScopeDispose(() => {
           <p class="hint">镜像按 {{ time.format(post.mirrorAt) }} 的配装 · 下一次替你出战 {{ time.format(post.nextAutoAt) }}</p>
         </template>
         <p v-else>还没值守：在下面选一门「值守此门」，下线时由你的镜像替你出战。</p>
-        <p class="hint">军令每 {{ orderHours }} 小时回一道、最多攒 {{ XIANGYANG_ORDER_CAP }} 道。攒满还没用时，每回一道就由镜像替你出战一次；收兵时把余下的打完。挂机不吃亏，在线可以自己挑时机、换配装出战。</p>
+
       </div>
       <button v-if="post" class="btn btn-sm shrink-0" :disabled="busy" @click="store.xiangyangAction({ action: 'post', gate: post.gate })">按当前配装更新镜像</button>
     </article>
@@ -157,14 +163,11 @@ onScopeDispose(() => {
       <span class="hint">敌军与实战相同，不耗军令、不记战功。</span>
     </div>
 
-    <p v-if="board" class="hint">
-      第一次出战（或值守出战）时定下本场的城门，本场不能换；改值守从下一场起算。战功按打掉的敌军气血折算（首领三份、兵卒各一份，打赢再加 5）；全门战功攒够一波所需就击退一波，所需随守军人数增加。
-      敌军强弱随出战者的等级。收兵后凭战功领元宝、百炼玄铁与淬火石，残页落在最近一次出战时装着的外功上<template v-if="outerSkill">（现在是《{{ outerSkill }}》）</template>；收功时也会顺带领。
-    </p>
+
 
     <section v-if="board?.feed.length" class="well space-y-1 p-3" aria-label="城头战报">
       <h4 class="font-brush text-lg">城头战报</h4>
-      <ul class="space-y-1 text-xs">
+      <ul class="max-h-52 space-y-1 overflow-auto text-xs">
         <li v-for="entry in board.feed" :key="`${entry.at}-${entry.nickname}-${entry.gate}-${entry.merit}`" class="flex flex-wrap gap-x-2">
           <span class="tabular-nums text-ink3">{{ time.format(entry.at) }}</span>
           <span>

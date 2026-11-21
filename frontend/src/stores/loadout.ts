@@ -34,11 +34,12 @@ export function useLoadout({ actions, revision, trial, cultivation }: {
   const { mockSettlePatrol } = trial
   const { settleMockIdle, showIdleGain, settleMockBeforeLoadoutChange } = cultivation
 
-  function changeEquipmentForge(input: ForgeInput) {
+  function changeEquipmentForge(input: ForgeInput, onReforged?: () => void) {
     const item = ITEMS[input.itemId]
     const index = ownedItemIds.value.indexOf(input.itemId)
     if (!item || index < 0) return
     function announce(result: ForgeResult) {
+      if (result.action === 'reforge') onReforged?.()
       const name = `【${item.name}】`
       const message = result.action === 'temper'
         ? result.success ? `${name}淬炼至 +${result.stars} 星，消耗${forgeMaterialLabel(result.iron, result.stones)}。`

@@ -4,6 +4,7 @@ import { useGameStore } from '@/stores/gameStore'
 import { TIER_META } from '@/config/uiMeta'
 import type { StallListingDTO } from '@/network/protocol'
 import { STALL, stallFee, stallGoods, stallTax } from '../../../shared/stalls.ts'
+import WorkbenchDialog from './WorkbenchDialog.vue'
 import ItemIcon from './ItemIcon.vue'
 
 const store = useGameStore()
@@ -11,7 +12,8 @@ const time = new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', hour:
 const allowed = computed(() => store.player.level >= STALL.minLevel)
 const mine = computed(() => store.stallBoard?.mine ?? [])
 const goodsOf = (entry: Pick<StallListingDTO, 'kind' | 'goodsId'>) => stallGoods(entry.kind, entry.goodsId)!
-const listings = computed(() => (store.stallBoard?.listings ?? []).map((entry) => ({ ...entry, goods: goodsOf(entry) })))
+const kind = ref<'ALL' | StallListingDTO['kind']>('ALL')
+const listings = computed(() => (store.stallBoard?.listings ?? []).filter((entry) => kind.value === 'ALL' || entry.kind === kind.value).map((entry) => ({ ...entry, goods: goodsOf(entry) })))
 const left = (expiresAt: number) => {
   const minutes = Math.max(0, Math.ceil((expiresAt - store.worldTime) / 60_000))
   return minutes >= 60 ? `${Math.floor(minutes / 60)} 小时` : `${minutes} 分`
@@ -65,10 +67,10 @@ onUnmounted(() => clearInterval(timer))
       <div class="flex items-center gap-2">
         <span class="seal h-8 w-8 text-lg">摊</span>
         <h4 class="font-brush text-xl leading-none">蒙面摊位</h4>
-      </div>
-      <p class="hint mt-1.5">
+        <WorkbenchDialog title="蒙面摆摊规则"><p>
         侠客之间用纹银买卖草药与武学残页，买卖双方都只见代号。单价须在参考价的 {{ STALL.minPricePercent }}%~{{ STALL.maxPricePercent }}% 之间；摆摊费 {{ STALL.feePercent }}%，上架时付、不退；成交后抽 {{ STALL.taxPercent }}%。每摊挂 {{ STALL.durationMs / 3_600_000 }} 小时，至多 {{ STALL.maxOpen }} 摊，没卖掉的退回。
-      </p>
+      </p></WorkbenchDialog>
+      </div>
     </div>
 
     <p v-if="!allowed" class="text-sm text-ink3">等级达到 {{ STALL.minLevel }} 级后，才能在鬼市摆摊与采买。</p>
@@ -77,13 +79,16 @@ onUnmounted(() => clearInterval(timer))
       <!-- 摆摊 -->
       <form v-if="ware" class="space-y-2 border-t border-line pt-2.5" aria-label="摆摊" @submit.prevent="list">
         <div class="grid gap-2 sm:grid-cols-[minmax(0,1fr)_5.5rem_6.5rem_auto]">
-          <label class="min-w-0 text-xs text-ink3">货物
-            <select v-model="wareKey" class="well border border-line bg-raised p-1.5 text-sm text-ink mt-1 w-full">
-              <option v-for="entry in store.stallWares" :key="keyOf(entry)" :value="keyOf(entry)">
-                {{ entry.name }}（有 {{ entry.stock }}）
-              </option>
-            </select>
-          </label>
+          <div class="min-w-0 self-end">
+            <WorkbenchDialog title="选择摆摊货物" :label="`选货 · ${ware.name}`" wide v-slot="{ close }">
+              <div class="grid gap-2 sm:grid-cols-3">
+                <button v-for="entry in store.stallWares" :key="keyOf(entry)" type="button" class="workbench-entry" :aria-pressed="wareKey === keyOf(entry)"
+                  @click="wareKey = keyOf(entry); close()">
+                  <ItemIcon :item-id="entry.kind === 'HERB' ? entry.id : 'skill-fragment'" />{{ entry.name }} ×{{ entry.stock }}
+                </button>
+              </div>
+            </WorkbenchDialog>
+          </div>
           <label class="text-xs text-ink3">数量
             <input v-model.number="qty" class="well border border-line bg-raised p-1.5 text-sm text-ink mt-1 w-full tabular-nums" type="number" inputmode="numeric" min="1" :max="Math.min(ware.stock, STALL.maxQty)">
           </label>
@@ -121,13 +126,16 @@ onUnmounted(() => clearInterval(timer))
         <h5 class="text-sm font-bold">市面上的摊位</h5>
         <span class="text-xs text-ink3">纹银 {{ store.player.silver.toLocaleString() }} 两</span>
       </div>
+      <div class="workbench-toolbar" role="group" aria-label="摊位分类">
+        <button v-for="f in (['ALL','HERB','FRAGMENT'] as const)" :key="f" class="btn btn-sm" :class="{ 'btn-gold': kind === f }" :aria-pressed="kind === f" @click="kind = f">{{ { ALL: '全部', HERB: '草药', FRAGMENT: '残页' }[f] }}</button>
+      </div>
       <p v-if="!store.stallBoard" class="text-xs text-ink3">正在看摊。</p>
-      <p v-else-if="!listings.length" class="text-xs text-ink3">眼下没有摊位，散客货今天也已买过。</p>
+      <p v-else-if="!listings.length" class="text-xs text-ink3">该分类暂无在售货物。</p>
       <ul v-else class="space-y-1.5" aria-label="市面上的摊位">
         <li v-for="entry in listings" :key="entry.id" class="flex flex-wrap items-center justify-between gap-2 text-sm" :class="TIER_META[entry.goods.tier].cls">
           <span class="min-w-0">
             <ItemIcon :item-id="entry.kind === 'HERB' ? entry.goodsId : 'skill-fragment'" class="mr-1 [--item-icon-size:1.45rem]" />
-            <b class="tier-text">{{ entry.goods.name }}</b>
+            <b class="tier-text">{{ entry.goods.name }}</b> <span v-if="entry.unitPrice < entry.goods.refPrice" class="chip chip-jade">低于参考价</span>
             <span class="tabular-nums"> ×{{ entry.qty }}</span>
             <span class="text-xs text-ink3"> · 每份 <b class="tabular-nums text-ink2">{{ entry.unitPrice }}</b> 两（参考 {{ entry.goods.refPrice }}）· {{ entry.seller }}{{ entry.system ? ' · 每日一次，整摊买走' : ` · 还挂 ${left(entry.expiresAt)}` }}</span>
           </span>

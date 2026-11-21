@@ -386,6 +386,7 @@ export interface MirrorRankEntryDTO {
 }
 
 export interface HuashanEntryDTO extends MirrorRankEntryDTO {
+  combatPower?: number
   honor?: string
   suffix?: string
   inscription?: string
@@ -476,6 +477,8 @@ export interface PendingAdventureDTO {
 
 /** 同地图附近真实玩家 DTO */
 export interface RoomPlayerDTO {
+  avatarId?: PlayerAvatarId
+  weaponName?: string
   id: string
   nickname: string
   sectName: string
@@ -628,7 +631,7 @@ export interface RaidTeamDTO {
   leaderId: string
   revision: number
   starting: boolean
-  members: { id: string; nickname: string; ready: boolean; online: boolean }[]
+  members: { id: string; nickname: string; avatarId?: PlayerAvatarId; weaponName?: string; ready: boolean; online: boolean }[]
   invited: { id: string; nickname: string }[]
 }
 

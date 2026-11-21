@@ -275,7 +275,9 @@ function mirrorRankEntry(row: MirrorRankRow & { rank: number }): MirrorRankEntry
 }
 
 function huashanEntry(row: HuashanRanked, honor?: string): HuashanEntryDTO {
-  return { ...mirrorRankEntry(row), honor, suffix: row.suffix, inscription: row.inscription }
+  const { player, loadout, bonus, companionOf } = mirrorFighter(row.mirror)
+  const { combatPower } = computeDerivedStats(player, loadout, bonus, companionOf)
+  return { ...mirrorRankEntry(row), combatPower, honor, suffix: row.suffix, inscription: row.inscription }
 }
 
 function rankedHuashan(seasonWhere: string) {

@@ -162,6 +162,7 @@ export const useGameStore = defineStore('wuxiaGame', () => {
     jianghuTab: uiRefs.jianghuTab,
     arsenalTab: uiRefs.arsenalTab,
     mobileDrawer: uiRefs.mobileDrawer,
+    worldPane: uiRefs.worldPane,
     mapPickerOpen: uiRefs.mapPickerOpen,
     shichenIdx: uiRefs.shichenIdx,
     shichenLabel: computed(() => SHICHEN_LABELS[uiRefs.shichenIdx.value]),

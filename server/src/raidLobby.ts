@@ -8,7 +8,7 @@ import { db } from './db.ts'
 import { GameError, objectBody } from './http.ts'
 import type { registerRooms } from './rooms.ts'
 
-type Identity = { id: string; nickname: string }
+type Identity = Pick<RaidTeamDTO['members'][number], 'id' | 'nickname' | 'avatarId' | 'weaponName'>
 const UUID = /^[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/i
 type Team = {
   id: string
@@ -32,7 +32,11 @@ export function registerRaidLobby(app: FastifyInstance, rooms: ReturnType<typeof
   function view(team: Team): RaidTeamDTO {
     return {
       id: team.id, raidId: team.raidId, leaderId: team.leaderId, starting: team.starting, revision: team.revision,
-      members: team.members.map((member) => ({ ...member, ready: team.ready.has(member.id), online: rooms.onlineMap(member.id) !== null })),
+      members: team.members.map((member) => {
+        const live = rooms.onlinePlayer(member.id)
+        return { ...member, avatarId: live?.avatarId ?? member.avatarId, weaponName: live ? live.weaponName : member.weaponName,
+          ready: team.ready.has(member.id), online: !!live }
+      }),
       invited: teamInvites(team).map((entry) => entry.target),
     }
   }
@@ -153,7 +157,8 @@ export function registerRaidLobby(app: FastifyInstance, rooms: ReturnType<typeof
     const { accountId } = await requireSession(request)
     const { rows: [row] } = await db.query<Identity & { profile: FeatureState }>('SELECT id, nickname, profile FROM players WHERE account_id = $1', [accountId])
     if (!row) throw new GameError(404, 'PLAYER_NOT_CREATED', '先创建你的角色')
-    const actor: Identity = { id: row.id, nickname: row.nickname }
+    const info = rooms.onlinePlayer(row.id)
+    const actor: Identity = { id: row.id, nickname: row.nickname, avatarId: info?.avatarId, weaponName: info?.weaponName }
     const input = objectBody(request.body)
     if ((input.action === 'invite' || input.action === 'accept') && !featureUnlocked(row.profile, 'RAID')) {
       throw conflict('FEATURE_LOCKED', featureLockedText('RAID'))

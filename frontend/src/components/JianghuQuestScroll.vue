@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { ChevronDown } from 'lucide-vue-next'
+import { computed } from 'vue'
+import { ChevronRight } from 'lucide-vue-next'
 import { useGameStore } from '@/stores/gameStore'
 import { FTUE_TOTAL, FTUE_VOLUMES } from '../../../shared/ftueQuests.ts'
 import { featureRequirementText } from '../../../shared/features.ts'
 
 const store = useGameStore()
+defineEmits<{ open: [] }>()
 const quest = computed(() => store.ftueQuest)
 const done = computed(() => !!quest.value && store.ftueProgressOf(quest.value) >= 1)
 const claimed = computed(() => store.ftue.claimed.length)
@@ -13,24 +14,18 @@ const claimed = computed(() => store.ftue.claimed.length)
 const upcoming = computed(() => store.upcomingFeature && {
   name: store.upcomingFeature.name, when: featureRequirementText(store.upcomingFeature.id),
 })
-/** 右栏位置紧：平时只露标题、目标与领赏，人物的话与下一个机缘点开再看 */
-const expanded = ref(false)
 </script>
 
 <template>
   <article v-if="quest" class="well quest-card mb-2 space-y-1.5 px-3 py-2.5">
-    <button class="flex w-full items-center gap-2 text-left" :aria-expanded="expanded" aria-controls="quest-more" @click="expanded = !expanded">
+    <button class="flex w-full items-center gap-2 text-left" aria-haspopup="dialog" @click="$emit('open')">
       <span class="chip chip-gold shrink-0">江湖行历 · {{ FTUE_VOLUMES[quest.volume] }}</span>
       <span class="ml-auto text-[0.7rem] tabular-nums text-ink3">{{ Math.min(claimed + 1, FTUE_TOTAL) }} / {{ FTUE_TOTAL }}</span>
-      <ChevronDown :size="14" class="shrink-0 text-ink3 transition-transform" :class="{ 'rotate-180': expanded }" aria-hidden="true" />
+      <ChevronRight :size="14" class="shrink-0 text-ink3" aria-hidden="true" />
     </button>
     <div class="min-w-0">
       <h4 class="font-brush truncate text-lg leading-tight">{{ quest.title }}</h4>
       <p class="truncate text-sm" :title="quest.subtitle">{{ quest.subtitle }}</p>
-    </div>
-    <div v-if="expanded" id="quest-more" class="space-y-1">
-      <p class="hint"><b class="text-ink2">{{ quest.speaker }}</b>「{{ quest.line }}」</p>
-      <p v-if="upcoming" class="text-[0.72rem] leading-snug text-ink3">下一个机缘 · <b class="text-ink2">{{ upcoming.name }}</b>：{{ upcoming.when }}后开放</p>
     </div>
     <div class="flex items-center justify-between gap-2">
       <span class="min-w-0 truncate text-[0.7rem] tabular-nums text-ink3">

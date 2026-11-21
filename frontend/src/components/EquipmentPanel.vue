@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { computed, nextTick, onActivated, ref, watch } from 'vue'
+import { computed, nextTick, onActivated, onDeactivated, ref, shallowRef, watch } from 'vue'
 import { ArrowLeft, ChevronRight, Swords } from 'lucide-vue-next'
 import {
   backpackCapacity, canEquipCompanionItem, HERBS, HIDDEN_WEAPONS, hiddenWeaponCapacity,
   ITEMS, JIANGHU_TITLES, MEDICINES, meetsItemStatRequirement, SKILLS, titleEligible,
   unlockedHiddenWeapons, type ItemConfig,
 } from '@/config/gameData'
-import { BASE_STAT_LABELS, EQUIP_SLOT_META, itemBonusLabels, PLAYER_AVATARS, TIER_META } from '@/config/uiMeta'
+import { BASE_STAT_LABELS, equipmentType, EQUIP_SLOT_META, itemBonusRows, medicineType, PLAYER_AVATARS, TIER_META } from '@/config/uiMeta'
 import type { EquipSlotType, TierColor } from '@/network/protocol'
 import { useGameStore } from '@/stores/gameStore'
 import { companionItemId, formatBattleStatBonuses, PERSONAL_EQUIP_SLOTS } from '../../../shared/combatMeta.ts'
@@ -17,7 +17,11 @@ import CharacterCombatStats from './CharacterCombatStats.vue'
 import EquipmentForge from './EquipmentForge.vue'
 import InkFigure from './InkFigure.vue'
 import ItemIcon from './ItemIcon.vue'
+import ItemPopover from './ItemPopover.vue'
+import ItemCardHeading from './ItemCardHeading.vue'
+import EquipmentValue from './EquipmentValue.vue'
 
+const props = defineProps<{ initialItem?: string }>()
 const emit = defineEmits<{ skill: [id: string] }>()
 const store = useGameStore()
 const root = ref<HTMLElement>()
@@ -54,14 +58,26 @@ const slotColumns = computed(() => [
   worn.value.filter((_, index) => index % 2 === 1),
 ])
 const openSlot = computed(() => worn.value.find(({ type }) => type === rolePane.value))
-const wornIds = computed(() => new Set([
-  ...slotOrder.map((slot) => store.currentLoadout[EQUIP_SLOT_META[slot].field]),
-  ...companions.value.flatMap(({ id }) => PERSONAL_EQUIP_SLOTS.map((slot) => companionItemId(store.currentLoadout, id, slot))),
-]))
-const backpack = computed(() => store.ownedItemIds
+const wornBy = computed(() => {
+  const owners = new Map<string, string>()
+  for (const type of slotOrder) {
+    const id = store.currentLoadout[EQUIP_SLOT_META[type].field]
+    if (id) owners.set(id, store.player.nickname)
+  }
+  for (const member of companions.value) {
+    for (const slot of PERSONAL_EQUIP_SLOTS) {
+      const id = companionItemId(store.currentLoadout, member.id, slot)
+      if (id) owners.set(id, member.name)
+    }
+  }
+  return owners
+})
+const owned = computed(() => store.ownedItemIds
   .map((id) => ITEMS[id])
-  .filter((item) => item && !wornIds.value.has(item.id))
+  .filter(Boolean)
   .sort((a, b) => TIER_META[b.tier].rank - TIER_META[a.tier].rank))
+const backpack = computed(() => owned.value.filter((gear) => !wornBy.value.has(gear.id)))
+const wearerGear = computed(() => new Set(worn.value.map((slot) => slot.item?.id)))
 
 const hiddenSlots = computed(() => hiddenWeaponCapacity(store.currentLoadout))
 const availableWeapons = computed(() => unlockedHiddenWeapons(store.player))
@@ -87,12 +103,16 @@ function openAlchemy() {
 }
 
 const categories = [
+  { id: 'ALL', label: '全部' },
   { id: 'GEAR', label: '装备' }, { id: 'MEDICINE', label: '丹药' },
   { id: 'HERB', label: '药材' }, { id: 'FRAGMENT', label: '残页' },
 ] as const
 type Category = typeof categories[number]['id']
-type Supply = { id: string; name: string; tier: TierColor; count: number; desc: string; source?: string; iconId?: string; glyph: string }
-const category = ref<Category>('GEAR')
+type Supply = { id: string; name: string; tier: TierColor; count: number; desc: string; source?: string; iconId?: string; glyph: string; kind: Category; type: string }
+const category = ref<Category>('ALL')
+const includesGear = computed(() => category.value === 'ALL' || category.value === 'GEAR')
+const anchor = shallowRef<HTMLElement>()
+const skillTrigger = ref('')
 const slotFilter = ref<EquipSlotType | 'ALL'>('ALL')
 const showStorage = ref(false)
 const selectedId = ref<string>()
@@ -108,33 +128,41 @@ const carried = computed(() => backpack.value.slice(0, carriedSlots.value))
 const storage = computed(() => backpack.value.slice(carriedSlots.value))
 const matchesSlot = (item: ItemConfig) => slotFilter.value === 'ALL' || item.slot === slotFilter.value
 const matchingStorage = computed(() => storage.value.filter(matchesSlot))
-const visibleGear = computed(() => showStorage.value ? matchingStorage.value : carried.value.filter(matchesSlot))
-const emptySlots = computed(() => !showStorage.value && slotFilter.value === 'ALL' ? bagCapacity.value - carriedCount.value : 0)
+const visibleGear = computed(() => {
+  if (!includesGear.value) return []
+  if (showStorage.value) return matchingStorage.value
+  const carriedIds = new Set(carried.value.map((gear) => gear.id))
+  return owned.value.filter((gear) => matchesSlot(gear) && (carriedIds.has(gear.id) || (returnSlot.value ? wearerGear.value : wornBy.value).has(gear.id)))
+})
 const supplies = computed<Supply[]>(() => {
-  if (category.value === 'MEDICINE') return Object.values(MEDICINES).flatMap((medicine) => {
+  const result: Supply[] = []
+  for (const medicine of Object.values(MEDICINES)) {
     const stock = medicine.category === 'BATTLE_PILL' || medicine.category === 'WEAPON_VENOM'
       ? medicineStock.value : store.pillInventory
     const count = stock[medicine.id] ?? 0
-    return count > 0 ? [{ ...medicine, count, desc: medicine.effectDesc, glyph: '丹' }] : []
-  })
-  if (category.value === 'HERB') return Object.entries(store.herbInventory).flatMap(([id, count]) => {
+    if (count > 0) result.push({ ...medicine, count, desc: medicine.effectDesc, glyph: '丹', kind: 'MEDICINE', type: medicineType(medicine) })
+  }
+  for (const [id, count] of Object.entries(store.herbInventory)) {
     const herb = HERBS[id]
-    return herb && count > 0 ? [{ ...herb, count, source: herb.mapName, glyph: '药' }] : []
-  })
-  if (category.value === 'FRAGMENT') return Object.entries(store.player.skillFragments ?? {}).flatMap(([id, count]) => {
+    if (herb && count > 0) result.push({ ...herb, count, source: herb.mapName, glyph: '药', kind: 'HERB', type: '材料 · 药材' })
+  }
+  for (const [id, count] of Object.entries(store.player.skillFragments ?? {})) {
     const skill = SKILLS[id]
-    if (!skill || count <= 0) return []
+    if (!skill || count <= 0) continue
     const desc = store.learnedSkills[id] ? '参悟同名武学时可用残页抵扣真气。' : '习得同名武学后，可在参悟时用残页抵扣真气。'
-    return [{ id, name: `《${skill.name}》残页`, tier: skill.tier, count, desc, iconId: 'skill-fragment', glyph: '卷' }]
-  })
-  return []
+    result.push({ id, name: `《${skill.name}》残页`, tier: skill.tier, count, desc, iconId: 'skill-fragment', glyph: '卷', kind: 'FRAGMENT', type: '武学材料 · 残页' })
+  }
+  return result
 })
-
-const selectedGear = computed(() => category.value === 'GEAR' ? visibleGear.value.find((item) => item.id === selectedId.value) : undefined)
+const visibleSupplies = computed(() => showStorage.value ? [] : supplies.value.filter((entry) => category.value === 'ALL' || category.value === entry.kind))
+const selectedGear = computed(() => owned.value.find((item) => item.id === selectedId.value))
 const selectedSupply = computed(() => supplies.value.find(({ id }) => id === selectedId.value))
+const selectedEntry = computed(() => selectedGear.value ?? selectedSupply.value)
 const item = computed(() => inBag.value ? selectedGear.value : openSlot.value?.item)
 const comparedItem = computed(() => selectedGear.value && worn.value.find(({ type }) => type === selectedGear.value?.slot)?.item)
-const canCompare = computed(() => !!comparedItem.value || !!returnSlot.value)
+const equippedBy = computed(() => selectedGear.value && wornBy.value.get(selectedGear.value.id))
+const alreadyWorn = computed(() => !!equippedBy.value)
+const canCompare = computed(() => !alreadyWorn.value && (!!comparedItem.value || !!returnSlot.value))
 const comparing = computed(() => inBag.value && showComparison.value && canCompare.value)
 const requirement = computed(() => item.value?.reqStat)
 const meetsRequirement = computed(() => {
@@ -145,19 +173,36 @@ const meetsRequirement = computed(() => {
 const forgeState = (id: string) => store.player.equipmentForge?.items[id]
 const stars = (id: string) => forgeState(id)?.stars ?? 0
 
-function itemEffects(gear: ItemConfig) {
-  const effects = itemBonusLabels(temperedItem(gear, stars(gear.id)))
+function effectRows(gear: ItemConfig) {
+  const effects: { key: string; label: string; value: string }[] = []
   const roll = store.player.equipmentAffixes?.[gear.id]
-  if (roll) effects.push(`${trialAffixQuality(gear, roll)} · ${trialAffixLabel(gear, roll)}`)
+  if (roll) {
+    const affix = trialAffixLabel(gear, roll)
+    const stat = affix.split(' ')[0]
+    effects.push({ key: 'affix-' + stat, label: '掉落词条 · ' + stat, value: `${trialAffixQuality(gear, roll)} · ${affix.slice(stat.length).trim()}` })
+  }
   const secondary = forgeState(gear.id)?.secondary
-  if (secondary) effects.push(`副词条 · ${formatBattleStatBonuses({ [secondary.stat]: secondary.value })}`)
+  if (secondary) {
+    const text = formatBattleStatBonuses({ [secondary.stat]: secondary.value })
+    const separator = text.indexOf(' ')
+    effects.push({ key: 'secondary-' + secondary.stat, label: '副词条 · ' + text.slice(0, separator), value: text.slice(separator + 1) })
+  }
+  if (gear.signatureEffect) effects.push({ key: 'signature', label: '特效', value: gear.signatureEffect })
+  if (gear.extra) effects.push({ key: 'extra', label: '附加说明', value: gear.extra })
   return effects
 }
-
-const comparisons = computed(() => [
-  { label: '当前穿戴', gear: comparedItem.value },
-  { label: '选中装备', gear: selectedGear.value },
-])
+const baseRows = (gear: ItemConfig) => itemBonusRows(temperedItem(gear, stars(gear.id)))
+const stats = computed(() => item.value ? baseRows(item.value) : [])
+const effects = computed(() => item.value ? effectRows(item.value) : [])
+const comparisonRows = computed(() => {
+  const current = comparedItem.value
+  const before = current ? [...baseRows(current), ...effectRows(current)] : []
+  const after = [...stats.value, ...effects.value]
+  return [...new Map([...before, ...after].map((row) => [row.key, row.label]))].map(([key, label]) => ({
+    key, label, before: before.find((row) => row.key === key)?.value ?? '—',
+    after: after.find((row) => row.key === key)?.value ?? '—',
+  }))
+})
 const setDetail = computed(() => {
   const id = item.value?.setId
   if (!id) return undefined
@@ -176,19 +221,23 @@ const setDetail = computed(() => {
 const supplyAction = computed(() => {
   const supply = selectedSupply.value
   if (!supply) return undefined
-  if (category.value === 'HERB' && store.featureOpen('MAPS')) return { label: '去百草丹房', run: openAlchemy }
-  if (category.value === 'FRAGMENT' && store.learnedSkills[supply.id]) {
-    return { label: '查看武学', run: () => emit('skill', supply.id) }
+  if (supply.kind === 'HERB' && store.featureOpen('MAPS')) return { label: '去百草丹房', run: openAlchemy }
+  if (supply.kind === 'FRAGMENT' && store.learnedSkills[supply.id]) {
+    return { label: '查看武学', run: () => { skillTrigger.value = supply.id; emit('skill', supply.id) } }
   }
-  const medicine = category.value === 'MEDICINE' ? MEDICINES[supply.id] : undefined
+  const medicine = supply.kind === 'MEDICINE' ? MEDICINES[supply.id] : undefined
   if (medicine?.category === 'BATTLE_PILL' || medicine?.category === 'WEAPON_VENOM') {
-    return { label: '去战备', run: () => { pickWearer(null); store.arsenalTab = 'EQUIP'; openRolePane('PREPARE') } }
+    return { label: '去战备', run: () => {
+      pickWearer(null)
+      store.arsenalTab = 'EQUIP'
+      openRolePane('PREPARE')
+    } }
   }
   const effect = medicine?.acupointEffect?.type
   if (effect === 'BREAKTHROUGH_RATE' || effect === 'PREVENT_DEVIATION') {
     return { label: '去修行', run: () => store.selectTab('CULTIVATE') }
   }
-  if (effect) return { label: '去经脉冲穴', run: () => { store.arsenalTab = 'MERIDIAN' } }
+  if (effect) return { label: '去经脉冲穴', run: () => { store.selectTab('ARSENAL'); store.arsenalTab = 'MERIDIAN' } }
   return undefined
 })
 const paneTitle = computed(() => {
@@ -223,8 +272,9 @@ function closeRolePane() {
   })
 }
 
-function selectItem(id?: string) {
+function selectItem(id?: string, trigger?: EventTarget | null) {
   selectedId.value = id
+  anchor.value = trigger instanceof HTMLElement ? trigger : undefined
   showComparison.value = !!returnSlot.value
   equipMessage.value = ''
 }
@@ -255,29 +305,47 @@ function returnToRole() {
   void nextTick(() => detailHeading.value?.focus({ preventScroll: true }))
 }
 
-function focusBagItem(id: string) {
-  void nextTick(() => root.value?.querySelector<HTMLElement>(`[data-bag-item="${id}"]`)?.focus({ preventScroll: true }))
-}
-
-function closeItem() {
+function closeItem(restoreFocus = true) {
   const id = selectedId.value
   selectItem()
-  if (id) focusBagItem(id)
+  if (id && restoreFocus) void nextTick(() => {
+    const trigger = root.value?.querySelector<HTMLElement>(`[data-bag-item="${CSS.escape(id)}"]`)
+    const target = trigger ?? bagHeading.value
+    target?.focus({ preventScroll: true })
+  })
 }
-
+watch(inBag, (active) => { if (!active) closeItem(false) })
+onDeactivated(() => closeItem(false))
 onActivated(() => {
-  if (inBag.value && selectedId.value) focusBagItem(selectedId.value)
+  if (!skillTrigger.value) return
+  root.value?.querySelector<HTMLElement>(`[data-bag-item="${CSS.escape(skillTrigger.value)}"]`)?.focus({ preventScroll: true })
+  skillTrigger.value = ''
 })
+watch(() => props.initialItem, async (id) => {
+  if (!id) return
+  pickWearer(null)
+  category.value = 'ALL'
+  slotFilter.value = 'ALL'
+  showStorage.value = storage.value.some((gear) => gear.id === id)
+  await nextTick()
+  const tile = root.value?.querySelector<HTMLElement>(`[data-bag-item="${CSS.escape(id)}"]`)
+  if (tile) { tile.focus(); selectItem(id, tile) }
+}, { immediate: true, flush: 'post' })
+function useSupply() {
+  const action = supplyAction.value
+  if (!action) return
+  action.run()
+  closeItem(false)
+}
 
 async function equipSelected() {
   const candidate = selectedGear.value
-  if (!candidate || !meetsRequirement.value || store.onlineActionBusy) return
+  if (!candidate || alreadyWorn.value || !meetsRequirement.value || store.onlineActionBusy) return
   if (!wearer.value) await store.equipItem(candidate.id)
   else if (candidate.slot !== 'RELIC') await store.equipCompanionItem(wearer.value.id, candidate.slot, candidate.id)
   if (selectedId.value === candidate.id && worn.value.some(({ item: gear }) => gear?.id === candidate.id)) {
-    selectItem()
+    closeItem()
     equipMessage.value = `已为${wearerName.value}穿戴「${candidate.name}」。`
-    if (inBag.value) void nextTick(() => detailHeading.value?.focus({ preventScroll: true }))
   }
 }
 
@@ -293,6 +361,7 @@ function onEscape(event: KeyboardEvent) {
   else if (!inBag.value && rolePane.value) closeRolePane()
   else return
   event.stopPropagation()
+  event.preventDefault()
 }
 </script>
 
@@ -340,16 +409,17 @@ function onEscape(event: KeyboardEvent) {
     <section v-show="inBag" class="equip-pane" aria-label="背包">
       <header class="equip-heading">
         <button v-if="returnSlot" type="button" class="btn btn-sm" @click="returnToRole"><ArrowLeft aria-hidden="true" />返回角色</button>
-        <h2 ref="bagHeading" class="sec-title" tabindex="-1">背包</h2>
-        <span v-if="category === 'GEAR'" title="穿戴的装备不计入随身容量，破障丹占一格">{{ carriedCount }} / {{ bagCapacity }} 格</span>
+        <h2 ref="bagHeading" class="sec-title" tabindex="-1">随身物品</h2>
+        <span role="status">{{ equipMessage }}</span>
+        <span title="穿戴的装备不计入随身容量，破障丹占一格">随身 {{ carriedCount }} / {{ bagCapacity }} 格</span>
       </header>
       <div class="equip-options" role="group" aria-label="物品分类">
         <button v-for="entry in categories" :key="entry.id" type="button" class="btn btn-sm"
           :aria-pressed="category === entry.id" @click="filterCategory(entry.id)">{{ entry.label }}</button>
       </div>
-      <div v-if="category === 'GEAR'" class="bag-filter">
+      <div v-if="includesGear" class="bag-filter">
         <label class="flex items-center gap-2"><span>部位</span>
-          <select v-model="slotFilter" class="field" aria-label="装备部位" @change="selectItem()">
+          <select v-model="slotFilter" class="field" aria-label="装备部位" @change="category = 'GEAR'; selectItem()">
             <option value="ALL">全部</option>
             <option v-for="slot in slotOrder" :key="slot" :value="slot">{{ EQUIP_SLOT_META[slot].label }}</option>
           </select>
@@ -361,66 +431,65 @@ function onEscape(event: KeyboardEvent) {
         </div>
       </div>
       <div class="equip-scroll">
-        <p v-if="category === 'GEAR' && !visibleGear.length" class="equip-empty">
-          {{ showStorage ? '行囊里没有符合条件的装备。' : '随身没有符合条件的装备。' }}
-        </p>
-        <p v-else-if="category !== 'GEAR' && !supplies.length" class="equip-empty">暂无{{ categories.find(({ id }) => id === category)?.label }}。</p>
+        <p v-if="!visibleGear.length && !visibleSupplies.length" class="equip-empty">{{ showStorage ? '行囊里没有符合条件的装备。' : '此分类暂无物品。' }}</p>
         <div class="bag-grid">
-          <template v-if="category === 'GEAR'">
             <button v-for="gear in visibleGear" :key="gear.id" type="button" class="bag-tile" :class="TIER_META[gear.tier].cls"
-              :data-bag-item="gear.id" :aria-pressed="selectedId === gear.id" :aria-label="gear.name" :title="gear.name" @click="selectItem(gear.id)">
+              :data-bag-item="gear.id" aria-haspopup="dialog" :aria-description="wornBy.has(gear.id) ? wornBy.get(gear.id) + '已穿戴，数量 1' : '数量 1'" :aria-label="gear.name" :title="gear.name" @click="selectItem(gear.id, $event.currentTarget)">
               <ItemIcon :item-id="gear.id" :glyph="EQUIP_SLOT_META[gear.slot].glyph" class="gear-icon" />
+              <span v-if="wornBy.has(gear.id)" class="worn-tag">已穿戴</span><small class="tile-count">×1</small>
               <b class="tier-text">{{ gear.name }}</b>
-              <small>{{ TIER_META[gear.tier].label }}<template v-if="stars(gear.id)"> · +{{ stars(gear.id) }} 星</template></small>
             </button>
-            <span v-for="n in emptySlots" :key="`empty-${n}`" class="bag-empty-cell" aria-hidden="true" />
-          </template>
-          <button v-for="entry in supplies" :key="entry.id" type="button" class="bag-tile" :class="TIER_META[entry.tier].cls"
-            :data-bag-item="entry.id" :aria-pressed="selectedId === entry.id" :title="entry.name" @click="selectItem(entry.id)">
+          <button v-for="entry in visibleSupplies" :key="entry.id" type="button" class="bag-tile" :class="TIER_META[entry.tier].cls"
+            :data-bag-item="entry.id" aria-haspopup="dialog" :aria-label="entry.name" :aria-description="`数量 ${entry.count}`" :title="entry.name" @click="selectItem(entry.id, $event.currentTarget)">
             <ItemIcon :item-id="entry.iconId ?? entry.id" :glyph="entry.glyph" class="gear-icon" />
             <b class="tier-text">{{ entry.name }}</b>
-            <small>×{{ entry.count.toLocaleString() }}</small>
+            <small class="tile-count">×{{ entry.count.toLocaleString() }}</small>
           </button>
         </div>
       </div>
     </section>
 
-    <aside class="equip-pane detail-pane" :aria-label="paneTitle">
-      <header class="equip-heading">
+    <component :is="inBag ? ItemPopover : 'aside'" v-if="!inBag || (anchor && selectedEntry)"
+      :key="inBag ? selectedId : 'role'" v-bind="inBag ? { anchor, wide: comparing } : {}"
+      class="equip-pane detail-pane" :class="inBag && selectedEntry ? TIER_META[selectedEntry.tier].cls : ''"
+      :aria-label="inBag ? selectedEntry?.name : paneTitle" @dismiss="closeItem(false)">
+      <ItemCardHeading v-if="inBag && selectedGear" :name="selectedGear.name" :icon="selectedGear.id" :count="1" :stars="stars(selectedGear.id)"
+        :tier="selectedGear.tier" :type="equipmentType(selectedGear) + (selectedGear.isTrueUnique ? ' · 全服唯一' : '')" @close="closeItem()" />
+      <ItemCardHeading v-else-if="inBag && selectedSupply" :name="selectedSupply.name" :icon="selectedSupply.iconId ?? selectedSupply.id" :count="selectedSupply.count"
+        :tier="selectedSupply.tier" :type="selectedSupply.type" @close="closeItem()" />
+      <header v-else class="equip-heading">
         <h2 ref="detailHeading" class="sec-title" tabindex="-1">{{ paneTitle }}</h2>
-        <button v-if="inBag && (selectedGear || selectedSupply)" type="button" class="btn btn-sm" @click="closeItem">关闭详情</button>
-        <button v-else-if="!inBag && rolePane" type="button" class="btn btn-sm" @click="closeRolePane"><ArrowLeft aria-hidden="true" />返回概览</button>
+        <button v-if="rolePane" type="button" class="btn btn-sm" @click="closeRolePane"><ArrowLeft aria-hidden="true" />返回概览</button>
       </header>
       <div :key="inBag ? (selectedId ?? 'bag') : (rolePane ?? 'role')" class="equip-scroll detail-body">
         <template v-if="item">
-          <div class="item-heading" :class="TIER_META[item.tier].cls">
+          <div v-if="!inBag" class="item-heading" :class="TIER_META[item.tier].cls">
             <ItemIcon :item-id="item.id" :glyph="EQUIP_SLOT_META[item.slot].glyph" class="gear-icon" />
             <div>
               <h3 class="font-brush tier-text">{{ item.name }}<small v-if="stars(item.id)"> +{{ stars(item.id) }} 星</small></h3>
-              <p class="text-ink3">{{ EQUIP_SLOT_META[item.slot].label }} · {{ TIER_META[item.tier].label }}<template v-if="item.isTrueUnique"> · 全服唯一</template></p>
+              <p class="text-ink3">{{ EQUIP_SLOT_META[item.slot].label }} · {{ TIER_META[item.tier].label }}<template v-if="item.isTrueUnique"> · 全服唯一</template><template v-if="inBag"> · ×1</template></p>
             </div>
           </div>
-          <div v-if="comparing" class="gear-comparison" role="group" aria-label="同部位装备对比">
-            <section v-for="{ label, gear } in comparisons" :key="label" class="compare-column">
-              <h4>{{ label }}</h4>
-              <template v-if="gear">
-                <div class="flex min-w-0 items-center gap-1.5" :class="TIER_META[gear.tier].cls">
-                  <ItemIcon :item-id="gear.id" :glyph="EQUIP_SLOT_META[gear.slot].glyph" class="[--item-icon-size:1.6rem]" />
-                  <b class="tier-text">{{ gear.name }}<small v-if="stars(gear.id)"> +{{ stars(gear.id) }} 星</small></b>
-                </div>
-                <ul><li v-for="effect in itemEffects(gear)" :key="effect">{{ effect }}</li></ul>
-                <p v-if="gear.signatureEffect" class="hint">{{ gear.signatureEffect }}</p>
-              </template>
-              <p v-else class="text-ink3">未装备</p>
-            </section>
+          <div v-if="comparing" role="group" aria-label="同部位装备对比">
+            <table class="gear-comparison" aria-label="同部位对比">
+              <thead><tr><th scope="col">词条</th><th scope="col">当前 · {{ comparedItem?.name ?? '未装备' }}</th><th scope="col">选中 · {{ item.name }}</th></tr></thead>
+              <tbody><tr v-for="row in comparisonRows" :key="row.key"><th scope="row">{{ row.label }}</th>
+                <td><EquipmentValue :text="row.before" /></td><td><EquipmentValue :text="row.after" /></td></tr></tbody>
+            </table>
           </div>
-          <ul v-else class="item-effects text-jade"><li v-for="effect in itemEffects(item)" :key="effect">{{ effect }}</li></ul>
-          <p v-if="item.signatureEffect && !comparing" class="text-gold">{{ item.signatureEffect }}</p>
+          <template v-else>
+            <section v-if="stats.length"><h4 class="text-gold">基础属性</h4><dl class="gear-stats">
+              <template v-for="row in stats" :key="row.key"><dt>{{ row.label }}</dt><dd><EquipmentValue :text="row.value" /></dd></template>
+            </dl></section>
+            <section v-if="effects.length"><h4 class="text-gold">装备效果</h4>
+              <p v-for="row in effects" :key="row.key"><span v-if="row.key !== 'signature'" class="text-ink3">{{ row.label }} · </span><EquipmentValue :text="row.value" /></p>
+            </section>
+          </template>
           <div v-if="setDetail" class="set-effects">
             <b>{{ setDetail.name }} · {{ setDetail.count }}/{{ setDetail.total }} 件已穿戴</b>
-            <p v-for="effect in setDetail.effects" :key="effect" class="hint">{{ effect }}</p>
+            <p v-for="effect in setDetail.effects" :key="effect" class="hint"><EquipmentValue :text="effect" /></p>
           </div>
-          <p class="text-ink2">{{ item.desc }}</p>
+          <p class="text-ink2"><EquipmentValue :text="item.desc" /></p>
           <p v-if="inBag && wearer && item.slot === 'RELIC'" class="text-cinnabar">全队秘宝在主角栏装配。</p>
           <p v-else-if="requirement" :class="meetsRequirement ? 'text-ink2' : 'text-cinnabar'">
             需要{{ requirement.label }}<template v-if="'key' in requirement">（当前 {{ wearerStats[requirement.key] }}）</template>
@@ -428,15 +497,10 @@ function onEscape(event: KeyboardEvent) {
           </p>
         </template>
         <template v-else-if="inBag && selectedSupply">
-          <div class="item-heading" :class="TIER_META[selectedSupply.tier].cls">
-            <ItemIcon :item-id="selectedSupply.iconId ?? selectedSupply.id" :glyph="selectedSupply.glyph" class="gear-icon" />
-            <h3 class="font-brush tier-text">{{ selectedSupply.name }}</h3>
-          </div>
-          <p class="text-gold">持有 ×{{ selectedSupply.count.toLocaleString() }}</p>
+          <h4 class="text-gold">用途</h4>
           <p class="text-ink2">{{ selectedSupply.desc }}</p>
           <p v-if="selectedSupply.source" class="hint">来源 · {{ selectedSupply.source }}</p>
         </template>
-        <p v-else-if="inBag" class="equip-empty" aria-live="polite">{{ equipMessage || '选一个物品查看详细信息。' }}</p>
         <template v-else-if="openSlot">
           <p class="text-ink2">当前{{ openSlot.label }}位未装备。</p>
           <p v-if="emptyHints[openSlot.type]" class="hint">{{ emptyHints[openSlot.type] }}</p>
@@ -523,18 +587,19 @@ function onEscape(event: KeyboardEvent) {
       </div>
 
       <footer v-if="inBag && selectedGear" class="equip-footer">
-        <button v-if="canCompare" type="button" class="btn btn-sm" :aria-pressed="showComparison" @click="showComparison = !showComparison">同部位对比</button>
-        <button type="button" class="btn btn-gold action-main" :disabled="!meetsRequirement || store.onlineActionBusy"
+        <small>{{ showStorage ? '行囊' : '随身物品' }}<template v-if="alreadyWorn"> · {{ equippedBy }}已穿戴</template></small>
+        <button v-if="canCompare" type="button" class="btn btn-sm" :aria-pressed="showComparison" @click="showComparison = !showComparison">{{ comparing ? '查看详情' : '同部位对比' }}</button>
+        <button v-if="!alreadyWorn" type="button" class="btn btn-gold action-main" :disabled="!meetsRequirement || store.onlineActionBusy"
           :aria-label="`装备${selectedGear.name}`" @click="equipSelected">{{ comparedItem ? '更换装备' : '装备' }}</button>
       </footer>
-      <footer v-else-if="inBag && supplyAction" class="equip-footer">
-        <button type="button" class="btn btn-gold action-main" @click="supplyAction.run">{{ supplyAction.label }}</button>
+      <footer v-else-if="inBag" class="equip-footer">
+        <small>随身物品</small><button v-if="supplyAction" type="button" class="btn btn-gold action-main" @click="useSupply">{{ supplyAction.label }}</button>
       </footer>
       <footer v-else-if="!inBag && openSlot" class="equip-footer">
         <button v-if="openSlot.item" type="button" class="btn btn-sm" :aria-label="`卸下${openSlot.item.name}`" :disabled="store.onlineActionBusy" @click="unequip(openSlot.type)">卸下</button>
         <button type="button" class="btn btn-gold action-main" @click="changeEquipment(openSlot.type)">{{ openSlot.item ? '更换装备' : '选择装备' }}</button>
       </footer>
-    </aside>
+    </component>
   </div>
 </template>
 
@@ -547,7 +612,7 @@ function onEscape(event: KeyboardEvent) {
   min-height: 0;
   min-width: 0;
 }
-.bag-layout { grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); }
+.bag-layout { grid-template-columns: minmax(0, 1fr); }
 .equip-pane {
   display: flex;
   flex-direction: column;
@@ -617,11 +682,12 @@ function onEscape(event: KeyboardEvent) {
 .gear-icon { --item-icon-size: clamp(1.45rem, 3.25vw, 2.6rem); }
 .bag-filter { padding-block: .2rem; }
 .bag-filter select { padding-block: .24rem; }
-.bag-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(4.75rem, 100%), 1fr)); gap: .45rem; padding: .15rem; }
-.bag-tile { display: grid; justify-items: center; align-content: center; gap: .24rem; padding: .4rem; text-align: center; }
-.bag-tile b { width: 100%; }
-.bag-tile small { color: var(--ink-3); font-size: .71rem; }
-.bag-empty-cell { min-height: 5rem; border: 1px dashed var(--line); background: var(--gold-faint); }
+.bag-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(9rem, 100%), 1fr)); gap: .55rem; padding: .15rem; }
+.bag-tile { position: relative; display: grid; justify-items: center; gap: .3rem; padding-top: .35rem; text-align: center; background: radial-gradient(ellipse, var(--bg-2), var(--bg-0) 85%); }
+.bag-tile .gear-icon { --item-icon-size: clamp(3.5rem, 10vh, 5.5rem); border: 0; background: transparent; }
+.bag-tile b { width: 100%; padding: .3rem; border-top: 1px solid var(--line); background: var(--bg-2); }
+.tile-count, .worn-tag { position: absolute; padding-inline: .25rem; background: var(--bg-0); font-size: .74rem; }
+.tile-count { bottom: 2rem; right: .2rem; }.worn-tag { top: .2rem; left: .2rem; color: var(--jade); }
 .equip-empty { margin: .35rem 0 .65rem; color: var(--ink-3); font-size: .86rem; }
 .detail-pane .equip-heading { flex: none; min-height: 1.85rem; padding-bottom: .45rem; border-bottom: 1px solid var(--line); }
 .detail-body { display: flex; flex-direction: column; gap: .65rem; padding: .25rem .18rem .35rem; font-size: .88rem; overflow-wrap: anywhere; }
@@ -630,11 +696,15 @@ function onEscape(event: KeyboardEvent) {
 .item-heading h3 { font-size: 1.32rem; line-height: 1.19; }
 .item-heading .gear-icon { --item-icon-size: clamp(2rem, 4.3vw, 3.5rem); }
 .item-heading .item-icon-standalone { --item-illustration-size: clamp(5rem, 18vh, 8rem); }
-.item-effects, .compare-column ul { display: grid; gap: .2rem; }
-.gear-comparison { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .55rem; }
-.compare-column { display: grid; align-content: start; gap: .35rem; min-width: 0; padding: .58rem; border: 1px solid var(--line); background: var(--bg-0); }
-.compare-column h4 { color: var(--ink-3); font-size: .78rem; }
-.compare-column ul { color: var(--ink-2); }
+.gear-stats { display: grid; grid-template-columns: max-content 1fr; gap: .15rem 1rem; }
+.gear-comparison { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: .85rem; }
+.gear-comparison :is(th, td) { padding: .35rem .5rem; border: 1px solid var(--line); text-align: left; vertical-align: top; }
+.gear-comparison thead { color: var(--gold); background: var(--bg-2); }
+.gear-comparison th:first-child { width: 20%; }
+.item-popover.detail-pane { padding: 0; gap: 0; }
+.item-popover .detail-body, .item-popover .equip-footer { padding: .65rem .85rem; }
+.item-popover .equip-footer small { margin-inline-end: auto; color: var(--ink-3); }
+.item-popover .action-main { margin: 0; }
 .set-effects, .stat-section, .prep-group { border-top: 1px solid var(--line); padding-top: .48rem; }
 .prep-group { display: grid; gap: .45rem; }
 .equip-power { display: flex; align-items: center; gap: .5rem; color: var(--gold); }

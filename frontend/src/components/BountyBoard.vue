@@ -44,9 +44,10 @@ onScopeDispose(() => { request++ })
     <p v-if="error" class="well p-3 text-sm text-cinnabar" role="status">{{ error }}</p>
     <p v-else-if="!entries.length" class="well p-3 text-sm text-ink3" role="status">{{ loading ? '正在查看悬赏' : '暂无有效通缉令。' }}</p>
 
-    <article v-for="entry in entries" :key="`${entry.targetId}-${entry.expiresAt}`" class="well space-y-2 p-3"
+    <article v-for="entry in entries" :key="`${entry.targetId}-${entry.expiresAt}`" class="well space-y-2 !border-double !border-4 p-3"
       :class="entry.targetId === store.bountyTargetId ? '!border-gold' : ''">
       <div class="flex flex-wrap items-center gap-2">
+        <span class="seal h-8 w-8 text-lg" aria-hidden="true">缉</span>
         <h4 class="font-brush text-xl">{{ entry.nickname }}</h4>
         <span class="chip chip-red">{{ SECTS.find((sect) => sect.id === entry.sectId)?.name ?? '师门' }}通缉</span>
         <span v-if="entry.accepted" class="chip chip-jade">已接令</span>
@@ -60,6 +61,9 @@ onScopeDispose(() => { request++ })
         <span v-if="entry.expiresAt <= store.worldTime" class="hint">通缉令已过期</span>
         <button v-else-if="!entry.accepted" class="btn btn-sm btn-gold" :disabled="store.onlineActionBusy"
           @click="store.acceptBounty(entry)">接令</button>
+        <button v-else-if="entry.mapId && entry.mapId !== store.player.currentMapId" class="btn btn-sm btn-gold"
+          :disabled="store.onlineActionBusy || store.isBattlePlaying || !!store.player.mapJourney || !MAPS.some((m) => m.id === entry.mapId && store.canTravelTo(m))"
+          @click="store.travelTo(entry.mapId)">前往追捕地</button>
         <button v-else class="btn btn-sm btn-danger" :disabled="store.onlineActionBusy || store.isBattlePlaying ||
           !!store.player.mapJourney || entry.mapId !== store.player.currentMapId" @click="store.pursueBounty(entry)">追捕</button>
       </div>

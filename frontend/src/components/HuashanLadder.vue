@@ -5,7 +5,7 @@ import { apiClient, ApiError } from '@/network/apiClient'
 import type { HuashanAction, HuashanBoardDTO } from '@/network/protocol'
 import { huashanDivision, huashanRankReward, HUASHAN_RESPECT_QI } from '../../../shared/huashan.ts'
 import { SECTS } from '@/config/gameData'
-import { STANCE_META } from '@/config/uiMeta'
+import { STANCE_META, stanceRelation } from '@/config/uiMeta'
 import PortraitCard from './PortraitCard.vue'
 
 const store = useGameStore()
@@ -116,6 +116,8 @@ onMounted(refresh)
           <div class="space-y-1">
             <div class="text-sm">第 {{ entry.rank }} 名 · {{ entry.nickname }} · {{ entry.rating }} 分</div>
             <p class="hint">{{ SECTS.find((sect) => sect.id === entry.sectId)?.name ?? '逍遥散人' }} · {{ STANCE_META[entry.stance].name }}
+              <span class="chip">{{ { WIN: '我方克制', LOSE: '被克制', EVEN: '同势' }[stanceRelation(store.currentLoadout.stance, entry.stance)] }}</span>
+              <span v-if="entry.combatPower" class="chip">战力约是你的 {{ (entry.combatPower / Math.max(1, store.derivedStats.combatPower)).toFixed(1) }} 倍</span>
               <span v-if="entry.companions.length"> · {{ entry.companions.join('、') }}</span>
             </p>
           </div>

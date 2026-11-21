@@ -3557,6 +3557,26 @@ export interface SectCheckCtx {
   flags: string[]
 }
 
+type SectStats = Pick<SixStats, 'str' | 'con' | 'agi' | 'intStat' | 'karma'>
+export type SectRequirement =
+  | { stat: keyof SectStats; value: number; atMost?: true }
+  | { flag: string; label: string; orBagua?: true }
+
+export function meetsSectRequirement(requirement: SectRequirement, stats: SectStats, ctx: SectCheckCtx) {
+  if ('flag' in requirement) return ctx.flags.includes(requirement.flag) || (!!requirement.orBagua && ctx.hasBagua)
+  const actual = stats[requirement.stat]
+  return requirement.atMost ? actual <= requirement.value : actual >= requirement.value
+}
+
+function sectEntry(requirements: readonly SectRequirement[], reason?: string) {
+  return {
+    requirements,
+    checkReq: (stats: SectStats, ctx: SectCheckCtx) =>
+      requirements.every((requirement) => meetsSectRequirement(requirement, stats, ctx))
+        ? { ok: true } : { ok: false, reason },
+  }
+}
+
 export interface SectPromotionExam {
   title: string
   objective?: BattleObjective
@@ -3579,7 +3599,8 @@ export interface SectConfig {
   chiefPlayerName: string // 当前本服真实玩家【首席大弟子】
   chiefPower: number
   reqDesc: string
-  checkReq: (stats: { str: number; con: number; agi: number; intStat: number; karma: number }, ctx: SectCheckCtx) => { ok: boolean; reason?: string }
+  requirements: readonly SectRequirement[]
+  checkReq: (stats: SectStats, ctx: SectCheckCtx) => { ok: boolean; reason?: string }
   perkDesc: string
   ranks: string[]
   /** 按阶位授武，下标 = 阶位 - 1，第 1 阶在拜师时传授 */
@@ -3601,7 +3622,7 @@ export const SECTS: SectConfig[] = [
     chiefPlayerName: '萧峰传人·乔北冥',
     chiefPower: 148200,
     reqDesc: '侠义至少 0 点；持丐帮引荐信入门可多得 150 点贡献',
-    checkReq: (s) => (s.karma >= 0 ? { ok: true } : { ok: false, reason: '侠义至少要有 0 点，才能拜入丐帮。' }),
+    ...sectEntry([{ stat: 'karma', value: 0 }], '侠义至少要有 0 点，才能拜入丐帮。'),
     perkDesc: '拜师可学混天气功。通过晋升考核，还能学打狗棒法和降龙十八掌。',
     ranks: ['一袋弟子', '三袋弟子', '六袋精锐', '九袋护法长老', '神丐衣钵传人'],
     signatureSkills: [['huntian_qigong'], ['fengmo_zhang'], ['xiaoyao_you'], ['dagou_bangfa', 'xianglong_sanshi'], ['xianglong_18', 'tianxia_wugou']],
@@ -3629,10 +3650,7 @@ export const SECTS: SectConfig[] = [
     chiefPlayerName: '重阳首座·清风道长',
     chiefPower: 139500,
     reqDesc: '根骨至少 22 点，侠义至少 20 点',
-    checkReq: (s) =>
-      s.con >= 22 && s.karma >= 20
-        ? { ok: true }
-        : { ok: false, reason: '拜入全真教需要根骨至少 22 点，侠义至少 20 点。' },
+    ...sectEntry([{ stat: 'con', value: 22 }, { stat: 'karma', value: 20 }], '拜入全真教需要根骨至少 22 点，侠义至少 20 点。'),
     perkDesc: '全真弟子修行多得 25% 真气。拜师先学全真吐纳功，晋升后可学金雁功。',
     ranks: ['知客道童', '四代弟子', '三代精锐', '北斗护法真人', '玄门掌教候选'],
     signatureSkills: [['quanzhen_tuna'], ['jinyan_gong'], ['tonggui_jian'], [], ['xiantian_gong']],
@@ -3645,10 +3663,10 @@ export const SECTS: SectConfig[] = [
     chiefPlayerName: '桃花首座·陆乘云',
     chiefPower: 162400,
     reqDesc: '悟性至少 28 点，身法至少 24 点，持曲三铁八卦或桃花岛信物',
-    checkReq: (s, ctx) =>
-      s.intStat >= 28 && s.agi >= 24 && (ctx.hasBagua || ctx.flags.includes('taohua_token'))
-        ? { ok: true }
-        : { ok: false, reason: '需悟性≥28、身法≥24 并持有【曲三铁八卦】或桃花岛信物方可破桃花阵登岛' },
+    ...sectEntry([
+      { stat: 'intStat', value: 28 }, { stat: 'agi', value: 24 },
+      { flag: 'taohua_token', label: '曲三铁八卦或桃花岛信物', orBagua: true },
+    ], '需悟性≥28、身法≥24 并持有【曲三铁八卦】或桃花岛信物方可破桃花阵登岛'),
     perkDesc: '拜入黄药师门下先学落英神剑掌，晋升后可学碧海潮生曲。',
     ranks: ['候补扫花童', '记名弟子', '入室师兄', '桃花岛真传', '东邪衣钵传人'],
     signatureSkills: [['luoying_zhang'], ['lanhua_fuxue'], ['luoying_zhang', 'yuxiao_jianfa', 'qimen_wuzhuan'], ['tanzhi_shentong', 'xuanfeng_saoye_tui'], ['bihai_chaosheng', 'jiuyin_taohua']],
@@ -3692,10 +3710,7 @@ export const SECTS: SectConfig[] = [
     chiefPlayerName: '西域毒皇·欧阳烈',
     chiefPower: 155900,
     reqDesc: '根骨至少 24 点，侠义不高于 0 点',
-    checkReq: (s) =>
-      s.con >= 24 && s.karma <= 0
-        ? { ok: true }
-        : { ok: false, reason: '拜师需要根骨至少 24 点，侠义不高于 0 点。' },
+    ...sectEntry([{ stat: 'con', value: 24 }, { stat: 'karma', value: 0, atMost: true }], '拜师需要根骨至少 24 点，侠义不高于 0 点。'),
     perkDesc: '欧阳锋的门下，拜师可学蛤蟆功。来鬼市鉴宝也可以不戴蒙面巾。',
     ranks: ['捕蛇杂役', '饲毒使者', '白衣护卫', '白驼副总管', '西毒少庄主'],
     signatureSkills: [['hama_gong'], ['lingshe_quan'], ['shunxi_qianli'], [], ['nizhuan_jiuyin', 'nijiuyin_hama_gong']],
@@ -3718,7 +3733,7 @@ export const SECTS: SectConfig[] = [
     chiefPlayerName: '武馆总教头·铁拳张',
     chiefPower: 31800,
     reqDesc: '无任何条件，新手随时可入，可随时无损出师转投名门',
-    checkReq: () => ({ ok: true }),
+    ...sectEntry([]),
     perkDesc: '基础属性均衡成长，适合新手过渡；馆中教头会倾囊传授入门武学，出师后绝不追究。',
     ranks: ['打杂学徒', '记名弟子', '入室弟子', '武馆教头', '馆主衣钵'],
     signatureSkills: [['kaishan_zhang', 'zhuanggu_jue'], ['fengmo_zhang'], ['yuenv_jian'], [], []],
@@ -3731,7 +3746,7 @@ export const SECTS: SectConfig[] = [
     chiefPlayerName: '铁掌少帮主·裘千尺',
     chiefPower: 98400,
     reqDesc: '无善恶限制，需【臂力 ≥ 20】',
-    checkReq: (s) => (s.str >= 20 ? { ok: true } : { ok: false, reason: '需臂力 ≥ 20 方能硬接铁掌帮的入门三掌' }),
+    ...sectEntry([{ stat: 'str', value: 20 }], '需臂力 ≥ 20 方能硬接铁掌帮的入门三掌'),
     perkDesc: '刚猛霸道，专精破甲与内伤；适合走纯粹暴力输出流的玩家。',
     ranks: ['挑水杂役', '外堂弟子', '内堂掌刑', '铁掌堂主', '帮主衣钵'],
     signatureSkills: [['tiezhang_gong'], ['shuishang_piao'], [], ['yinyang_mo'], []],
@@ -3743,10 +3758,10 @@ export const SECTS: SectConfig[] = [
     chiefPlayerName: '渡厄居士·段无涯',
     chiefPower: 66800,
     reqDesc: '高门槛：需【根骨 ≥ 30】【侠义 ≥ 80】，并已通过「渔樵耕读」四关（通关主线 4-3）',
-    checkReq: (s, ctx) =>
-      s.con >= 30 && s.karma >= 80 && ctx.flags.includes('yuqiao_gengdu')
-        ? { ok: true }
-        : { ok: false, reason: '需根骨≥30、侠义≥80，且通关「4-3 铁掌孤峰」通过渔樵耕读四关' },
+    ...sectEntry([
+      { stat: 'con', value: 30 }, { stat: 'karma', value: 80 },
+      { flag: 'yuqiao_gengdu', label: '通过渔樵耕读四关（主线 4-3）' },
+    ], '需根骨≥30、侠义≥80，且通关「4-3 铁掌孤峰」通过渔樵耕读四关'),
     perkDesc: '指力化气，无视敌方铁布衫等外功防御；兼具极强的点穴封招与疗伤能力。',
     ranks: ['洒扫沙弥', '樵子弟子', '渔隐弟子', '耕读高徒', '南帝衣钵传人'],
     signatureSkills: [['kurong_chan'], [], ['yiyang_zhi'], [], []],

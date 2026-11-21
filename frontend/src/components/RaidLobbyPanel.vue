@@ -2,6 +2,9 @@
 import { computed, ref, watch } from 'vue'
 import { useGameStore } from '@/stores/gameStore'
 import { COOP_RAIDS } from '@/config/gameData'
+import PortraitCard from './PortraitCard.vue'
+import WorkbenchDialog from './WorkbenchDialog.vue'
+import RaidRewardTray from './RaidRewardTray.vue'
 
 const store = useGameStore()
 const team = computed(() => store.raidLobby.team)
@@ -10,10 +13,11 @@ const mySeat = computed(() => team.value?.members.find((member) => member.id ===
 const readyCount = computed(() => team.value?.members.filter((member) => member.online && member.ready).length ?? 0)
 const busy = computed(() => !store.roomConnected || store.raidLobbyBusy || store.onlineActionBusy || !!team.value?.starting)
 const raid = computed(() => COOP_RAIDS[store.selectedRaidId])
-const nextRelic = computed(() => raid.value.relics[store.selectedRaidClears])
 
 // 结义镜像：同伴不在线时，挑两位侠客的镜像同闯（docs/21）
 const picked = ref<string[]>([])
+const sameSect = ref(false)
+const mirrors = computed(() => (store.raidMirrors?.candidates ?? []).filter((entry) => !sameSect.value || entry.sameSect))
 const date = new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 function togglePick(id: string) {
   picked.value = picked.value.includes(id) ? picked.value.filter((entry) => entry !== id) : [...picked.value, id].slice(-2)
@@ -22,6 +26,10 @@ watch(() => store.raidMirrors?.candidates, (candidates) => {
   picked.value = picked.value.filter((id) => candidates?.some((entry) => entry.id === id))
 })
 void store.refreshRaidMirrors()
+function showNearby() {
+  store.worldPane = 'SOCIAL'
+  store.mobileDrawer = 'WORLD'
+}
 </script>
 
 <template>
@@ -35,13 +43,7 @@ void store.refreshRaidMirrors()
       </div>
       <p class="hint">{{ raid.description }}</p>
       <p class="text-sm text-gold">个人通关 {{ store.selectedRaidClears }} 次</p>
-      <p v-if="nextRelic && !store.ownedItemIds.includes(nextRelic.id)" class="text-sm text-jade">下次通关可得《{{ nextRelic.name }}》</p>
-      <p v-else-if="nextRelic" class="hint">已持有《{{ nextRelic.name }}》，下次通关发放真气和纹银。</p>
-      <p v-else-if="raid.firstClearBonus && store.selectedRaidClears === 0" class="text-sm text-jade">
-        首胜额外奖励 {{ raid.firstClearBonus.qiExp.toLocaleString() }} 真气、{{ raid.firstClearBonus.silver.toLocaleString() }} 纹银。
-      </p>
-      <p v-else-if="raid.firstClearBonus" class="hint">首胜奖励已结算，再胜可获得真气和纹银。</p>
-      <p v-else class="hint">秘宝奖励已结算，再胜可获得真气和纹银。</p>
+      <RaidRewardTray />
     </div>
 
     <template v-if="team">
@@ -51,7 +53,7 @@ void store.refreshRaidMirrors()
       </div>
       <ul class="grid gap-2 sm:grid-cols-3" aria-label="队伍成员">
         <li v-for="member in team.members" :key="member.id" class="well flex min-w-0 flex-col gap-1 p-2.5">
-          <b class="truncate text-sm" :title="member.nickname">{{ member.nickname }}</b>
+          <PortraitCard bare size="sm" :name="member.nickname" :avatar-id="member.avatarId" style-type="hero_sword" :subtitle="member.weaponName ?? '徒手'" />
           <span class="text-xs text-ink2">{{ member.id === team.leaderId ? '队长' : '队员' }}<template v-if="member.id === store.player.id"> · 你</template></span>
           <span class="text-xs" :class="member.ready ? 'text-jade' : 'text-ink3'">{{ !member.online ? '已离线' : member.ready ? '已准备' : '未准备' }}</span>
         </li>
@@ -72,8 +74,8 @@ void store.refreshRaidMirrors()
 
     <template v-else>
       <div class="space-y-2 border-t border-line pt-3">
-        <p class="hint">在右侧「附近」邀请两位同图侠客，或回应收到的组队邀请。</p>
-        <button class="btn btn-sm xl:hidden" @click="store.mobileDrawer = 'WORLD'">查看附近侠客</button>
+        <p class="hint">在江湖卷「附近」邀请两位同图侠客，或回应收到的组队邀请。</p>
+        <button class="btn btn-sm" @click="showNearby">查看附近侠客</button>
       </div>
 
       <section class="space-y-2 border-t border-line pt-3" aria-label="借镜像结义">
@@ -83,13 +85,14 @@ void store.refreshRaidMirrors()
             {{ store.raidMirrors?.mine ? '按当前配装更新我的镜像' : '登记我的结义镜像' }}
           </button>
         </div>
-        <p class="hint">
+        <WorkbenchDialog title="结义镜像规则"><p>
           同伴不在线也能闯：挑两位侠客的结义镜像与你同行，奖励只发给你。镜像冻结登记时的境界与配装，不带丹药；打过副本会自动登记。
           <template v-if="store.raidMirrors?.mine">你的镜像按 {{ date.format(store.raidMirrors.mine.mirrorAt) }} 的配装，别人也能借。</template>
-        </p>
-        <p v-if="store.raidMirrors && !store.raidMirrors.candidates.length" class="text-sm text-ink3">还没有别的侠客登记结义镜像。</p>
-        <ul v-else class="grid gap-2 sm:grid-cols-2" aria-label="可借的结义镜像">
-          <li v-for="mirror in store.raidMirrors?.candidates ?? []" :key="mirror.id">
+        </p></WorkbenchDialog>
+        <label class="ml-2 text-sm"><input v-model="sameSect" type="checkbox" /> 只看同门</label>
+        <p v-if="store.raidMirrors && !mirrors.length" class="text-sm text-ink3">暂无符合条件的镜像。</p>
+        <ul v-else class="grid max-h-64 gap-2 overflow-auto sm:grid-cols-2" aria-label="可借的结义镜像">
+          <li v-for="mirror in mirrors" :key="mirror.id">
             <button
               class="well flex w-full min-w-0 flex-col items-start gap-0.5 p-2.5 text-left" :class="picked.includes(mirror.id) ? '!border-gold' : ''"
               :aria-pressed="picked.includes(mirror.id)" @click="togglePick(mirror.id)"

@@ -1,12 +1,10 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch, type Component } from 'vue'
-import { Compass, House, Landmark, LogOut, Mail, MessageCircle, Mountain, Settings, Store, Swords, UserRound } from 'lucide-vue-next'
+import { Compass, House, Landmark, LogOut, Mail, MessageCircle, Mountain, ScrollText, Settings, Store, Swords, UserRound } from 'lucide-vue-next'
 import { useGameStore, type MainTab } from '@/stores/gameStore'
 import { IS_MOCK_MODE } from '@/network/apiClient'
 import { TIER_META } from '@/config/uiMeta'
 import LeftCharacterSidebar from '@/components/LeftCharacterSidebar.vue'
-import JianghuQuestScroll from '@/components/JianghuQuestScroll.vue'
-import DailyTasks from '@/components/DailyTasks.vue'
 import RightJianghuSidebar from '@/components/RightJianghuSidebar.vue'
 import ChatPanel from '@/components/ChatPanel.vue'
 import OriginPicker from '@/components/OriginPicker.vue'
@@ -20,6 +18,7 @@ const PrologueStage = defineAsyncComponent(() => import('@/components/PrologueSt
 const FeatureStoryCard = defineAsyncComponent(() => import('@/components/FeatureStoryCard.vue'))
 const AwayReport = defineAsyncComponent(() => import('@/components/AwayReport.vue'))
 const Mailbox = defineAsyncComponent(() => import('@/components/Mailbox.vue'))
+const TaskJournal = defineAsyncComponent(() => import('@/components/TaskJournal.vue'))
 const MapPicker = defineAsyncComponent(() => import('@/components/MapPicker.vue'))
 const CultivateView = defineAsyncComponent(() => import('@/views/CultivateView.vue'))
 const JianghuView = defineAsyncComponent(() => import('@/views/JianghuView.vue'))
@@ -31,6 +30,47 @@ const store = useGameStore()
 const props = defineProps<{ visible: boolean }>()
 const emit = defineEmits<{ back: [] }>()
 const choosingCharacter = ref(true)
+const mailId = ref('')
+const mailBagItem = ref<string>()
+const tasksOpen = ref(false)
+const journalPage = ref<'quest' | 'play'>('quest')
+const journalChoice = ref('guide')
+const journalReturn = ref(false)
+function openMail(returnToLetter = false) {
+  if (store.activeBattle) return
+  if (!returnToLetter) mailId.value = ''
+  mailBagItem.value = undefined
+  store.mailboxOpen = true
+}
+function viewAttachment(id: string) {
+  store.mailboxOpen = false
+  store.selectTab('ARSENAL')
+  store.arsenalTab = 'BAG'
+  mailBagItem.value = id
+}
+watch([() => store.activeTab, () => store.arsenalTab], ([main, sub]) => {
+  if (main !== 'ARSENAL' || sub !== 'BAG') mailBagItem.value = undefined
+})
+function openTasks() {
+  if (store.activeBattle) return
+  if (!journalReturn.value) {
+    journalPage.value = 'quest'
+    journalChoice.value = 'guide'
+  }
+  journalReturn.value = false
+  tasksOpen.value = true
+}
+function leaveForActivity() {
+  tasksOpen.value = false
+  journalReturn.value = true
+}
+watch(() => store.activeBattle, (battle) => { if (battle && tasksOpen.value) leaveForActivity() })
+watch([() => store.player.id, () => store.gameMode, () => store.onlinePhase], () => {
+  tasksOpen.value = false
+  journalReturn.value = false
+  store.mailboxOpen = false
+  mailBagItem.value = undefined
+})
 
 /** 江湖传音：768px 起常驻左栏人物卷下，手机从顶栏打开 */
 const desktopQuery = window.matchMedia('(min-width: 768px)')
@@ -78,8 +118,9 @@ const inBattle = computed(() => !!store.activeBattle)
 const currentTab = computed(() => (inBattle.value ? 'CULTIVATE' : store.activeTab))
 const currentView = computed(() => navTabs.find((t) => t.key === currentTab.value)!.view)
 const arsenalWorkspace = computed(() => currentTab.value === 'ARSENAL')
-watch(arsenalWorkspace, (open) => {
-  if (open && (store.mobileDrawer === 'CHAR' || store.mobileDrawer === 'WORLD')) store.mobileDrawer = 'NONE'
+const wideWorkspace = computed(() => currentTab.value !== 'CULTIVATE' && !arsenalWorkspace.value)
+watch(currentTab, () => {
+  if (store.mobileDrawer === 'CHAR' || store.mobileDrawer === 'WORLD') store.mobileDrawer = 'NONE'
 })
 /** 门派、市井随剧情开放，未开放时不显示 */
 const openTabs = computed(() => navTabs.filter((t) => store.mainTabOpen(t.key)))
@@ -98,6 +139,7 @@ const awayReportOpen = computed(() => inJianghu.value && !!store.awayReport && !
 /* ---------- 键盘 ---------- */
 function handleKeydown(e: KeyboardEvent) {
   if (!props.visible || store.onlinePhase !== 'ready' || choosingCharacter.value) return
+  if (store.mailboxOpen || tasksOpen.value || document.querySelector('dialog[open]')) return
   if ((IS_MOCK_MODE && !store.gameMode) || store.gachaReveal || prologueOpen.value || featureCardOpen.value || awayReportOpen.value) return
   if (e.key === 'Escape') {
     if (store.confirmDialog) store.resolveConfirm(false)
@@ -190,12 +232,14 @@ const TOAST_GLYPH = { gold: '喜', danger: '警', info: '讯' } as const
         </div>
         <button v-if="IS_MOCK_MODE" class="wuxia-icon" aria-label="存档并返回开局" title="存档并返回开局" @click="store.backToTitle()"><House /></button>
         <button
-          v-if="!IS_MOCK_MODE" class="wuxia-icon relative" :aria-label="store.unreadMail ? `江湖来信，${store.unreadMail} 封未领` : '江湖来信'" title="江湖来信"
-          @click="store.mailboxOpen = true"
+          class="wuxia-icon relative" :aria-label="store.unreadMail ? `江湖来信，${store.unreadMail} 封未读` : '江湖来信'" title="江湖来信"
+          aria-haspopup="dialog" :disabled="inBattle" @click="openMail()"
         >
           <Mail />
           <b v-if="store.unreadMail" class="absolute -right-0.5 -top-0.5 min-w-4 rounded-full bg-[var(--cinnabar)] px-1 text-[0.62rem] leading-4 text-white tabular-nums">{{ store.unreadMail }}</b>
         </button>
+        <button class="wuxia-icon" :aria-label="journalReturn ? '返回任务与玩法' : '任务与玩法'" :title="journalReturn ? '返回任务与玩法' : '任务与玩法'"
+          aria-haspopup="dialog" :disabled="inBattle" @click="openTasks"><ScrollText /></button>
         <button
           class="wuxia-icon relative md:hidden" :aria-label="store.chatPrivateUnread ? `江湖传音，${store.chatPrivateUnread} 条私聊未读` : '江湖传音'" title="江湖传音"
           aria-controls="chat-sheet" :aria-expanded="store.mobileDrawer === 'CHAT'" @click="toggleDrawer('CHAT')"
@@ -206,8 +250,8 @@ const TOAST_GLYPH = { gold: '喜', danger: '警', info: '讯' } as const
         </button>
         <button class="wuxia-icon" aria-label="选择角色" title="选择角色" @click="chooseCharacter"><UserRound /></button>
         <button v-if="!IS_MOCK_MODE" class="wuxia-icon" aria-label="退出登录" title="退出登录" :disabled="store.authBusy" @click="store.logout()"><LogOut /></button>
-        <button v-if="!arsenalWorkspace" class="wuxia-icon md:hidden" aria-label="查看角色" title="查看角色" aria-controls="character-rail" :aria-expanded="store.mobileDrawer === 'CHAR'" @click="toggleDrawer('CHAR')"><UserRound /></button>
-        <button v-if="!arsenalWorkspace" class="wuxia-icon xl:hidden" aria-label="任务与战报" title="任务与战报" aria-controls="world-rail" :aria-expanded="store.mobileDrawer === 'WORLD'" @click="toggleDrawer('WORLD')"><Compass /></button>
+        <button v-if="!arsenalWorkspace" class="wuxia-icon" :class="{ 'md:hidden': !wideWorkspace }" aria-label="查看角色" title="人物卷" aria-controls="character-rail" :aria-expanded="store.mobileDrawer === 'CHAR'" @click="toggleDrawer('CHAR')"><UserRound /></button>
+        <button v-if="!arsenalWorkspace" class="wuxia-icon" :class="{ 'xl:hidden': !wideWorkspace }" aria-label="江湖卷" title="江湖卷" aria-controls="world-rail" :aria-expanded="store.mobileDrawer === 'WORLD'" @click="toggleDrawer('WORLD')"><Compass /></button>
         <button
           class="wuxia-icon md:hidden" :aria-label="store.isMidnightTheme ? '切换为宋宣（浅色）' : '切换为玄墨（深色）'"
           :title="store.isMidnightTheme ? '切换为宋宣' : '切换为玄墨'" @click="store.toggleTheme()"
@@ -215,7 +259,12 @@ const TOAST_GLYPH = { gold: '喜', danger: '警', info: '讯' } as const
       </div>
     </header>
 
-    <main class="wuxia-layout" :class="{ 'wuxia-arsenal-workspace': arsenalWorkspace }">
+    <div v-if="store.journeyMap" class="panel z-20 flex items-center gap-2 p-2 text-sm" :class="wideWorkspace ? 'shrink-0 justify-end' : 'fixed bottom-4 right-3'">
+      <span>{{ store.journeySeconds ? `前往${store.journeyMap.name} · ${store.journeySeconds} 秒` : `可抵达${store.journeyMap.name}` }}</span>
+      <button class="btn btn-sm btn-gold" :disabled="store.journeySeconds > 0 || store.onlineActionBusy" @click="store.moveMap(store.journeyMap.id, 'arrive')">抵达</button>
+    </div>
+
+    <main class="wuxia-layout" :class="{ 'wuxia-arsenal-workspace': arsenalWorkspace, 'wuxia-wide-workspace': wideWorkspace }">
       <aside id="character-rail" class="wuxia-rail character-rail" aria-label="人物卷" :data-open="store.mobileDrawer === 'CHAR'">
         <div class="rail-frame character-frame">
           <LeftCharacterSidebar />
@@ -224,22 +273,18 @@ const TOAST_GLYPH = { gold: '喜', danger: '警', info: '讯' } as const
       </aside>
 
       <section ref="stage" class="wuxia-stage" :class="{ 'wuxia-interior': currentTab !== 'CULTIVATE' || inBattle }" aria-label="江湖舞台">
-        <component :is="currentView" :key="currentTab" />
+        <ArsenalView v-if="arsenalWorkspace" :mail-item="mailBagItem" @back-to-mail="openMail(true)" />
+        <component :is="currentView" v-else :key="currentTab" />
       </section>
 
       <aside id="world-rail" class="wuxia-rail world-rail" aria-label="江湖卷" :data-open="store.mobileDrawer === 'WORLD'">
         <div class="rail-frame">
-          <JianghuQuestScroll />
-          <DailyTasks v-if="store.featureOpen('DAILY')" />
           <RightJianghuSidebar />
         </div>
       </aside>
     </main>
 
-    <div v-if="store.journeyMap" class="panel fixed bottom-4 right-3 z-20 flex items-center gap-2 p-2 text-sm">
-      <span>{{ store.journeySeconds ? `前往${store.journeyMap.name} · ${store.journeySeconds} 秒` : `可抵达${store.journeyMap.name}` }}</span>
-      <button class="btn btn-sm btn-gold" :disabled="store.journeySeconds > 0 || store.onlineActionBusy" @click="store.moveMap(store.journeyMap.id, 'arrive')">抵达</button>
-    </div>
+
 
     <div v-if="store.canRetryOnline" class="panel fixed right-3 top-16 z-40 flex items-center gap-2 p-2 text-sm">
       <span>连接中断</span>
@@ -250,7 +295,7 @@ const TOAST_GLYPH = { gold: '喜', danger: '警', info: '讯' } as const
     <Transition enter-active-class="transition-opacity duration-200" enter-from-class="opacity-0" leave-active-class="transition-opacity duration-200" leave-to-class="opacity-0">
       <div
         v-if="store.mobileDrawer !== 'NONE'" class="fixed inset-0 z-30 bg-[var(--scrim)]"
-        :class="store.mobileDrawer === 'WORLD' ? 'xl:hidden' : 'md:hidden'" @click="store.mobileDrawer = 'NONE'"
+        :class="wideWorkspace && store.mobileDrawer !== 'CHAT' ? '' : store.mobileDrawer === 'WORLD' ? 'xl:hidden' : 'md:hidden'" @click="store.mobileDrawer = 'NONE'"
       />
     </Transition>
 
@@ -320,7 +365,10 @@ const TOAST_GLYPH = { gold: '喜', danger: '警', info: '讯' } as const
     <PrologueStage v-if="prologueOpen" />
     <FeatureStoryCard v-else-if="featureCardOpen" />
     <AwayReport v-else-if="awayReportOpen" />
-    <Mailbox v-else-if="store.mailboxOpen && inJianghu && !store.activeBattle" />
+    <Mailbox v-else-if="store.mailboxOpen && inJianghu && !inBattle" v-model:selected="mailId"
+      @close="store.mailboxOpen = false" @bag="viewAttachment" />
+    <TaskJournal v-else-if="tasksOpen && inJianghu && !inBattle" v-model:page="journalPage" v-model:choice="journalChoice"
+      @close="tasksOpen = false" @navigate="leaveForActivity" />
     <MapPicker v-else-if="store.mapPickerOpen && inJianghu && !store.activeBattle" />
 
     <!-- ==================== 开局选择 ==================== -->

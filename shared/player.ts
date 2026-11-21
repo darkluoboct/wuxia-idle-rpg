@@ -522,7 +522,7 @@ export function canReceiveSnakeRecipe(player: PlayerDTO, preset: LoadoutPresetDT
 
 export const GHOST_APPRAISAL_SWORD = 'xuantie_heavysword'
 
-function hasGhostCostume(preset: LoadoutPresetDTO) {
+export function hasGhostCostume(preset: LoadoutPresetDTO) {
   return (resolveBattleLoadout(preset).setCounts.get('jiamian_piaoping') ?? 0) >= 4
 }
 

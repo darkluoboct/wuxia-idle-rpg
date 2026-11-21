@@ -1,7 +1,7 @@
 import type { SkillSlotType, TierColor } from './typesHelper'
-import type { ItemConfig } from './gameData'
+import type { ItemConfig, MedicineConfig } from './gameData'
 import type { PlayerAvatarId } from '@/network/protocol'
-import { formatBattleStatBonuses } from '../../../shared/combatMeta.ts'
+import { EQUIP_SLOT_META, formatBattleStatBonuses, isWeaponForm, type BattleStatBonuses } from '../../../shared/combatMeta.ts'
 import type { TrialDropDTO } from '../../../shared/protocol.ts'
 import { trialAffixLabel, trialAffixQuality } from '../../../shared/trialStages.ts'
 import heroine from '@/assets/selection-heroine.webp'
@@ -34,22 +34,55 @@ export const BASE_STAT_LABELS = { str: '臂力', con: '根骨', agi: '身法', i
 const skillPowerFormat = new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 4 })
 export const formatSkillPower = (power: number) => skillPowerFormat.format(power)
 
-export function itemBonusLabels(item: ItemConfig) {
-  const labels: string[] = []
-  if (item.atkBonus) labels.push(`攻击 +${item.atkBonus.toLocaleString()}`)
-  if (item.defBonus) labels.push(`防御 +${item.defBonus.toLocaleString()}`)
-  if (item.hpBonus) labels.push(`气血 +${item.hpBonus.toLocaleString()}`)
-  if (item.critBonus) labels.push(`暴击率 +${item.critBonus}%`)
-  if (item.dodgeBonus) labels.push(`闪避率 +${item.dodgeBonus}%`)
-  if (item.slot === 'ARMOR' && item.idleBonus) labels.push(`修行真气 +${item.idleBonus}%`)
-  if (item.patrolQiBonus) labels.push(`打坐真气 +${item.patrolQiBonus}%（巡历装备合计上限 20%）`)
-  if (item.patrolSilverBonus) labels.push(`打坐纹银 +${item.patrolSilverBonus}%`)
-  if (item.idleQiPerHour) labels.push(`每小时打坐真气 +${item.idleQiPerHour.toLocaleString()}`)
-  if (item.attributeBonus) labels.push(formatBattleStatBonuses(item.attributeBonus))
-  for (const effect of item.battleEffects ?? []) {
-    if (effect.kind === 'STAT_BONUS') labels.push(formatBattleStatBonuses(effect.stats))
+export function equipmentType(item: ItemConfig) {
+  const slot = EQUIP_SLOT_META[item.slot].label
+  if (item.slot === 'RELIC') return '全队装备 · ' + slot
+  if (item.slot !== 'WEAPON') return '装备 · ' + slot
+  const forms = { BLADE: '刀剑', AXE: '斧', STAFF: '棍杖', SPEAR: '枪', BOW: '弓', WHIP: '鞭', ODD: '奇门', SOUND: '音律' }
+  if (item.name.endsWith('匕首')) return '武器 · 匕首'
+  if (item.name.endsWith('长剑')) return '武器 · 长剑'
+  return isWeaponForm(item.combatForm) ? '武器 · ' + forms[item.combatForm] : '装备 · ' + slot
+}
+
+export function medicineType(medicine: MedicineConfig) {
+  if (medicine.acupointEffect?.type === 'BREAKTHROUGH_RATE' || medicine.acupointEffect?.type === 'PREVENT_DEVIATION') return '丹药 · 突破'
+  return { BODY_MOD: '丹药 · 体质奇珍', BATTLE_PILL: '丹药 · 战斗', WEAPON_VENOM: '药物 · 兵刃毒膏', ACUPOINT_PILL: '丹药 · 冲穴' }[medicine.category]
+}
+
+export function itemBonusRows(item: ItemConfig) {
+  const rows: { key: string; label: string; value: string }[] = []
+  function add(key: string, label: string, amount?: number, unit = '') {
+    if (amount) rows.push({ key, label, value: `${amount > 0 ? '+' : '−'}${Math.abs(amount).toLocaleString('zh-CN')}${unit}` })
   }
-  return labels
+  add('atkBonus', '攻击', item.atkBonus)
+  add('defBonus', '防御', item.defBonus)
+  add('hpBonus', '气血', item.hpBonus)
+  add('critBonus', '暴击率', item.critBonus, '%')
+  add('dodgeBonus', '闪避率', item.dodgeBonus, '%')
+  if (item.slot === 'ARMOR') add('idleBonus', '修行真气', item.idleBonus, '%')
+  add('patrolQiBonus', '打坐真气', item.patrolQiBonus, '%（巡历装备合计上限 20%）')
+  add('patrolSilverBonus', '打坐纹银', item.patrolSilverBonus, '%')
+  add('idleQiPerHour', '每小时打坐真气', item.idleQiPerHour)
+  function addStats(stats: BattleStatBonuses) {
+    for (const [key, amount] of Object.entries(stats)) {
+      if (!amount) continue
+      const text = formatBattleStatBonuses({ [key]: amount })
+      const separator = text.indexOf(' ')
+      const previous = rows.find((row) => row.key === key)
+      const value = text.slice(separator + 1)
+      if (previous) previous.value += '、' + value
+      else rows.push({ key, label: text.slice(0, separator), value })
+    }
+  }
+  if (item.attributeBonus) addStats(item.attributeBonus)
+  for (const effect of item.battleEffects ?? []) {
+    if (effect.kind === 'STAT_BONUS') addStats(effect.stats)
+  }
+  return rows
+}
+
+export function itemBonusLabels(item: ItemConfig) {
+  return itemBonusRows(item).map(({ label, value }) => `${label} ${value}`)
 }
 
 export function trialDropLabel(drop: TrialDropDTO) {

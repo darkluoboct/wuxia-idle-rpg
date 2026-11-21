@@ -1,22 +1,22 @@
 <script setup lang="ts">
-import { computed, onScopeDispose, ref } from 'vue'
+import { computed, onScopeDispose, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { Lock } from 'lucide-vue-next'
 import { useGameStore } from '@/stores/gameStore'
 import { IS_MOCK_MODE } from '@/network/apiClient'
-import { ADVENTURES, EXPANSION_VOLUMES_PREVIEW, getChapterDrops, getMapHerbs, HIDDEN_WEAPONS, MAPS, ONLINE_MAPS, ONLINE_STORY_CHAPTERS, STORY_ARCS, STORY_CHAPTERS, type AdventureConfig } from '@/config/gameData'
+import { ADVENTURES, EXPANSION_VOLUMES_PREVIEW, getChapterDrops, ONLINE_STORY_CHAPTERS, STORY_ARCS, STORY_CHAPTERS, type AdventureConfig } from '@/config/gameData'
 import { openToOrigin } from '../../../shared/origins.ts'
-import { hasTrialPart, patrolEncounterRate, TRIAL_PATROL_HOURS, TRIAL_REPLAY_HOURS, TRIAL_STAGES, TRIAL_VARIANTS, trialFirstClearKarma, trialItemOf, trialPartId, trialSetOf } from '../../../shared/trialStages.ts'
-import { QUSAN_CACHE_KEY, QUSAN_CACHE_STAGE, qusanCacheBlockReason } from '../../../shared/skillMastery.ts'
-import { karmaAfterEvent } from '../../../shared/player.ts'
 import { canChooseStorySnake, STORY_SNAKE_ADVENTURE, storyEncounter } from '../../../shared/storySnake.ts'
 import { storyFirstClearReward } from '../../../shared/storyData.ts'
-import { STANCE_META, TIER_META, stanceRelation, trialDropLabel } from '@/config/uiMeta'
+import { STANCE_META, TIER_META, stanceRelation } from '@/config/uiMeta'
 import PortraitCard from '@/components/PortraitCard.vue'
 import RaidLobbyPanel from '@/components/RaidLobbyPanel.vue'
+import RaidRewardTray from '@/components/RaidRewardTray.vue'
+import TrialWorkbench from '@/components/TrialWorkbench.vue'
+import { trialPartId, TRIAL_STAGES } from '../../../shared/trialStages.ts'
 import XiangyangDefense from '@/components/XiangyangDefense.vue'
 import BountyBoard from '@/components/BountyBoard.vue'
-import SceneBackdrop from '@/components/SceneBackdrop.vue'
+import MapIntel from '@/components/MapIntel.vue'
 
 const store = useGameStore()
 const { jianghuTab: sub } = storeToRefs(store)
@@ -45,45 +45,29 @@ function stateOf(id: number): State | 'OPEN' {
 }
 const cleared = computed(() => chapters.filter((chapter) => stateOf(chapter.id) === 'CLEARED').length)
 
-const trial = computed(() => store.trial)
-const trialStateOf = (id: number): State => (id < trial.value.maxStageId ? 'CLEARED' : id === trial.value.maxStageId ? 'CURRENT' : 'LOCKED')
-const firstClearKarma = (delta: number) => karmaAfterEvent(store.player.stats.karma, delta, store.currentLoadout.headId) - store.player.stats.karma
-const trialRows = TRIAL_STAGES.map((stage) => ({
-  stage, set: trialSetOf(stage.setId)!, hiddenWeapon: Object.values(HIDDEN_WEAPONS).find((weapon) => weapon.unlockStageId === stage.id),
-  replayItems: stage.replayPartIds?.map((id) => trialItemOf(id)?.name).join('、'),
-  variants: TRIAL_VARIANTS.filter((item) => item.setId === stage.setId).map((item) =>
-    `${item.name}（巡历${stage.replayPartIds?.includes(item.baseItemId!) ? '、首领复战' : ''}）`),
-}))
-const trialAnswers = ref<Record<number, string | null>>({})
-const currentStage = computed(() => TRIAL_STAGES.find((stage) => stage.id === trial.value.selectedStageId) ?? TRIAL_STAGES[0])
-const currentPatrol = computed(() => store.trialPatrolStatus())
-const encounterBonus = computed(() => patrolEncounterRate(store.currentLoadout.accId) - 100)
-const wearsRetreatBoots = computed(() => store.currentLoadout.bootsId === trialPartId('qianying_mixing', 'BOOTS'))
-const ownsCacheKey = computed(() => store.ownedItemIds.includes(QUSAN_CACHE_KEY))
-const cacheBlock = computed(() => qusanCacheBlockReason(store.player, store.currentLoadout, store.worldTime))
-store.mockSettlePatrol()
-const patrolTimer = setInterval(() => store.mockSettlePatrol(), 30_000)
-onScopeDispose(() => clearInterval(patrolTimer))
-
-function fmtHours(hours: number) {
-  if (hours <= 0) return '0 分钟'
-  if (hours < 1) return `${Math.max(1, Math.round(hours * 60))} 分钟`
-  return `${hours.toFixed(1)} 小时`
-}
-
-const trialProgress = (stageId: number) => {
-  const required = TRIAL_PATROL_HOURS[stageId] ?? 0
-  if (required <= 0) return 100
-  return Math.min(100, Math.round(((trial.value.stageHours[String(stageId)] ?? 0) / required) * 100))
-}
-
-const trialCleared = computed(() => Math.max(0, trial.value.maxStageId - 1))
+const trialCleared = computed(() => TRIAL_STAGES.filter(({ id }) =>
+  id < store.trial.maxStageId || store.trial.rewardedStageIds.includes(id)).length)
 const progressPct = computed(() => sub.value === 'TRIAL'
   ? (trialCleared.value / TRIAL_STAGES.length) * 100
   : (cleared.value / chapters.length) * 100)
 const progressLabel = computed(() => sub.value === 'TRIAL'
   ? `${trialCleared.value} / ${TRIAL_STAGES.length}`
   : `${cleared.value} / ${chapters.length}`)
+const wearsRetreatBoots = computed(() => store.currentLoadout.bootsId === trialPartId('qianying_mixing', 'BOOTS'))
+store.mockSettlePatrol()
+const patrolTimer = setInterval(() => store.mockSettlePatrol(), 30_000)
+onScopeDispose(() => clearInterval(patrolTimer))
+
+const currentArc = computed(() => chapters.find(({ id }) => id === store.player.maxChapterId)?.chapter
+  ?? chapters[chapters.length - 1].chapter)
+const pickedArc = ref<number>()
+const focusedArc = computed(() => storyGroups.find(({ chapter }) => chapter === (pickedArc.value ?? currentArc.value))!)
+const expandedStory = ref<number>()
+const storyScroll = ref<HTMLElement>()
+watch(() => focusedArc.value.chapter, () => {
+  expandedStory.value = undefined
+  if (storyScroll.value) storyScroll.value.scrollTop = 0
+})
 
 const CN_NUM = ['一', '二', '三', '四', '五']
 const arcCleared = (nodes: typeof chapters) => nodes.filter((n) => stateOf(n.id) === 'CLEARED').length
@@ -100,198 +84,56 @@ function advState(a: AdventureConfig): 'DONE' | 'PENDING' | 'OPEN' | 'LOCKED' {
   if (store.pendingAdventure?.templateId === a.id || store.adventureQueue.includes(a.id)) return 'PENDING'
   return a.afterNodeId < store.player.maxChapterId ? 'OPEN' : 'LOCKED'
 }
-const mapLocked = (m: (typeof MAPS)[number]) => !store.canTravelTo(m)
-const maps = IS_MOCK_MODE ? MAPS : ONLINE_MAPS
-const mapWeather = (mapId: string) => {
-  const { storm, rain, night, water } = store.mapEnvironment(mapId)
-  return [storm ? '风暴' : rain ? '有雨' : '晴', night && '黑夜', water && '水战'].filter(Boolean).join(' · ')
-}
 </script>
 
 <template>
   <div class="view">
     <section class="panel flex min-h-0 flex-1 flex-col gap-3 p-3 md:p-4">
       <div class="flex shrink-0 flex-wrap items-center justify-between gap-2">
-        <div class="tabs flex-1" role="tablist">
+        <div class="tabs flex-1" role="tablist" aria-label="江湖栏目">
           <button v-for="t in visibleTabs" :key="t.k" class="tab" role="tab" :aria-selected="sub === t.k" @click="sub = t.k">{{ t.l }}</button>
         </div>
-        <div v-if="sub !== 'BOUNTY' && sub !== 'XIANGYANG'" class="flex items-center gap-2 text-xs text-ink3">
+        <div v-if="sub === 'TRIAL' || sub === 'STORY'" class="flex items-center gap-2 text-xs text-ink3">
           {{ sub === 'TRIAL' ? '历练' : '通关' }}
           <div class="bar bar-thin bar-gold w-20"><i :style="{ width: `${progressPct}%` }" /></div>
           <b class="tabular-nums text-gold">{{ progressLabel }}</b>
         </div>
       </div>
 
-      <!-- ============ 三十关历练 ============ -->
-      <div v-if="sub === 'TRIAL'" class="view-scroll -mr-1 space-y-3 pr-1">
-        <article class="well flex flex-wrap items-center justify-between gap-3 p-3">
-          <div class="min-w-0">
-            <div class="text-xs text-ink3">当前巡历</div>
-            <div class="font-brush text-xl leading-tight">
-              <span class="text-gold">{{ currentStage.code }}</span> {{ currentStage.title }}
-            </div>
-            <div class="mt-1 flex flex-wrap gap-1.5 text-xs">
-              <span class="chip chip-gold tabular-nums">{{ fmtHours(currentPatrol.hours) }} / {{ fmtHours(currentPatrol.requiredHours) }}</span>
-              <span class="chip tabular-nums">已打 {{ currentPatrol.battles.toLocaleString() }} 场 · 精英 {{ currentPatrol.encounters }}</span>
-              <span class="chip">印记 {{ trial.marks[String(currentStage.id)] ?? 0 }} 枚</span>
-            </div>
-          </div>
-          <div class="text-right text-xs text-ink3">
-            <div>{{ encounterBonus ? `路引令 · 巡历快 ${encounterBonus}%` : '每分钟一场，每 30 场一场精英' }}</div>
-            <div>首胜得普通套装件，未集齐时重复掉落可得印记</div>
-            <div v-if="trial.recentCache">最近秘境宝箱 {{ trial.recentCache.count }} 个 · 纹银 +{{ trial.recentCache.silver }}</div>
-          </div>
-        </article>
+      <TrialWorkbench v-if="sub === 'TRIAL'" />
 
-        <details v-if="trial.recentDrops.length" class="well space-y-2 p-3">
-          <summary class="cursor-pointer text-sm text-gold">最近掉落</summary>
-          <ul class="space-y-1 text-xs">
-            <li v-for="(drop, index) in trial.recentDrops" :key="index">{{ trialDropLabel(drop) }}</li>
-          </ul>
-        </details>
-
-        <article
-          v-for="row in trialRows" :key="row.stage.id"
-          class="well p-3"
-          :class="trialStateOf(row.stage.id) === 'LOCKED' ? 'opacity-60' : trialStateOf(row.stage.id) === 'CURRENT' ? '!border-gold' : ''"
-        >
-          <div class="flex flex-wrap items-start justify-between gap-3">
-            <div class="min-w-0 flex-1 space-y-1.5">
-              <div class="flex flex-wrap items-center gap-2">
-                <span class="chip tabular-nums">{{ row.stage.code }}</span>
-                <h4 class="font-brush text-lg leading-none">{{ row.stage.title }}</h4>
-                <span v-if="trialStateOf(row.stage.id) === 'CLEARED'" class="chip chip-jade">已通关</span>
-                <span v-else-if="trialStateOf(row.stage.id) === 'CURRENT'" class="chip chip-gold">当前关卡</span>
-                <span v-else class="chip"><Lock :size="11" class="inline" /> 未开放</span>
-              </div>
-              <div class="flex flex-wrap items-center gap-1.5 text-xs">
-                <span class="chip">推荐 Lv.{{ row.stage.recLevel }}</span>
-                <span class="chip">对手 {{ row.stage.boss.name }}</span>
-                <span class="chip">{{ STANCE_META[row.stage.boss.stance].name }}</span>
-                <span class="chip tier-chip" :class="TIER_META[row.set.tier].cls">{{ row.set.name }}</span>
-              </div>
-              <p class="hint">{{ row.stage.mechanicTip }}</p>
-              <p v-if="row.replayItems" class="hint">首领复战掉落 {{ row.replayItems }}</p>
-              <p v-if="row.variants.length" class="hint">{{ row.variants.join('、') }}</p>
-              <details v-if="trialStateOf(row.stage.id) !== 'LOCKED'" class="text-xs">
-                <summary class="cursor-pointer text-ink2">套装部件 · {{ trial.marks[String(row.stage.id)] ?? 0 }} 枚印记</summary>
-                <ul class="mt-1 space-y-1">
-                  <li v-for="part in row.set.parts" :key="part.slot" class="flex flex-wrap items-center gap-2">
-                    <span>{{ part.name }}</span>
-                    <span v-if="hasTrialPart(store.ownedItemIds, trialPartId(row.set.id, part.slot))" class="text-jade">已收集</span>
-                    <button v-else type="button" class="btn btn-sm" :disabled="(trial.marks[String(row.stage.id)] ?? 0) < 4 || store.onlineActionBusy"
-                      @click="store.redeemTrialPart(row.stage.id, part.slot)">兑换 · 4 印记</button>
-                  </li>
-                </ul>
-              </details>
-              <p v-if="row.hiddenWeapon" class="hint">首胜解锁{{ row.hiddenWeapon.name }}</p>
-              <p v-if="trialFirstClearKarma(row.stage) && !trial.rewardedStageIds.includes(row.stage.id)" class="hint">
-                首胜侠义 +{{ firstClearKarma(trialFirstClearKarma(row.stage)) }}
-              </p>
-              <fieldset v-if="row.stage.puzzle && trialStateOf(row.stage.id) !== 'LOCKED'" class="space-y-1 rounded border border-ink3/20 p-2">
-                <legend class="px-1 text-sm text-gold">{{ row.stage.puzzle.name }}</legend>
-                <p class="text-sm">{{ row.stage.puzzle.prompt }}</p>
-                <div class="flex flex-wrap gap-3 text-sm">
-                  <label v-for="answer in row.stage.puzzle.options" :key="answer" class="flex cursor-pointer items-center gap-1.5">
-                    <input v-model="trialAnswers[row.stage.id]" type="radio" :name="`trial-answer-${row.stage.id}`" :value="answer" />
-                    {{ answer }}
-                  </label>
-                  <label class="flex cursor-pointer items-center gap-1.5">
-                    <input v-model="trialAnswers[row.stage.id]" type="radio" :name="`trial-answer-${row.stage.id}`" :value="null" />
-                    直接迎战
-                  </label>
-                </div>
-              </fieldset>
-              <div class="flex items-center gap-2">
-                <div class="bar bar-thin flex-1"><i :style="{ width: `${trialProgress(row.stage.id)}%` }" /></div>
-                <span class="w-24 text-right text-[0.7rem] tabular-nums text-ink3">{{ trialProgress(row.stage.id) }}%</span>
-              </div>
-            </div>
-            <div class="flex shrink-0 flex-wrap items-center justify-end gap-1.5 sm:flex-col sm:items-stretch">
-              <button
-                class="btn btn-sm"
-                :class="trialStateOf(row.stage.id) === 'CURRENT' && trialProgress(row.stage.id) >= 100 ? 'btn-seal' : ''"
-                :disabled="trialStateOf(row.stage.id) === 'LOCKED' || (trialStateOf(row.stage.id) === 'CURRENT' && trialProgress(row.stage.id) < 100) || store.onlineActionBusy"
-                @click="store.challengeTrialStage(row.stage.id, trialAnswers[row.stage.id] ?? undefined)"
-              >
-                {{ trialStateOf(row.stage.id) === 'CLEARED' ? '再战一次' : trialStateOf(row.stage.id) === 'CURRENT' ? (trialProgress(row.stage.id) >= 100 ? '拔剑试炼' : '巡历中') : '未开放' }}
-              </button>
-              <button v-if="wearsRetreatBoots && trialStateOf(row.stage.id) !== 'LOCKED'" class="btn btn-sm"
-                :disabled="store.onlineActionBusy || store.isBattlePlaying || (trialStateOf(row.stage.id) === 'CURRENT' && trialProgress(row.stage.id) < 100)"
-                @click="store.challengeTrialStage(row.stage.id, trialAnswers[row.stage.id] ?? undefined, true)"
-              >入场即撤退</button>
-              <button
-                class="btn btn-sm"
-                :disabled="trialStateOf(row.stage.id) === 'LOCKED' || trial.selectedStageId === row.stage.id"
-                @click="store.setPatrolStage(row.stage.id)"
-              >
-                {{ trial.selectedStageId === row.stage.id ? '正在巡历' : '巡历到此' }}
-              </button>
-              <button
-                v-if="row.stage.replayPartIds"
-                class="btn btn-sm btn-gold"
-                :disabled="(trial.replayHours[String(row.stage.id)] ?? 0) < TRIAL_REPLAY_HOURS || store.onlineActionBusy || store.isBattlePlaying"
-                @click="store.replayTrialBoss(row.stage.id, trialAnswers[row.stage.id] ?? undefined)"
-              >
-                首领复战 {{ fmtHours(trial.replayHours[String(row.stage.id)] ?? 0) }}/{{ TRIAL_REPLAY_HOURS }}h
-              </button>
-              <button v-if="row.stage.replayPartIds && wearsRetreatBoots && (trial.replayHours[String(row.stage.id)] ?? 0) >= TRIAL_REPLAY_HOURS"
-                class="btn btn-sm" :disabled="store.onlineActionBusy || store.isBattlePlaying"
-                @click="store.replayTrialBoss(row.stage.id, trialAnswers[row.stage.id] ?? undefined, true)"
-              >复战入场即撤退</button>
-              <template v-if="row.stage.id === QUSAN_CACHE_STAGE && ownsCacheKey">
-                <button class="btn btn-sm" :disabled="!!cacheBlock || store.onlineActionBusy" @click="store.openQusanCache()">搜寻曲三酒馆暗格</button>
-                <p v-if="cacheBlock" class="hint">{{ cacheBlock }}</p>
-              </template>
-            </div>
-          </div>
-        </article>
-      </div>
-
-      <!-- ============ 主线：五章回目时间轴 ============ -->
-      <ol v-else-if="sub === 'STORY'" class="view-scroll -mr-1 pr-1">
-        <template v-for="arc in storyGroups" :key="arc.chapter">
-          <li class="flex flex-wrap items-center gap-x-3 gap-y-1 pb-3 pt-1" :class="arc.chapter > 1 ? 'mt-1 border-t border-line pt-4' : ''">
-            <span class="seal h-9 w-9 text-lg">{{ CN_NUM[arc.chapter - 1] }}</span>
-            <div class="min-w-0 flex-1">
-              <h3 class="font-brush text-2xl leading-none">第{{ CN_NUM[arc.chapter - 1] }}章 · {{ arc.title }}</h3>
-              <p class="hint mt-1">{{ arc.tagline }} · {{ arc.summary }}</p>
-            </div>
-            <span class="chip tabular-nums" :class="arcCleared(arc.nodes) === arc.nodes.length ? 'chip-jade' : ''">
-              {{ arcCleared(arc.nodes) }} / {{ arc.nodes.length }}
+      <template v-else-if="sub === 'STORY'">
+        <nav class="grid shrink-0 grid-cols-5 gap-1.5" aria-label="射雕章回">
+          <button v-for="arc in storyGroups" :key="arc.chapter" class="workbench-entry !justify-center"
+            :aria-pressed="focusedArc.chapter === arc.chapter" @click="pickedArc = arc.chapter">
+            <span class="font-brush text-xl text-gold sm:text-2xl">{{ CN_NUM[arc.chapter - 1] }}</span>
+            <span class="min-w-0 text-xs">
+              <b class="hidden truncate sm:block">{{ arc.title }}</b>
+              <span class="tabular-nums text-ink2">{{ arcCleared(arc.nodes) }}/{{ arc.nodes.length }}</span>
             </span>
-          </li>
-
-          <li
-            v-for="ch in arc.nodes" :key="ch.id"
-            class="relative grid grid-cols-[2.75rem_minmax(0,1fr)] gap-x-3 pb-4 last:pb-0 sm:grid-cols-[2.75rem_minmax(0,1fr)_auto]"
-            :class="stateOf(ch.id) === 'LOCKED' ? 'opacity-60' : ''"
-          >
-            <!-- 节点 + 竖线 -->
-            <div class="relative flex flex-col items-center">
-              <span
-                class="relative z-10 flex h-11 w-11 items-center justify-center rounded-full border text-sm font-bold tabular-nums"
-                :class="{
-                  'border-jade bg-[color-mix(in_srgb,var(--jade)_14%,var(--bg-1))] text-jade': stateOf(ch.id) === 'CLEARED',
-                  'anim-pulse-glow border-gold bg-[var(--gold-soft)] text-gold': stateOf(ch.id) === 'CURRENT',
-                  'border-linestrong bg-raised text-ink3': stateOf(ch.id) === 'LOCKED' || stateOf(ch.id) === 'OPEN',
-                }"
-              >
-                <Lock v-if="stateOf(ch.id) === 'LOCKED'" :size="15" />
-                <template v-else>{{ ch.code }}</template>
-              </span>
-              <span v-if="ch.id !== chapters.length" class="absolute bottom-[-1rem] top-11 w-px" :class="stateOf(ch.id) === 'CLEARED' ? 'bg-jade opacity-60' : 'bg-linestrong opacity-70'" />
-            </div>
-
-            <div class="well min-w-0 space-y-2 p-3" :class="stateOf(ch.id) === 'CURRENT' ? '!border-gold' : ''">
-              <div class="flex flex-wrap items-center gap-x-2.5 gap-y-1">
-                <h4 class="font-brush text-xl leading-none">{{ ch.title }}</h4>
-                <span v-if="ch.isBoss" class="chip chip-red">章节 Boss</span>
-                <span v-if="stateOf(ch.id) === 'CLEARED'" class="chip chip-jade">已通关</span>
-                <span v-else-if="stateOf(ch.id) === 'CURRENT'" class="chip chip-gold">当前关卡</span>
-                <span v-else-if="stateOf(ch.id) === 'OPEN'" class="chip chip-gold">可补打</span>
-              </div>
-
+          </button>
+        </nav>
+        <div ref="storyScroll" class="view-scroll space-y-2">
+          <header class="border-b border-line pb-2">
+            <h3 class="font-brush text-2xl text-gold">第{{ CN_NUM[focusedArc.chapter - 1] }}章 · {{ focusedArc.title }}</h3>
+            <p class="hint">{{ focusedArc.tagline }} · {{ focusedArc.summary }}</p>
+          </header>
+          <article v-for="ch in focusedArc.nodes" :key="ch.id" class="border border-line"
+            :class="stateOf(ch.id) === 'CURRENT' ? 'border-gold/70' : ''">
+            <button class="workbench-entry" :aria-expanded="stateOf(ch.id) === 'CURRENT' || stateOf(ch.id) === 'OPEN' || expandedStory === ch.id"
+              :disabled="stateOf(ch.id) === 'CURRENT' || stateOf(ch.id) === 'OPEN'"
+              @click="expandedStory = expandedStory === ch.id ? undefined : ch.id">
+              <span class="shrink-0 font-bold tabular-nums text-gold">{{ ch.code }}</span>
+              <b class="min-w-0 flex-1 truncate text-sm" :title="ch.title">{{ ch.title }}</b>
+              <span v-if="sideQuests(ch.id).some((a) => advState(a) === 'OPEN' || advState(a) === 'PENDING')" class="chip chip-gold">支线待办</span>
+              <span v-if="stateOf(ch.id) === 'CLEARED'" class="chip chip-jade">已通关</span>
+              <span v-else-if="stateOf(ch.id) === 'CURRENT'" class="chip chip-gold">当前关卡</span>
+              <span v-else-if="stateOf(ch.id) === 'OPEN'" class="chip chip-gold">可补打</span>
+              <Lock v-else :size="15" class="shrink-0 text-ink3" aria-label="未解锁" />
+            </button>
+            <div v-if="stateOf(ch.id) === 'CURRENT' || stateOf(ch.id) === 'OPEN' || expandedStory === ch.id" class="space-y-2.5 p-3">
+              <PortraitCard v-if="ch.isBoss" bare size="sm" class="workbench-portrait float-right mb-2 ml-3 w-24 sm:w-32"
+                :name="ch.bossName" :subtitle="ch.bossTitle" :style-type="ch.bossPortrait" />
               <div class="flex flex-wrap items-center gap-1.5 text-xs">
                 <span class="chip" :class="store.player.level >= ch.recLevel ? 'chip-jade' : 'chip-red'">
                   荐 Lv.{{ ch.recLevel }}{{ store.player.level >= ch.recLevel ? ' · 已达' : ` · 差 ${ch.recLevel - store.player.level} 级` }}
@@ -356,7 +198,7 @@ const mapWeather = (mapId: string) => {
                 </span>
               </div>
 
-              <details v-for="a in !IS_MOCK_MODE ? onlineSideQuests(ch.id) : []" :key="a.id" class="rounded border border-line p-2.5">
+              <details v-for="a in !IS_MOCK_MODE ? onlineSideQuests(ch.id) : []" :key="a.id" class="clear-both rounded border border-line p-2.5" :open="advState(a) === 'OPEN'">
                 <summary class="cursor-pointer text-sm font-semibold text-gold">
                   {{ a.title }} · {{ { DONE: '已了结', PENDING: '待抉择', OPEN: '可触发', LOCKED: '首通后开启' }[advState(a)] }}
                 </summary>
@@ -370,9 +212,8 @@ const mapWeather = (mapId: string) => {
                 </template>
                 <p v-else-if="advState(a) === 'DONE'" class="hint mt-2">{{ a.choices.find((option) => option.key === store.player.storyAdventureChoices?.[a.id])?.label }}</p>
               </details>
-            </div>
 
-            <div class="col-span-2 col-start-1 mt-2 flex items-center sm:col-span-1 sm:col-start-3 sm:mt-0">
+              <div class="clear-both flex flex-wrap items-center gap-2 border-t border-line pt-2.5">
               <button
                 class="btn w-full sm:w-auto sm:min-w-[6.5rem]"
                 :class="stateOf(ch.id) === 'CURRENT' ? 'btn-seal !min-h-[2.6rem]' : ''"
@@ -384,73 +225,13 @@ const mapWeather = (mapId: string) => {
               <button v-if="wearsRetreatBoots && stateOf(ch.id) !== 'LOCKED'" class="btn btn-sm"
                 :disabled="store.onlineActionBusy || store.isBattlePlaying" @click="store.challengeChapter(ch.id, true)"
               >入场即撤退</button>
+              </div>
             </div>
-          </li>
-        </template>
-      </ol>
+          </article>
+        </div>
+      </template>
 
-      <div v-else-if="sub === 'MAPS'" class="view-scroll -mr-1 grid content-start gap-3 pr-1 sm:grid-cols-2">
-        <article
-          v-for="m in maps" :key="m.id" class="well well-hover group overflow-hidden"
-          :class="store.player.currentMapId === m.id ? '!border-gold' : ''"
-        >
-          <div class="relative h-28 overflow-hidden">
-            <SceneBackdrop :map-id="m.id" :shichen-idx="store.shichenIdx" />
-            <div class="absolute inset-x-0 bottom-0 flex items-end justify-between gap-2 bg-gradient-to-t from-black/70 to-transparent px-3 pb-2 pt-8">
-              <h4 class="font-brush text-xl leading-none text-[#f0e9dc]">{{ m.name.replace(/（.*?）/, '') }}</h4>
-              <span v-if="mapLocked(m)" class="chip bg-black/40"><Lock :size="12" /> 未开放</span>
-              <span v-else class="chip bg-black/40 backdrop-blur-[2px]" :class="m.safety === 'PEACE' ? 'chip-jade' : 'chip-red'">
-                {{ m.safety === 'PEACE' ? '和平区' : IS_MOCK_MODE ? '可劫镖' : '纷争区' }}
-              </span>
-            </div>
-          </div>
-          <div class="space-y-2.5 p-3">
-            <p class="hint min-h-[3.3rem]">{{ m.ambientDesc }}</p>
-            <div class="text-xs text-ink3">{{ mapWeather(m.id) }}</div>
-            <div v-if="getMapHerbs(m.id).length" class="flex flex-wrap items-center gap-1 border-t border-line/50 pt-2 text-[0.72rem]">
-              <span class="text-ink3">本地产药：</span>
-              <span
-                v-for="h in getMapHerbs(m.id)"
-                :key="h.id"
-                class="chip !py-0 !text-[0.65rem]"
-                :class="[TIER_META[h.tier].cls, (store.herbInventory[h.id] ?? 0) > 0 ? '' : 'opacity-60']"
-              >
-                {{ h.name }} ({{ store.herbInventory[h.id] ?? 0 }})
-              </span>
-            </div>
-            <div class="flex items-center justify-between border-t border-line pt-2 text-xs tabular-nums">
-              <div class="text-ink3">
-                <div>基础收益 <b class="text-ink">{{ m.baseQiPerHour.toLocaleString() }}</b> 真气/小时</div>
-                <div v-if="IS_MOCK_MODE">{{ m.onlineCount }} 人在线</div>
-                <div v-else-if="store.roomConnected && store.roomMapId === m.id">{{ store.roomCount }} 人在线</div>
-              </div>
-              <button v-if="mapLocked(m)" class="btn btn-sm" disabled>{{ IS_MOCK_MODE ? m.unlockHint : m.onlineUnlockHint }}</button>
-              <div v-else-if="store.player.currentMapId !== m.id" class="flex items-center gap-1.5">
-                <template v-if="!store.player.mapJourney">
-                  <span class="hint">{{ store.mapTravelTime(m.id).toFixed(1) }} 秒</span>
-                  <button class="btn btn-sm btn-gold" :disabled="store.onlineActionBusy" @click="store.travelTo(m.id)">出发</button>
-                </template>
-                <span v-else-if="store.journeyMap?.id === m.id" class="chip chip-gold">{{ store.journeySeconds ? '赶路中' : '可抵达' }}</span>
-              </div>
-              <div v-else class="flex items-center gap-1.5">
-                <span class="chip chip-gold">你在这里</span>
-                <button v-if="getMapHerbs(m.id).length" class="btn btn-sm btn-gold" @click="store.forageHerbs(m.id)">采药</button>
-              </div>
-            </div>
-            <div v-if="!IS_MOCK_MODE && m.id === store.player.currentMapId && m.safety === 'CONTESTED' && store.featureOpen('HUASHAN')" class="flex items-center justify-between gap-2 text-xs">
-              <template v-if="store.player.escortDart?.mapId === m.id">
-                <span>{{ store.player.escortDart.robbed ? '镖银已遭劫掠' : store.onlineTime >= store.player.escortDart.endsAt ? '镖车已抵达' : '押镖中' }} · {{ store.player.escortDart.silver.toLocaleString() }} 两</span>
-                <button class="btn btn-sm btn-gold" :disabled="store.onlineActionBusy || store.onlineTime < store.player.escortDart.endsAt" @click="store.escortAction('claim')">交镖</button>
-              </template>
-              <template v-else-if="!store.player.escortDart">
-                <span>接镖后 15 分钟可交镖，镖银 4,800 两</span>
-                <button class="btn btn-sm btn-gold" :disabled="store.onlineActionBusy || !!store.player.mapJourney" @click="store.escortAction('start')">接镖</button>
-              </template>
-              <span v-else>请回接镖地点结算当前镖车。</span>
-            </div>
-          </div>
-        </article>
-      </div>
+      <MapIntel v-else-if="sub === 'MAPS'" />
 
       <BountyBoard v-else-if="sub === 'BOUNTY'" />
       <XiangyangDefense v-else-if="sub === 'XIANGYANG'" />
@@ -464,8 +245,7 @@ const mapWeather = (mapId: string) => {
               <span class="chip chip-gold">三人合战</span>
               <h4 class="font-brush text-2xl leading-tight">少室山 · 金刚伏魔圈</h4>
               <p class="hint">本地试玩没有别的侠客：由乔北冥、清风道长两份结义镜像与你同闯，替换你平时带的伙伴。</p>
-              <p v-if="store.nextRaidRelic" class="text-sm text-gold">打赢可得《{{ store.nextRaidRelic.name }}》</p>
-              <p v-else class="hint">副本秘宝已集齐，再战仍可获得真气和纹银。</p>
+              <RaidRewardTray />
               <button class="btn btn-seal mt-1" @click="store.startThreePlayerCoopRaid()">挑战副本</button>
             </div>
             <div class="mx-auto flex w-[min(100%,20rem)] items-end justify-center gap-2">

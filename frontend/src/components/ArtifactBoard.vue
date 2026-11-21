@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted } from 'vue'
+import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useGameStore } from '@/stores/gameStore'
-import { ITEMS } from '@/config/gameData'
+import { COOP_RAIDS, ITEMS, PILL_RECIPES } from '@/config/gameData'
 import { EQUIP_SLOT_META, TIER_META } from '@/config/uiMeta'
 import { arenaDay, arenaWindow, DAGOU_STAFF, isArenaDay, nextArenaDay } from '../../../shared/artifacts.ts'
+import { TRIAL_STAGES } from '../../../shared/trialStages.ts'
+import { GACHA_POOL } from '../../../shared/gacha.ts'
 import ItemIcon from './ItemIcon.vue'
 
 const store = useGameStore()
@@ -26,9 +28,23 @@ const status = computed(() => {
 })
 /** 执棒者不上自己的擂；尚未出世时也无擂可上 */
 const canFight = computed(() => !!art.value && art.value.state !== 'UNCLAIMED' && !mine.value)
+const filter = ref<'全部' | '未拥有' | '已拥有'>('全部')
+function source(id: string) {
+  const stage = TRIAL_STAGES.find((entry) => entry.clearItemId === id || entry.setId === ITEMS[id]?.setId)
+  if (stage) return '历练 · 第 ' + stage.code + ' 关'
+  const raid = Object.values(COOP_RAIDS).find((entry) => entry.relics.some((item) => item.id === id))
+  if (raid) return '结义副本 · ' + raid.title
+  if (id === 'jiuyin_sanskrit') return '招募黄蓉 · 历练 24、30 关'
+  if (id === 'xuantie_heavysword') return '鬼市旧物摊 · 鉴宝'
+  if (Object.values(GACHA_POOL).some((pool) => pool.some((entry) => entry.kind === 'ITEM' && entry.id === id))) return '醉仙楼 · 结缘'
+  if (Object.values(PILL_RECIPES).some((recipe) => recipe.targetMedicineId === id)) return '百草丹房 · 炼制'
+  return '出处待考'
+}
 const registry = computed(() => (store.artifactBoard?.registry ?? []).map(({ itemId, holders }) => ({
   item: ITEMS[itemId], holders, owned: store.ownedItemIds.includes(itemId),
 })))
+
+const visible = computed(() => registry.value.filter((entry) => filter.value === '全部' || entry.owned === (filter.value === '已拥有')))
 
 // 进兵器谱先取一次，停留期间每半分钟刷新，看得到擂台易主
 let timer: ReturnType<typeof setInterval> | undefined
@@ -104,15 +120,19 @@ onUnmounted(() => clearInterval(timer))
         <h4 class="font-brush text-xl leading-none">神兵名录</h4>
         <span class="text-xs text-ink3">第一卷神品装备 · 全服持有人数</span>
       </div>
+      <div class="workbench-toolbar" aria-label="筛选神兵">
+        <button v-for="f in (['全部','未拥有','已拥有'] as const)" :key="f" class="btn btn-sm" :aria-pressed="filter === f" :class="{ 'btn-gold': filter === f }" @click="filter = f">{{ f }}</button>
+      </div>
+      <p v-if="!visible.length" class="hint">该分类暂无神兵。</p>
       <div class="grid gap-2 sm:grid-cols-2">
         <button
-          v-for="entry in registry" :key="entry.item.id" class="well well-hover tier-edge flex items-center justify-between gap-2 p-2.5 text-left"
+          v-for="entry in visible" :key="entry.item.id" class="well well-hover tier-edge flex items-center justify-between gap-2 p-2.5 text-left"
           :class="TIER_META[entry.item.tier].cls" @click="store.inspectById('item', entry.item.id)"
         >
           <ItemIcon :item-id="entry.item.id" />
           <span class="min-w-0 flex-1">
             <span class="tier-text block truncate text-sm font-bold">{{ entry.item.name }}</span>
-            <span class="block text-xs text-ink3">{{ EQUIP_SLOT_META[entry.item.slot].label }}{{ entry.owned ? ' · 你已拥有' : '' }}</span>
+            <span class="block text-xs text-ink3">{{ EQUIP_SLOT_META[entry.item.slot].label }}{{ entry.owned ? ' · 你已拥有' : '' }} · {{ source(entry.item.id) }}</span>
           </span>
           <span class="shrink-0 text-xs tabular-nums" :class="entry.holders ? 'text-ink2' : 'text-ink3'">{{ entry.holders ? `${entry.holders} 人持有` : '尚无人得' }}</span>
         </button>
