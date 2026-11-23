@@ -1,6 +1,6 @@
 import { computed, reactive, ref, watch, type Ref } from 'vue'
 import { storeToRefs } from 'pinia'
-import type { ChatChannel, ChatConversationDTO, ChatMessageDTO, ChatPrivateBoardDTO, WsServerEvent } from '@/network/protocol'
+import type { ChatBootstrapDTO, ChatChannel, ChatConversationDTO, ChatMessageDTO, WsServerEvent } from '@/network/protocol'
 import { apiClient, ApiError, IS_MOCK_MODE } from '@/network/apiClient'
 import { CHAT_RULES } from '../../../shared/chat.ts'
 import { useGameUiStore } from './gameUiStore'
@@ -54,31 +54,68 @@ export function useChat({ roomMapId }: { roomMapId: Ref<string | null> }) {
   const keep = (list: ChatLine[]) => list.length > CHAT_RULES.keepLimit ? list.slice(-CHAT_RULES.keepLimit) : list
   const visible = (target: PublicChannel) => lines[target].filter((line) => line.system || !blockedIds.value.has(line.sender.id))
 
-  async function loadChannel(target: PublicChannel) {
-    if (IS_MOCK_MODE || !online.roomConnected) return
-    try {
-      const history = await apiClient.request<ChatMessageDTO[]>('GET', `/chat?channel=${target}`)
-      // 传闻只在本地，按时刻插回去
-      const system = lines[target].filter((line) => line.system)
-      lines[target] = keep([...history, ...system].sort((a, b) => a.sentAt - b.sentAt))
-    } catch {
-      // 取不到时保留已有的
+  let connection = 0
+  let inboxUpdates: (() => void)[] | undefined
+  function updateInbox(update: (replaying: boolean) => void) {
+    update(false)
+    inboxUpdates?.push(() => update(true))
+  }
+
+  const histories = new Map<PublicChannel, Set<string>>()
+
+  // 合并查询期间的推送，撤回的消息不能被较早的历史响应重新加回来。
+  function pendingHistory(target: PublicChannel) {
+    const previous = new Set(lines[target].map(({ id }) => id))
+    const removed = new Set<string>()
+    histories.set(target, removed)
+    return (history?: ChatMessageDTO[]) => {
+      if (histories.get(target) !== removed) return
+      histories.delete(target)
+      if (!history) return
+      const live = lines[target].filter((line) => line.system || !previous.has(line.id))
+      const merged = new Map([...history, ...live].filter(({ id }) => !removed.has(id)).map((line) => [line.id, line]))
+      lines[target] = keep([...merged.values()].sort((a, b) => a.sentAt - b.sentAt))
     }
   }
 
-  async function loadPrivate() {
-    if (IS_MOCK_MODE || !online.roomConnected) return
+  async function loadChannel(target: PublicChannel) {
+    const apply = pendingHistory(target)
     try {
-      const board = await apiClient.request<ChatPrivateBoardDTO>('GET', '/chat/private')
-      conversations.value = board.conversations
-      blocked.value = board.blocked
+      apply(await apiClient.request<ChatMessageDTO[]>('GET', `/chat?channel=${target}`))
     } catch {
-      // 取不到时保留已有的
+      apply()
+    }
+  }
+
+  async function loadChat() {
+    const started = connection
+    const world = pendingHistory('WORLD'), map = pendingHistory('MAP'), sect = pendingHistory('SECT')
+    const updates: (() => void)[] = []
+    inboxUpdates = updates
+    try {
+      const result = await apiClient.request<ChatBootstrapDTO>('GET', '/chat/bootstrap')
+      if (started !== connection) return
+      world(result.channels.WORLD)
+      if (result.mapId === roomMapId.value) map(result.channels.MAP)
+      if (result.sectId === player.value.currentSectId) sect(result.channels.SECT)
+      conversations.value = result.conversations
+      blocked.value = result.blocked
+      // 查询期间收到的私聊、已读和屏蔽操作按原顺序补到列表上。
+      for (const update of updates) update()
+    } catch {
+      // 读取失败时沿用已有记录；废弃本次请求的撤回记录。
+    } finally {
+      if (inboxUpdates === updates) inboxUpdates = undefined
+      world()
+      map()
+      sect()
     }
   }
 
   function markRead(target: Peer) {
-    conversations.value = conversations.value.map((entry) => entry.peer.id === target.id ? { ...entry, unread: 0 } : entry)
+    updateInbox(() => {
+      conversations.value = conversations.value.map((entry) => entry.peer.id === target.id ? { ...entry, unread: 0 } : entry)
+    })
     void apiClient.request('POST', `/chat/private/${target.id}/read`).catch(() => undefined)
   }
 
@@ -144,7 +181,7 @@ export function useChat({ roomMapId }: { roomMapId: Ref<string | null> }) {
   function receive(message: ChatMessageDTO) {
     if (message.channel !== 'PRIVATE') {
       const target = message.channel
-      lines[target] = keep([...lines[target], message])
+      if (!lines[target].some(({ id }) => id === message.id)) lines[target] = keep([...lines[target], message])
       if (!watching(target) && message.sender.id !== player.value.id && !blockedIds.value.has(message.sender.id)) unread[target]++
       return
     }
@@ -152,9 +189,12 @@ export function useChat({ roomMapId }: { roomMapId: Ref<string | null> }) {
     const other: Peer = mine ? message.to! : { id: message.sender.id, nickname: message.sender.nickname }
     const reading = watching('PRIVATE') && peer.value?.id === other.id
     if (peer.value?.id === other.id) thread.value = [...thread.value, message]
-    const previous = conversations.value.find((entry) => entry.peer.id === other.id)
-    const unreadCount = mine || reading ? previous?.unread ?? 0 : (previous?.unread ?? 0) + 1
-    conversations.value = [{ peer: other, last: message, unread: unreadCount }, ...conversations.value.filter((entry) => entry.peer.id !== other.id)]
+    updateInbox((replaying) => {
+      const previous = conversations.value.find((entry) => entry.peer.id === other.id)
+      if (replaying && previous && BigInt(previous.last.id) >= BigInt(message.id)) return
+      const unreadCount = mine || reading ? previous?.unread ?? 0 : (previous?.unread ?? 0) + 1
+      conversations.value = [{ peer: other, last: message, unread: unreadCount }, ...conversations.value.filter((entry) => entry.peer.id !== other.id)]
+    })
     if (reading && !mine) markRead(other)
     if (!mine && !reading) ui.showToast(`「${message.sender.nickname}」私聊你：${message.content}`, 'gold')
   }
@@ -162,6 +202,7 @@ export function useChat({ roomMapId }: { roomMapId: Ref<string | null> }) {
   function handleEvent(event: WsServerEvent) {
     if (event.event === 'CHAT_MESSAGE') receive(event.data)
     else if (event.event === 'CHAT_REMOVED') {
+      for (const removed of histories.values()) removed.add(event.data.id)
       for (const target of PUBLIC) lines[target] = lines[target].filter(({ id }) => id !== event.data.id)
       thread.value = thread.value.filter(({ id }) => id !== event.data.id)
     } else if (event.event === 'CHAT_REJECTED') ui.showToast(event.data.message, 'danger')
@@ -176,7 +217,10 @@ export function useChat({ roomMapId }: { roomMapId: Ref<string | null> }) {
   async function setBlocked(target: Peer, value: boolean) {
     try {
       await apiClient.request('POST', '/chat/block', { playerId: target.id, blocked: value })
-      blocked.value = value ? [target, ...blocked.value.filter(({ id }) => id !== target.id)] : blocked.value.filter(({ id }) => id !== target.id)
+      updateInbox(() => {
+        const others = blocked.value.filter(({ id }) => id !== target.id)
+        blocked.value = value ? [target, ...others] : others
+      })
       ui.showToast(value ? `已屏蔽「${target.nickname}」：他的话不再显示，私聊也发不过来` : `已解除对「${target.nickname}」的屏蔽`, 'info')
       if (value && peer.value?.id === target.id) closeThread()
     } catch (error) {
@@ -184,24 +228,16 @@ export function useChat({ roomMapId }: { roomMapId: Ref<string | null> }) {
     }
   }
 
-  // 连上江湖取回各频道；换图、换门派各自重取
-  watch(() => online.roomConnected, (connected) => {
-    if (!connected) return
-    for (const target of PUBLIC) void loadChannel(target)
-    void loadPrivate()
-  })
-  watch(roomMapId, (mapId, previous) => {
-    if (mapId && previous && mapId !== previous) {
-      lines.MAP = []
-      unread.MAP = 0
-      void loadChannel('MAP')
+  watch([() => online.roomConnected, roomMapId, () => player.value.currentSectId], ([connected, map, sect], [wasConnected, oldMap, oldSect]) => {
+    if (map !== oldMap) { lines.MAP = []; unread.MAP = 0 }
+    if (sect !== oldSect) { lines.SECT = []; unread.SECT = 0 }
+    if (IS_MOCK_MODE) return
+    if (!connected) { connection++; histories.clear(); return }
+    if (!wasConnected) void loadChat()
+    else {
+      if (map !== oldMap) void loadChannel('MAP')
+      if (sect !== oldSect) void loadChannel('SECT')
     }
-  })
-  watch(() => player.value.currentSectId, (sectId, previous) => {
-    if (sectId === previous) return
-    lines.SECT = []
-    unread.SECT = 0
-    void loadChannel('SECT')
   })
   // 正看着的频道不记未读
   watch([viewers, channel], () => {
@@ -209,6 +245,9 @@ export function useChat({ roomMapId }: { roomMapId: Ref<string | null> }) {
   })
 
   function reset() {
+    connection++
+    inboxUpdates = undefined
+    histories.clear()
     for (const target of PUBLIC) {
       lines[target] = mockLines(target)
       unread[target] = 0

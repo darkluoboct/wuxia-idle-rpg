@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import { useGameStore } from '@/stores/gameStore'
 import { COOP_RAIDS, ONLINE_STORY_CHAPTERS, STORY_CHAPTERS } from '@/config/gameData'
-import { CHARACTER_PORTRAITS, portraitByName } from '@/config/characterPortraits'
+import { CHARACTER_THUMBNAILS, portraitByName } from '@/config/characterPortraits'
 import { IS_MOCK_MODE } from '@/network/apiClient'
 import { FTUE_VOLUMES } from '../../../shared/ftueQuests.ts'
 import { gaibangSilverGain } from '../../../shared/gaibang.ts'
@@ -36,8 +36,8 @@ const menu = computed(() => props.page === 'quest' ? [
 ])
 const entry = computed(() => menu.value.find((e) => e.id === choice.value) ?? menu.value[0])
 const speaker = computed(() => entry.value?.id === 'guide' ? quest.value?.speaker : entry.value?.id === 'trial' ? stage.value.boss.name : entry.value?.id === 'raid' ? raid.value.boss.name : '')
-const portrait = computed(() => speaker.value && (portraitByName(speaker.value)
-  ?? (entry.value?.id === 'raid' && raid.value.boss.portrait === 'monk' ? CHARACTER_PORTRAITS.npc_monk : undefined)))
+const portrait = computed(() => speaker.value && (portraitByName(speaker.value, 'thumb')
+  ?? (entry.value?.id === 'raid' && raid.value.boss.portrait === 'monk' ? CHARACTER_THUMBNAILS.npc_monk : undefined)))
 function enter() {
   if (entry.value?.id === 'guide' && quest.value?.jumpSub === 'TRIAL' && typeof quest.value.targetValue === 'number' && store.jianghuTabOpen('TRIAL')) {
     emit('trial', quest.value.targetValue)

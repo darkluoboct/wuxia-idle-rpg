@@ -69,6 +69,7 @@ try {
   await db.query('SELECT co_cultivation_id, shaoshi_clears, chongyang_clears, juxian_clears FROM players LIMIT 0')
   await db.query('SELECT chapter FROM chapter_one_statue LIMIT 0')
   await db.query('SELECT 1 FROM sect_contest_entries, sect_contest_results LIMIT 0')
+  await db.query('SELECT closed_war FROM xiangyang_settlement LIMIT 0')
   await db.query('SELECT 1 FROM admin_accounts, mails, mail_claims, announcements LIMIT 0')
   await db.query('SELECT 1 FROM rate_boosts, shop_goods, shop_purchases, player_activity_days, online_samples LIMIT 0')
   await db.query('SELECT 1 FROM chat_messages, chat_blocks, chat_banned_words, deleted_players LIMIT 0')

@@ -8,6 +8,7 @@ import RightJianghuSidebar from '@/components/RightJianghuSidebar.vue'
 import ChatPanel from '@/components/ChatPanel.vue'
 import GameHeader from '@/components/GameHeader.vue'
 import GlobalOverlays from '@/components/GlobalOverlays.vue'
+import CultivateView from '@/views/CultivateView.vue'
 import { useGameHotkeys } from '@/composables/useGameHotkeys'
 import { useInterfacePrefs } from '@/stores/interfacePrefs'
 import { useNavBadges } from '@/composables/useNavBadges'
@@ -17,7 +18,6 @@ import './styles/rails.css'
 import './styles/stage.css'
 import './styles/patrol.css'
 const CharacterSelect = defineAsyncComponent(() => import('@/components/CharacterSelect.vue'))
-const CultivateView = defineAsyncComponent(() => import('@/views/CultivateView.vue'))
 const JianghuView = defineAsyncComponent(() => import('@/views/JianghuView.vue'))
 const ArsenalView = defineAsyncComponent(() => import('@/views/ArsenalView.vue'))
 const SectView = defineAsyncComponent(() => import('@/views/SectView.vue'))
@@ -146,8 +146,10 @@ onMounted(() => {
       </aside>
 
       <section ref="stage" class="wuxia-stage" :class="{ 'wuxia-interior': currentTab !== 'CULTIVATE' || inBattle }" aria-label="江湖舞台">
-        <ArsenalView v-if="arsenalWorkspace" :mail-item="mailBagItem" @back-to-mail="overlays?.openMail(true)" />
-        <component :is="currentView" v-else :key="currentTab" />
+        <KeepAlive include="CultivateView">
+          <ArsenalView v-if="arsenalWorkspace" :mail-item="mailBagItem" @back-to-mail="overlays?.openMail(true)" />
+          <component :is="currentView" v-else :key="currentTab" />
+        </KeepAlive>
       </section>
 
       <aside id="world-rail" class="wuxia-rail world-rail" aria-label="江湖卷" :data-open="store.mobileDrawer === 'WORLD'">

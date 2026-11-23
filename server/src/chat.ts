@@ -1,7 +1,8 @@
+import type { PoolClient } from 'pg'
 import type { FastifyInstance } from 'fastify'
 import { FOREVER } from '../../shared/admin.ts'
 import { CHAT_RULES, isChatChannel, maskBannedWords, normalizeChat } from '../../shared/chat.ts'
-import type { ChatChannel, ChatConversationDTO, ChatMessageDTO, ChatPrivateBoardDTO, PlayerDTO, WsServerEvent } from '../../shared/protocol.ts'
+import type { ChatBootstrapDTO, ChatChannel, ChatConversationDTO, ChatMessageDTO, ChatPrivateBoardDTO, PlayerDTO, WsServerEvent } from '../../shared/protocol.ts'
 import { requireSession } from './auth.ts'
 import { db, serverTime, transaction } from './db.ts'
 import { GameError, objectBody } from './http.ts'
@@ -112,8 +113,9 @@ export function registerChat(app: FastifyInstance, rooms: ReturnType<typeof regi
     }
   }
 
-  async function me(accountId: string) {
-    const { rows: [row] } = await db.query<{ id: string; profile: PlayerDTO }>('SELECT id, profile FROM players WHERE account_id = $1', [accountId])
+  type Reader = Pick<PoolClient, 'query'>
+  async function me(accountId: string, reader: Reader = db) {
+    const { rows: [row] } = await reader.query<{ id: string; profile: PlayerDTO }>('SELECT id, profile FROM players WHERE account_id = $1', [accountId])
     if (!row) throw new GameError(404, 'PLAYER_NOT_CREATED', '先创建你的角色')
     return row
   }
@@ -125,21 +127,29 @@ export function registerChat(app: FastifyInstance, rooms: ReturnType<typeof regi
     const channel = request.query.channel
     if (channel !== 'WORLD' && channel !== 'SECT' && channel !== 'MAP') throw new GameError(400, 'INVALID_CHANNEL', '没有这个频道')
     const player = await me(accountId)
+    return history(db, player, channel)
+  })
+
+  async function history(reader: Reader, player: Awaited<ReturnType<typeof me>>, channel: Exclude<ChatChannel, 'PRIVATE'>) {
     const scope = channel === 'SECT' ? player.profile.currentSectId ?? null : channel === 'MAP' ? player.profile.currentMapId : null
     if (channel === 'SECT' && !scope) return []
-    const { rows } = await db.query<MessageRow>(`
+    const { rows } = await reader.query<MessageRow>(`
       SELECT ${MESSAGE_COLUMNS} FROM chat_messages m LEFT JOIN players r ON r.id = m.recipient_id
       WHERE m.channel = $1 AND ${scope === null ? 'm.scope IS NULL AND $2::text IS NULL' : 'm.scope = $2'} AND NOT m.hidden ORDER BY m.id DESC LIMIT $3`,
     [channel, scope, CHAT_RULES.historyLimit])
     return rows.reverse().map(chatMessageOf)
-  })
+  }
 
   /** 私聊会话（最近的在前）与屏蔽名单 */
   app.get('/api/v1/chat/private', async (request): Promise<ChatPrivateBoardDTO> => {
     const { accountId } = await requireSession(request)
     const player = await me(accountId)
+    return privateBoard(db, player.id)
+  })
+
+  async function privateBoard(reader: Reader, playerId: string): Promise<ChatPrivateBoardDTO> {
     const now = Date.now()
-    const { rows } = await db.query<MessageRow & { peer: string; peer_name: string; unread: number }>(`
+    const { rows } = await reader.query<MessageRow & { peer: string; peer_name: string; unread: number }>(`
       WITH mine AS (
         SELECT m.*, CASE WHEN m.sender_id = $1 THEN m.recipient_id ELSE m.sender_id END AS peer
         FROM chat_messages m WHERE m.channel = 'PRIVATE' AND NOT m.hidden AND (m.sender_id = $1 OR m.recipient_id = $1) AND m.created_at > $2
@@ -148,11 +158,24 @@ export function registerChat(app: FastifyInstance, rooms: ReturnType<typeof regi
         l.peer, p.nickname AS peer_name,
         (SELECT count(*)::int FROM mine u WHERE u.peer = l.peer AND u.recipient_id = $1 AND u.read_at IS NULL) AS unread
       FROM latest l JOIN players p ON p.id = l.peer LEFT JOIN players r ON r.id = l.recipient_id
-      ORDER BY l.id DESC LIMIT 50`, [player.id, since(now)])
-    const { rows: blocked } = await db.query<{ id: string; nickname: string }>(`
-      SELECT p.id, p.nickname FROM chat_blocks b JOIN players p ON p.id = b.blocked_id WHERE b.player_id = $1 ORDER BY b.created_at DESC`, [player.id])
+      ORDER BY l.id DESC LIMIT 50`, [playerId, since(now)])
+    const { rows: blocked } = await reader.query<{ id: string; nickname: string }>(`
+      SELECT p.id, p.nickname FROM chat_blocks b JOIN players p ON p.id = b.blocked_id WHERE b.player_id = $1 ORDER BY b.created_at DESC`, [playerId])
     const conversations: ChatConversationDTO[] = rows.map((row) => ({ peer: { id: row.peer, nickname: row.peer_name }, last: chatMessageOf(row), unread: row.unread }))
     return { conversations, blocked }
+  }
+
+  app.get('/api/v1/chat/bootstrap', async (request): Promise<ChatBootstrapDTO> => {
+    const { accountId } = await requireSession(request)
+    return transaction(async (client) => {
+      const player = await me(accountId, client)
+      const channels = {
+        WORLD: await history(client, player, 'WORLD'),
+        MAP: await history(client, player, 'MAP'),
+        SECT: await history(client, player, 'SECT'),
+      }
+      return { channels, mapId: player.profile.currentMapId, sectId: player.profile.currentSectId, ...await privateBoard(client, player.id) }
+    }, true)
   })
 
   /** 与某人的私聊（旧的在前） */

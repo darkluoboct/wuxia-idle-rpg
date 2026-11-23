@@ -400,6 +400,7 @@ export const useGameStore = defineStore('wuxiaGame', () => {
     marketTab: uiRefs.marketTab,
     jianghuTitle: playerRefs.jianghuTitle,
     trialPatrolStatus: trial.trialPatrolStatus,
+    patrolFight: trial.patrolFight,
     mockSettlePatrol: trial.mockSettlePatrol,
     openQusanCache: trial.openQusanCache,
     setPatrolStage: trial.setPatrolStage,

@@ -11,6 +11,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useGameStore, type GachaResultView } from '@/stores/gameStore'
 import { GACHA_ASSETS, GACHA_HARD_PITY, GACHA_SINGLE_COST, GACHA_TEN_COST } from '@/config/gachaData'
+import { CHARACTER_THUMBNAILS } from '@/config/characterPortraits'
 import { TIER_META } from '@/config/uiMeta'
 import InkFigure from './InkFigure.vue'
 import ItemIcon from './ItemIcon.vue'
@@ -234,7 +235,7 @@ const STICKS = [
           <div class="gacha-face gacha-front panel flex flex-col items-center overflow-hidden p-1.5 text-center" :class="isRare(r) ? 'glow-border' : ''">
             <span class="chip tier-chip px-1.5 py-0 text-[0.75rem]">{{ TIER_META[r.draw.tier].label }}</span>
             <div class="relative flex min-h-0 w-full flex-1 justify-center" :class="r.portrait ? 'items-end' : 'items-center'">
-              <img v-if="r.portrait && r.draw.refId && GACHA_ASSETS.portraits[r.draw.refId]" :src="GACHA_ASSETS.portraits[r.draw.refId]" :alt="r.name" class="h-full object-contain" />
+              <img v-if="r.portrait && r.draw.refId && CHARACTER_THUMBNAILS[r.draw.refId]" :src="CHARACTER_THUMBNAILS[r.draw.refId]" :alt="r.name" class="h-full object-contain" />
               <InkFigure v-else-if="r.portrait" :style-type="r.portrait" />
               <ItemIcon v-else-if="r.draw.refId && (r.draw.kind === 'ITEM' || r.draw.kind === 'PILL')" :item-id="r.draw.refId" :glyph="r.glyph" class="[--item-icon-size:3.5rem]" />
               <span v-else class="seal h-14 w-14 text-3xl" :style="{ background: 'var(--tc)', boxShadow: '0 0 0 0.14rem var(--tc)' }">{{ r.glyph }}</span>

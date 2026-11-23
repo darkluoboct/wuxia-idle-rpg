@@ -3,7 +3,8 @@ import type { BattleReportDTO, EquipSlotType, IdleGain, TrialPatrolStatusDTO, Tr
 import { SKILLS, trialRewardItems } from '@/config/gameData'
 import { trialDropLabel } from '@/config/uiMeta'
 import { IS_MOCK_MODE } from '@/network/apiClient'
-import { battleEnvironmentAt } from '../../../shared/combatMeta.ts'
+import { battleEnvironmentAt, companionItemId, EQUIP_SLOT_META, PERSONAL_EQUIP_SLOTS } from '../../../shared/combatMeta.ts'
+import { equippedMartialSkills } from '../../../shared/martialSchools.ts'
 import { forgeMaterialLabel, forgeMaterials } from '../../../shared/equipmentForge.ts'
 import { settlePatrolCaches, trialFirstClearSilver } from '../../../shared/player.ts'
 import { patrolCacheIngot } from '../../../shared/economy.ts'
@@ -28,8 +29,10 @@ import {
   trialPartId,
   trialPuzzleOutcome,
   trialStageOf,
+  tunePatrolFight,
   upgradesPatrolYield,
   type TrialRoll,
+  type TrialStageConfig,
 } from '../../../shared/trialStages.ts'
 import { QUSAN_CACHE_KEY, searchQusanCache } from '../../../shared/skillMastery.ts'
 import { usePlayerStore } from './playerStore'
@@ -38,6 +41,18 @@ import { useGameUiStore } from './gameUiStore'
 import type { GameActions } from '@/network/gameActions'
 import type { useCultivation } from './cultivation'
 import type { useBattlePlayback } from './battlePlayback'
+
+/** 同一角色、关卡、场次使用同一串随机数，调节对手强度时也从头开始。 */
+function patrolRng(playerId: string, stageId: number, battle: number) {
+  let seed = 2166136261
+  for (const char of `${playerId}:${stageId}:${battle}`) seed = Math.imul(seed ^ char.charCodeAt(0), 16777619)
+  return () => {
+    seed = (seed + 0x6d2b79f5) | 0
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed)
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
 
 export function useTrial({ actions, cultivation, battle }: {
   actions: GameActions
@@ -53,6 +68,48 @@ export function useTrial({ actions, cultivation, battle }: {
   const { isBattlePlaying, startBattlePlayback, startLocalBattle } = battle
 
   const trial = computed(() => player.value.trial)
+
+  // 联机快照会替换整个角色。只比较出战阵容用到的值，切回修行也能复用同一份战报。
+  const patrolPartyKey = computed(() => {
+    const p = player.value
+    const preset = currentLoadout.value
+    function item(id: string | null | undefined) {
+      if (!id) return null
+      const forged = p.equipmentForge?.items[id]
+      return [id, p.equipmentAffixes?.[id], forged?.stars, forged?.secondary]
+    }
+    const wings = [preset.leftCompanionId, preset.rightCompanionId].map((id) => {
+      if (!id) return null
+      const state = companionAffinity.value[id]
+      return [id, state?.form, state?.grade, PERSONAL_EQUIP_SLOTS.map((slot) => item(companionItemId(preset, id, slot)))]
+    })
+    const bonus = playerStore.collectionBonus
+    return JSON.stringify([
+      p.id, p.nickname, p.avatarId, p.level, p.realmTier, p.stats, p.bonusHpPct, p.bonusMp,
+      p.currentSectId, p.sectRank, p.gaibangBranch, p.graduatedSectIds, p.betrayedSectIds,
+      p.openedAcupointIds, p.chapterOneChampion, p.storySnakeChoice, p.trial.rewardedStageIds,
+      preset.stance, preset.titleId, preset.gearSkillId, preset.hiddenWeaponIds, wings, bonus.hpPct, bonus.atkPct,
+      Object.values(EQUIP_SLOT_META).map(({ field }) => item(preset[field])),
+      equippedMartialSkills(preset).map(({ id }) => [id, learnedSkills.value[id]]),
+    ])
+  })
+  let lastFight: { key: string; result: ReturnType<typeof tunePatrolFight> } | undefined
+  function patrolFight(stage: TrialStageConfig, battleNo: number) {
+    const p = player.value
+    const environment = { ...playerStore.mapEnvironment(p.currentMapId), ...stage.environment }
+    // 时间戳本身不影响招式；天气变化和气血微沸到期才需要重新推演。
+    const { at, ...weather } = environment
+    const deviating = (p.qiDeviationUntil ?? 0) > (at ?? playerStore.worldTime)
+    const key = JSON.stringify([stage.id, battleNo, patrolPartyKey.value, weather, deviating])
+    if (lastFight?.key === key) return lastFight.result
+    const fighter = { ...p, battleMedicines: undefined }
+    const result = tunePatrolFight(stage, battleNo, (foe) => simulateServerBattle({
+      sceneTitle: `${stage.code} ${stage.title} · 巡历`, mode: 'SOLO_STORY', player: fighter, loadout: currentLoadout.value,
+      learnedSkills: learnedSkills.value, environment, enemyMain: foe, rng: patrolRng(p.id, stage.id, battleNo),
+    }))
+    lastFight = { key, result }
+    return result
+  }
 
   function trialPatrolStatus(stageId = player.value.trial.selectedStageId): TrialPatrolStatusDTO {
     const hours = player.value.trial.stageHours[String(stageId)] ?? 0
@@ -290,6 +347,7 @@ export function useTrial({ actions, cultivation, battle }: {
     mockSettlePatrol,
     trial,
     trialPatrolStatus,
+    patrolFight,
     openQusanCache,
     setPatrolStage,
     challengeTrialStage,

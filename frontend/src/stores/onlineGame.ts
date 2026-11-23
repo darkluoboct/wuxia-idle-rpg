@@ -22,6 +22,7 @@ export function useOnlineGame(callbacks: OnlineGameCallbacks, prepare: () => Pro
   let lastServerTime = 0
   let announcedRevision = 0
   let session = 0
+  let pendingRefresh: Promise<boolean> | undefined
   let reconnectTimer: ReturnType<typeof setTimeout> | undefined
   let reconnectDelay = 1_000
 
@@ -35,6 +36,7 @@ export function useOnlineGame(callbacks: OnlineGameCallbacks, prepare: () => Pro
   /** 结束本次在江湖的会话：登出回登录页；角色被删回建角（账号仍登录着） */
   function endSession(next: 'login' | 'create' = 'login') {
     session++
+    pendingRefresh = undefined
     clearTimeout(reconnectTimer)
     apiClient.closeWs()
     roomConnected.value = false
@@ -48,12 +50,26 @@ export function useOnlineGame(callbacks: OnlineGameCallbacks, prepare: () => Pro
     callbacks.reset()
   }
 
-  async function refresh() {
+  function refresh() {
+    if (pendingRefresh) return pendingRefresh
+    const pending = refreshSnapshot().finally(() => {
+      if (pendingRefresh === pending) pendingRefresh = undefined
+    })
+    pendingRefresh = pending
+    return pending
+  }
+
+  async function refreshSnapshot() {
     const started = session
     try {
-      const snapshot = await apiClient.request<PlayerSnapshot>('GET', '/player/me')
-      if (started !== session || phase.value !== 'ready') return false
-      apply(snapshot)
+      // 推送可与重连读档重叠；只有查询开始后又公布了更新版本才需补读。
+      let requested: number
+      do {
+        requested = announcedRevision
+        const snapshot = await apiClient.request<PlayerSnapshot>('GET', '/player/me')
+        if (started !== session || phase.value !== 'ready') return false
+        apply(snapshot)
+      } while (announcedRevision > requested && announcedRevision > revision.value)
       return true
     } catch (error) {
       if (started === session && error instanceof ApiError && error.status === 401) endSession()
@@ -210,6 +226,7 @@ export function useOnlineGame(callbacks: OnlineGameCallbacks, prepare: () => Pro
 
   onScopeDispose(() => {
     session++
+    pendingRefresh = undefined
     clearTimeout(reconnectTimer)
     apiClient.closeWs()
   })

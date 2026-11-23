@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
+import { setImmediate as yieldToLoop, setTimeout as delay } from 'node:timers/promises'
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import type { PoolClient } from 'pg'
 import { calcNextLevelQi, computeDerivedStats, simulateCoopRaid, simulatePlayerDuel, simulateServerBattle } from '../../shared/battle.ts'
@@ -41,7 +42,7 @@ import { gainReunionClues, newReunion, reunionCluesToday, reunionEncounter, reun
 import type {
   ArtifactBoardDTO, ArtifactResult, AuctionBoardDTO, AuctionLotDTO, AuctionResult, AwakenResult, BattleReportDTO, BountyBoardDTO, BountyEntryDTO, ChapterOneStatueDTO, CoCultivationDTO, CoCultivationInviteDTO, CompanionState, CompanionWear, CultivationResult, DuelInviteDTO, FeastResult, ForgeInput, ForgeResult, FtueClaimResult, GachaResult, GameAction, HuashanBoardDTO, HuashanEntryDTO, HuashanResult, IdleGain, InnGiftResult, LibraryResult, LibraryStatusDTO, LoadoutPresetDTO, MapMoveResult, PersonalEquipSlot, PlayerDTO, PlayerSnapshot, StallBoardDTO, StallListingDTO, StallResult,
   MirrorRankEntryDTO, ReunionResult, RichSegment, SectChiefDTO, SectContestBoardDTO, SectContestResult, SectResult, SkillSlotType, SkillUpgradeResult, StoryAdventureResult, StoryChallengeResult, StorySnakeChoiceResult, TrialChallengeResult, TrialDropDTO, TrialPatrolStatusDTO, TrialReplayResult,
-  AnnouncementDTO, AwayReportDTO, MailAttachments, MailDTO, ShopGoodsDTO, ShopLimitKind, RaidId, RaidMirrorBoardDTO, RoomPlayerDTO, WsServerEvent, XiangyangAwardDTO, XiangyangBoardDTO, XiangyangGateDTO, XiangyangGateId, XiangyangResult,
+  AnnouncementDTO, AwayReportDTO, MailAttachments, MailDTO, RoomNoticesDTO, ShopGoodsDTO, ShopLimitKind, RaidId, RaidMirrorBoardDTO, RoomPlayerDTO, WsServerEvent, XiangyangAwardDTO, XiangyangBoardDTO, XiangyangGateDTO, XiangyangGateId, XiangyangResult,
 } from '../../shared/protocol.ts'
 import { requireSession, verifyPassword } from './auth.ts'
 import { archiveAndDeletePlayer, nicknameReserved } from './deletePlayer.ts'
@@ -57,7 +58,7 @@ type Profile = Omit<PlayerDTO, 'id' | 'nickname' | 'lastSettleAt' | 'nextLevelQi
 }
 const UUID = /^[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/i
 
-interface CharacterRow {
+export interface CharacterRow {
   id: string
   account_id: string
   nickname: string
@@ -176,10 +177,22 @@ async function hydrateCharacter(client: PoolClient, row: CharacterRow): Promise<
     [row.id, row.co_cultivation_id],
   )
   recruitTrialCompanions(details.companionAffinity, row.profile.trial?.rewardedStageIds ?? [])
+  return {
+    ...details,
+    ...restorePlayer(row, equipmentAffixes, chapterOneChampion),
+    qiRemainder: row.qi_remainder,
+    silverRemainder: row.silver_remainder,
+    revision: row.revision,
+    shaoshiClears: row.shaoshi_clears,
+    chongyangClears: row.chongyang_clears,
+    juxianClears: row.juxian_clears,
+  }
+}
+
+export function restorePlayer(row: CharacterRow, equipmentAffixes: PlayerDTO['equipmentAffixes'], chapterOneChampion = false): { player: PlayerDTO; rewardedChapters: number[] } {
   const { storyProgressVersion, ...profile } = row.profile
   const progress = restoreOnlineStoryProgress(profile.maxChapterId, row.rewarded_chapters, storyProgressVersion)
   return {
-    ...details,
     player: {
       ...profile,
       maxChapterId: progress.maxChapterId,
@@ -199,12 +212,6 @@ async function hydrateCharacter(client: PoolClient, row: CharacterRow): Promise<
       },
     },
     rewardedChapters: progress.rewardedChapters,
-    qiRemainder: row.qi_remainder,
-    silverRemainder: row.silver_remainder,
-    revision: row.revision,
-    shaoshiClears: row.shaoshi_clears,
-    chongyangClears: row.chongyang_clears,
-    juxianClears: row.juxian_clears,
   }
 }
 
@@ -241,13 +248,13 @@ function enterMap(player: PlayerDTO, mapId: string, now: number) {
   if (mapId !== QUANZHEN_LIBRARY.mapId) player.isGuardingLibrary = false
 }
 
-function equippedCompanion(character: Character, id: string) {
+export function equippedCompanion(character: Pick<Character, 'companionAffinity'>, id: string) {
   const state = character.companionAffinity[id]
   const config = COMPANIONS[id]
   return state?.recruited && config ? companionView(config, state) : undefined
 }
 
-function collectionBonus(character: Character) {
+export function collectionBonus(character: Pick<Character, 'companionAffinity'>) {
   return totalCompanionSetBonuses(activeSetBonuses((id) => !!character.companionAffinity[id]?.recruited))
 }
 
@@ -1291,14 +1298,9 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
       SELECT e.*, g.wave,
         (SELECT count(*)::int FROM xiangyang_entries o WHERE o.war_id = e.war_id AND o.gate = e.gate AND o.merit > e.merit) + 1 AS rank
       FROM xiangyang_entries e LEFT JOIN xiangyang_gates g ON g.war_id = e.war_id AND g.gate = e.gate
-      WHERE e.player_id = $1 AND NOT e.claimed AND e.sorties > 0 ORDER BY e.war_id`, [character.player.id])
-    // 值守出战的时刻不晚于所在那场收兵：最早的一次还在某场收兵之前，那一场就还没打完
-    const { rows: [{ due }] } = await client.query<{ due: string | null }>('SELECT min(due_at) AS due FROM xiangyang_posts')
-    const settled = (warId: number) => {
-      const { closesAt } = xiangyangWarOf(warId)
-      return closesAt <= now && (due === null || Number(due) > closesAt)
-    }
-    return rows.filter(({ war_id: warId }) => settled(warId)).map((row) => {
+      WHERE e.player_id = $1 AND NOT e.claimed AND e.sorties > 0 AND e.war_id < $2
+        AND e.war_id <= (SELECT closed_war FROM xiangyang_settlement) ORDER BY e.war_id`, [character.player.id, xiangyangWar(now).id])
+    return rows.map((row) => {
       const wavesCleared = xiangyangWavesCleared({ wave: row.wave ?? 1 })
       const topThree = row.rank <= 3
       return {
@@ -1366,55 +1368,97 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
     }
   }
 
-  /** 把到期的值守出战按时刻先后逐一打完；一次最多打 limit 仗，余下的下回接着打 */
-  async function sweepXiangyang(client: PoolClient, until: number, limit = 300) {
+  // 收兵时同一人的余令（至多三道）一起提交，城门、战报和下次到期时刻随事务一同推进。
+  const batchLimit = 6
+  async function sweepXiangyangBatch(client: PoolClient, cutoff?: number) {
     await lockXiangyang(client)
-    for (let fought = 0; fought < limit;) {
+    const until = cutoff ?? await serverTime(client)
+    for (let fought = 0; fought < batchLimit;) {
       const { rows: [post] } = await client.query<XiangyangPostRow>(
         'SELECT * FROM xiangyang_posts WHERE due_at <= $1 ORDER BY due_at, player_id LIMIT 1', [until])
-      if (!post) return
-      // 记出战要对角色行加外键锁：这位侠客正在别的操作里（角色行已锁、在等这把襄阳锁）就先停下，由那边接着打，免得互相等锁
+      if (!fought || !post) {
+        // 恰好在收兵时刻到期的余令仍属于旧周，最后一批提交后才能封榜。
+        const settledAt = post ? Number(post.due_at) - 1 : until
+        await client.query(`INSERT INTO xiangyang_settlement (closed_war) VALUES ($1)
+          ON CONFLICT (singleton) DO UPDATE SET closed_war = EXCLUDED.closed_war
+          WHERE xiangyang_settlement.closed_war < EXCLUDED.closed_war`, [xiangyangWar(settledAt).id - 1])
+      }
+      if (!post) return 'done'
       const { rowCount: free } = await client.query('SELECT 1 FROM players WHERE id = $1 FOR KEY SHARE SKIP LOCKED', [post.player_id])
-      if (!free) return
+      if (!free) return 'busy'
       const war = xiangyangWarOf(post.due_war)
       const at = Number(post.due_at)
       const entry = await xiangyangEntry(client, war.id, post.player_id)
       const gate = entry?.gate ?? post.gate
       const turn = xiangyangAutoTurn(war, entryOrders(entry, at), at)
+      if (fought + turn.count > batchLimit) return 'more'
       const fighter = mirrorFighter(post.mirror)
       await client.query('SAVEPOINT xiangyang_auto')
       try {
         for (let order = 0; order < turn.count; order++) {
           await xiangyangFight(client, {
             warId: war.id, gate, playerId: post.player_id, at, auto: true, drum: false,
-            fight: (wave) => xiangyangBattle(fighter, gate, wave, at, '襄阳值守'),
+            fight: (wave) => {
+              try { return xiangyangBattle(fighter, gate, wave, at, '襄阳值守') }
+              catch (cause) { throw new InvalidXiangyangMirror('值守镜像无法出战', { cause }) }
+            },
           })
         }
         await client.query('RELEASE SAVEPOINT xiangyang_auto')
       } catch (error) {
+        if (!(error instanceof InvalidXiangyangMirror)) throw error
         // 镜像打不了（比如配装里的武学已下架）：这一回作罢、照常排下一回，不卡住全服的值守
         await client.query('ROLLBACK TO SAVEPOINT xiangyang_auto')
         app.log.error(error)
       }
-      fought += turn.count
+      fought += Math.max(1, turn.count)
       await client.query('UPDATE xiangyang_entries SET orders = $3, orders_at = $4, skill_id = $5 WHERE war_id = $1 AND player_id = $2',
         [war.id, post.player_id, turn.orders.stored, turn.orders.asOf, fighter.loadout.outerSkillId])
       const next = xiangyangNextAuto(war, turn.orders)
       await client.query('UPDATE xiangyang_posts SET due_at = $2, due_war = $3 WHERE player_id = $1', [post.player_id, next.at, next.warId])
     }
+    return 'more'
   }
 
-  async function sweepXiangyangIfDue(client: PoolClient, until: number) {
-    const { rowCount } = await client.query('SELECT 1 FROM xiangyang_posts WHERE due_at <= $1 LIMIT 1', [until])
-    if (rowCount) await sweepXiangyang(client, until)
+  class InvalidXiangyangMirror extends Error {}
+  class XiangyangOrdersDue extends Error {
+    until: number
+    constructor(until: number) { super(); this.until = until }
   }
 
-  // 值守出战不等人来看：每分钟结算一次到期的
-  const xiangyangSweeper = setInterval(() => {
-    void transaction(async (client) => sweepXiangyangIfDue(client, await serverTime(client))).catch((error) => app.log.error(error))
-  }, 60_000)
+  let sweeping: Promise<void> | undefined
+  let stopping = false
+  let requestedThrough = 0
+  function drainXiangyang(until = 0) {
+    if (stopping) return Promise.resolve()
+    requestedThrough = Math.max(requestedThrough, until)
+    return sweeping ??= (async () => {
+      try {
+        while (!stopping) {
+          const target = requestedThrough
+          const status = await transaction((client) => sweepXiangyangBatch(client, target || undefined))
+          if (status === 'done' && requestedThrough === target) return
+          if (status === 'busy') await delay(25)
+          else await yieldToLoop()
+        }
+      } finally {
+        // 与最后一次检查在同一微任务里交还调度权，下一次唤醒可立即开新批。
+        sweeping = undefined
+        requestedThrough = 0
+      }
+    })()
+  }
+  function wakeXiangyang(until?: number) {
+    void drainXiangyang(until).catch((error) => app.log.error(error))
+  }
+  const xiangyangSweeper = setInterval(wakeXiangyang, 60_000)
   xiangyangSweeper.unref()
-  app.addHook('onClose', async () => clearInterval(xiangyangSweeper))
+  app.addHook('onReady', async () => { wakeXiangyang() })
+  app.addHook('preClose', async () => {
+    stopping = true
+    clearInterval(xiangyangSweeper)
+    await sweeping?.catch((error) => app.log.error(error))
+  })
 
   /** 值守此门：镜像按当下配装；镜像下一次替你出战按手上的军令重排 */
   async function saveXiangyangPost(client: PoolClient, character: Character, gate: XiangyangGateId, war: XiangyangWar, orders: XiangyangOrders, now: number) {
@@ -1428,13 +1472,22 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
   async function awayReport(client: PoolClient, character: Character, now: number): Promise<AwayReportDTO> {
     const { player } = character
     const since = player.lastReportAt ?? player.lastSettleAt
+    // 换装、换图也会推进 lastSettleAt，只有已领取的邸报能作为值守战报的起点。
+    const xiangyangSince = player.lastXiangyangReportAt ?? player.lastReportAt ?? 0
     player.lastReportAt = now
     character.dirty = true
-    await sweepXiangyangIfDue(client, now)
     const window = [player.id, since, now]
-    const { rows: [xiangyang] } = await client.query<{ sorties: number; merit: number }>(`
-      SELECT count(*)::int AS sorties, COALESCE(sum(merit), 0)::int AS merit FROM xiangyang_sorties
-      WHERE player_id = $1 AND auto AND created_at > $2 AND created_at <= $3`, window)
+    // 本事务已锁角色，后台无法推进此人的军令。邸报只翻过已结算的时段，下次可补领迟到的战报。
+    const { rows: [{ through, sorties, merit }] } = await client.query<{ through: string; sorties: number; merit: number }>(`
+      SELECT bounds.through, report.* FROM (
+        SELECT LEAST($3::bigint, (SELECT due_at - 1 FROM xiangyang_posts WHERE player_id = $1)) AS through
+      ) bounds CROSS JOIN LATERAL (
+        SELECT count(*)::int AS sorties, COALESCE(sum(merit), 0)::int AS merit FROM xiangyang_sorties
+        WHERE player_id = $1 AND auto AND created_at > $2 AND created_at <= bounds.through
+      ) report`, [player.id, xiangyangSince, now])
+    if (Number(through) < now) {
+      player.lastXiangyangReportAt = Math.max(xiangyangSince, Number(through))
+    } else delete player.lastXiangyangReportAt
     const { rows: [sales] } = await client.query<{ count: number; silver: number }>(`
       SELECT COALESCE(sum(qty), 0)::int AS count, COALESCE(sum(qty * unit_price - tax), 0)::int AS silver FROM stall_sales
       WHERE seller_id = $1 AND created_at > $2 AND created_at <= $3`, window)
@@ -1445,7 +1498,7 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
     const dividends = await settleAuctionDividends(client, character, now)
     return {
       since,
-      ...(xiangyang.sorties ? { xiangyang } : {}),
+      ...(sorties ? { xiangyang: { sorties, merit } } : {}),
       ...(sales.count ? { stallSales: sales } : {}),
       ...(dividends.length ? { dividends } : {}),
       ...(lent ? { raidLends: { count: lent.lends, qiExp: Number(lent.lend_qi) } } : {}),
@@ -1454,10 +1507,6 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
 
   /** 收功时顺带领已论功的襄阳封赏 */
   async function claimXiangyangAwards(client: PoolClient, character: Character, now: number) {
-    const { rowCount } = await client.query('SELECT 1 FROM xiangyang_entries WHERE player_id = $1 AND NOT claimed AND war_id < $2 LIMIT 1',
-      [character.player.id, xiangyangWar(now).id])
-    if (!rowCount) return []
-    await sweepXiangyangIfDue(client, now)
     const awards = await xiangyangAwards(client, character, now)
     for (const award of awards) await grantXiangyangAward(client, character, award)
     return awards.map(({ warId, skillId, reward }) => ({ warId, skillId, reward }))
@@ -1469,17 +1518,17 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
       const character = await readCharacter(client, accountId)
       requireFeature(character.player, 'XIANGYANG')
       const now = await serverTime(client)
-      await sweepXiangyangIfDue(client, now)
       const war = xiangyangWar(now)
       const playerId = character.player.id
       const self = await xiangyangEntry(client, war.id, playerId)
       const { rows: [post] } = await client.query<XiangyangPostRow>('SELECT * FROM xiangyang_posts WHERE player_id = $1', [playerId])
+      if (post && Number(post.due_at) <= now) wakeXiangyang(now)
       const orders = entryOrders(self, now)
       const { rows: feed } = await client.query<{ at: string; nickname: string; gate: XiangyangGateId; wave: number; merit: number; won: boolean; repelled: number | null; auto: boolean; drum: boolean }>(`
         SELECT s.created_at AS at, p.nickname, s.gate, s.wave, s.merit, s.won, s.repelled, s.auto, s.drum
         FROM xiangyang_sorties s JOIN players p ON p.id = s.player_id WHERE s.war_id = $1 ORDER BY s.id DESC LIMIT 20`, [war.id])
       const { rows: [{ last }] } = await client.query<{ last: number | null }>(
-        'SELECT max(war_id) AS last FROM xiangyang_gates WHERE war_id < $1', [war.id])
+        'SELECT max(war_id) AS last FROM xiangyang_gates WHERE war_id < $1 AND war_id <= (SELECT closed_war FROM xiangyang_settlement)', [war.id])
       return {
         war,
         drum: xiangyangDrum(now),
@@ -1495,15 +1544,14 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
           warId: last, gates: (await xiangyangGates(client, last)).map((gate) => ({ id: gate.id, wavesCleared: xiangyangWavesCleared(gate) })),
         },
       }
-    })
+    }, true)
   })
 
-  app.post('/api/v1/xiangyang', (request) => respond<XiangyangResult>(request, async (character, now, client) => {
+  const actXiangyang = (request: FastifyRequest) => respond<XiangyangResult>(request, async (character, now, client) => {
     const { player } = character
     requireFeature(player, 'XIANGYANG')
     const body = objectBody(request.body)
     if (body.action === 'claim') {
-      await sweepXiangyangIfDue(client, now)
       const award = (await xiangyangAwards(client, character, now)).find(({ warId }) => warId === body.warId)
       if (!award) throw new GameError(409, 'XIANGYANG_NO_AWARD', '这一场没有待领的封赏')
       await grantXiangyangAward(client, character, award)
@@ -1520,9 +1568,11 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
       return { result: { action: 'drill', report, merit: xiangyangMerit(report) }, changed: false }
     }
     if (body.action !== 'sortie' && body.action !== 'post') throw new GameError(400, 'XIANGYANG_INVALID_ACTION', '请选择出战、值守、演练或领赏')
+    await lockXiangyang(client)
+    now = Math.max(now, await serverTime(client))
     const war = xiangyangWar(now)
-    // 先把到期的值守出战打完，再轮到这一次
-    await sweepXiangyang(client, now)
+    const { rowCount: due } = await client.query('SELECT 1 FROM xiangyang_posts WHERE due_at <= $1 LIMIT 1', [now])
+    if (due) throw new XiangyangOrdersDue(now)
     const entry = await xiangyangEntry(client, war.id, player.id)
     if (body.action === 'post') {
       await saveXiangyangPost(client, character, gate, war, entryOrders(entry, now), now)
@@ -1550,7 +1600,19 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
       [war.id, player.id, spent.stored, spent.asOf, activeLoadout(character).outerSkillId])
     await saveXiangyangPost(client, character, gate, war, spent, now)
     return { result: { action: 'sortie', drum, ...sortie }, changed: true }
-  }))
+  })
+
+  app.post('/api/v1/xiangyang', async (request) => {
+    for (;;) {
+      try { return await actXiangyang(request) }
+      catch (error) {
+        if (!(error instanceof XiangyangOrdersDue)) throw error
+        // 先释放角色行，让后台按先后结掉旧军令，再用同一操作编号出战或换防。
+        await drainXiangyang(error.until)
+        if (stopping) throw new GameError(503, 'SERVER_CLOSING', '服务正在关闭，请稍后再试')
+      }
+    }
+  })
 
   /** 收功：打坐与巡历的收益、掉落，连同江湖邸报和各处顺带领的东西 */
   async function collectIdle(character: Character, now: number, client: PoolClient) {
@@ -1594,10 +1656,17 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
     }
   }
 
-  app.post('/api/v1/cultivate/settle', (request) => respond(request, collectIdle))
+  async function respondIdle(request: FastifyRequest, apply: ApplyAction<IdleGain>) {
+    const response = await respond(request, apply)
+    // 收功已提交并释放角色锁，此时唤醒后台可直接处理这位守军。
+    if (response.snapshot.player.lastXiangyangReportAt !== undefined) wakeXiangyang(response.snapshot.serverTime)
+    return response
+  }
+
+  app.post('/api/v1/cultivate/settle', (request) => respondIdle(request, collectIdle))
 
   /** 开始挂机从这一刻起算；停止挂机先收功再停，停着时打坐与巡历都不累计 */
-  app.post('/api/v1/cultivate/idle', (request) => respond(request, async (character, now, client) => {
+  app.post('/api/v1/cultivate/idle', (request) => respondIdle(request, async (character, now, client) => {
     const { on } = objectBody(request.body)
     if (typeof on !== 'boolean') throw new GameError(400, 'INVALID_IDLE', '请选择开始还是停止挂机')
     const { player } = character
@@ -2775,25 +2844,7 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
    */
   app.get('/api/v1/map/absent', async (request): Promise<RoomPlayerDTO[]> => {
     const { accountId } = await requireSession(request)
-    return transaction(async (client) => {
-      const { player } = await readCharacter(client, accountId)
-      const now = await serverTime(client)
-      const mapId = player.currentMapId
-      const peace = ONLINE_MAPS.find((map) => map.id === mapId)?.safety === 'PEACE'
-      // ponytail: 单服内测每图最多列二十位（最近上线的在前），人多了再分页
-      const { rows } = await client.query<CharacterRow>(`
-        SELECT * FROM players WHERE id <> $1 AND profile->>'currentMapId' = $2 AND NOT (profile ? 'mapJourney') AND ($4
-          OR (profile->'escortDart'->>'mapId' = $2 AND (profile->'escortDart'->>'endsAt')::bigint > $3
-            AND NOT COALESCE((profile->'escortDart'->>'robbed')::boolean, false))
-          OR (profile->>'bountyUntil')::bigint > $3)
-        ORDER BY last_settle_at DESC, id LIMIT 20`, [player.id, mapId, now, peace])
-      const absent = []
-      for (const row of rows) {
-        if (rooms.isOnlineInMap(row.id, mapId)) continue
-        absent.push({ ...rooms.publicPlayer(snapshot(await hydrateCharacter(client, row), now)), offline: true as const })
-      }
-      return absent
-    }, true)
+    return rooms.absentPlayers(accountId)
   })
 
   app.post('/api/v1/escort', (request) => respond(request, async (character, now) => {
@@ -3555,18 +3606,19 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
   /** 发给自己、或发给全服且自己在资格内的信；全服信勾了「只发给已建角的」时，发信后才建角的侠客收不到 */
   const MAIL_FOR = `NOT m.revoked AND m.expires_at > $2 AND (m.player_id = $1 OR (m.player_id IS NULL AND (NOT m.existing_only OR $3 <= m.created_at)))`
 
-  app.get('/api/v1/mail', async (request): Promise<MailDTO[]> => {
+  async function readMails(client: PoolClient, accountId: string, now: number): Promise<MailDTO[]> {
+    const { rows: [player] } = await client.query<{ id: string; created_at: string }>('SELECT id, created_at FROM players WHERE account_id = $1', [accountId])
+    if (!player) throw new GameError(404, 'PLAYER_NOT_CREATED', '先创建你的角色')
+    const { rows } = await client.query<{ id: string; title: string; body: string; attachments: MailAttachments; created_at: string; expires_at: string; claimed: boolean }>(`
+      SELECT m.id, m.title, m.body, m.attachments, m.created_at, m.expires_at, c.mail_id IS NOT NULL AS claimed
+      FROM mails m LEFT JOIN mail_claims c ON c.mail_id = m.id AND c.player_id = $1
+      WHERE ${MAIL_FOR} ORDER BY m.created_at DESC LIMIT 50`, [player.id, now, Number(player.created_at)])
+    return rows.map(({ created_at: createdAt, expires_at: expiresAt, ...mail }) => ({ ...mail, createdAt: Number(createdAt), expiresAt: Number(expiresAt) }))
+  }
+
+  app.get('/api/v1/mail', async (request) => {
     const { accountId } = await requireSession(request)
-    return transaction(async (client) => {
-      const { rows: [player] } = await client.query<{ id: string; created_at: string }>('SELECT id, created_at FROM players WHERE account_id = $1', [accountId])
-      if (!player) throw new GameError(404, 'PLAYER_NOT_CREATED', '先创建你的角色')
-      const now = await serverTime(client)
-      const { rows } = await client.query<{ id: string; title: string; body: string; attachments: MailAttachments; created_at: string; expires_at: string; claimed: boolean }>(`
-        SELECT m.id, m.title, m.body, m.attachments, m.created_at, m.expires_at, c.mail_id IS NOT NULL AS claimed
-        FROM mails m LEFT JOIN mail_claims c ON c.mail_id = m.id AND c.player_id = $1
-        WHERE ${MAIL_FOR} ORDER BY m.created_at DESC LIMIT 50`, [player.id, now, Number(player.created_at)])
-      return rows.map(({ created_at: createdAt, expires_at: expiresAt, ...mail }) => ({ ...mail, createdAt: Number(createdAt), expiresAt: Number(expiresAt) }))
-    }, true)
+    return transaction(async (client) => readMails(client, accountId, await serverTime(client)), true)
   })
 
   /** 领信：附件只发一次（mail_claims 主键），元宝记流水 mail:信件 */
@@ -3654,14 +3706,23 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
       return { result: { goodsId: goods.id, title: goods.title, goods: goods.goods, spent: goods.price, currency: goods.currency }, changed: true }
     }))
 
-  app.get('/api/v1/announcements', async (request): Promise<AnnouncementDTO[]> => {
+  async function readAnnouncements(client: PoolClient, now: number): Promise<AnnouncementDTO[]> {
+    const { rows } = await client.query<{ id: string; content: string; starts_at: string; ends_at: string }>(`
+      SELECT id, content, starts_at, ends_at FROM announcements
+      WHERE NOT revoked AND starts_at <= $1 AND ends_at > $1 ORDER BY starts_at DESC LIMIT 5`, [now])
+    return rows.map(({ id, content, starts_at: startsAt, ends_at: endsAt }) => ({ id, content, startsAt: Number(startsAt), endsAt: Number(endsAt) }))
+  }
+
+  app.get('/api/v1/announcements', async (request) => {
     await requireSession(request)
+    return transaction(async (client) => readAnnouncements(client, await serverTime(client)), true)
+  })
+
+  app.get('/api/v1/room/notices', async (request): Promise<RoomNoticesDTO> => {
+    const { accountId } = await requireSession(request)
     return transaction(async (client) => {
       const now = await serverTime(client)
-      const { rows } = await client.query<{ id: string; content: string; starts_at: string; ends_at: string }>(`
-        SELECT id, content, starts_at, ends_at FROM announcements
-        WHERE NOT revoked AND starts_at <= $1 AND ends_at > $1 ORDER BY starts_at DESC LIMIT 5`, [now])
-      return rows.map(({ id, content, starts_at: startsAt, ends_at: endsAt }) => ({ id, content, startsAt: Number(startsAt), endsAt: Number(endsAt) }))
+      return { mails: await readMails(client, accountId, now), announcements: await readAnnouncements(client, now) }
     }, true)
   })
 

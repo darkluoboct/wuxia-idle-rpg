@@ -12,6 +12,7 @@ import type {
   RaidLobbyDTO,
   RaidMirrorBoardDTO,
   RoomPlayerDTO,
+  RoomNoticesDTO,
   SectContestAction,
   WsServerEvent,
 } from '@/network/protocol'
@@ -87,6 +88,7 @@ export function useWorld({ battle, actions, selectTab, cultivation, companions, 
   const raidMirrors = shallowRef<RaidMirrorBoardDTO | null>(null)
   /** 停在本图却不在线的押镖、被通缉侠客：劫镖与追捕由他们的镜像应战 */
   const absentPlayers = ref<RoomPlayerDTO[]>([])
+  let absentRequest = 0
   let absentTimer: ReturnType<typeof setTimeout> | undefined
   const duelInvite = shallowRef<DuelInviteDTO | null>(null)
   let lastDuelBattleId: string | null = null
@@ -103,10 +105,13 @@ export function useWorld({ battle, actions, selectTab, cultivation, companions, 
   const announcements = shallowRef<AnnouncementDTO[]>([])
   const announced = new Set<string>()
 
+  let mailRequest = 0
   async function refreshMail() {
     if (IS_MOCK_MODE) return
     try {
-      mails.value = await apiClient.request<MailDTO[]>('GET', '/mail')
+      const request = ++mailRequest
+      const result = await apiClient.request<MailDTO[]>('GET', '/mail')
+      if (request === mailRequest) mails.value = result
     } catch {
       // 读不到时保留上一次的信件，下次连上再取
     }
@@ -117,16 +122,6 @@ export function useWorld({ battle, actions, selectTab, cultivation, companions, 
     announced.add(notice.id)
     appendLog('JIANGHU', [{ type: 'tag', text: '江湖公告', tone: 'gold' }, { type: 'text', text: ` ${notice.content}` }])
     showToast(`【公告】${notice.content}`, 'gold')
-  }
-
-  async function refreshAnnouncements() {
-    if (IS_MOCK_MODE) return
-    try {
-      announcements.value = await apiClient.request<AnnouncementDTO[]>('GET', '/announcements')
-      for (const notice of announcements.value) announce(notice)
-    } catch {
-      // 公告读不到不影响游戏
-    }
   }
 
   /** 运营商店（docs/22）：后台上架的商品；单机试玩没有运营，货架为空 */
@@ -158,11 +153,22 @@ export function useWorld({ battle, actions, selectTab, cultivation, companions, 
     })
   }
 
-  // 连上江湖就取信件与公告
-  watch(() => online.roomConnected, (connected) => {
-    if (!connected) return
-    void refreshMail()
-    void refreshAnnouncements()
+  watch(() => online.roomConnected, async (connected, _, onCleanup) => {
+    if (!connected || IS_MOCK_MODE) return
+    let current = true
+    onCleanup(() => { current = false })
+    const mail = ++mailRequest
+    const previous = announcements.value
+    try {
+      const result = await apiClient.request<RoomNoticesDTO>('GET', '/room/notices')
+      if (!current) return
+      if (mail === mailRequest) mails.value = result.mails
+      const live = announcements.value.filter((notice) => !previous.includes(notice))
+      announcements.value = [...live, ...result.announcements.filter((notice) => !live.some(({ id }) => id === notice.id))]
+      for (const notice of result.announcements) announce(notice)
+    } catch {
+      // 离线时保留上次读到的信件与公告。
+    }
   })
 
   function handleRoomEvent(event: WsServerEvent) {
@@ -205,6 +211,7 @@ export function useWorld({ battle, actions, selectTab, cultivation, companions, 
   }
 
   function clearRoom() {
+    absentRequest++
     clearTimeout(absentTimer)
     absentTimer = undefined
     nearbyPlayers.value = []
@@ -388,10 +395,12 @@ export function useWorld({ battle, actions, selectTab, cultivation, companions, 
 
   async function refreshAbsentPlayers() {
     if (IS_MOCK_MODE || !online.roomConnected) return
+    const request = ++absentRequest
     try {
-      absentPlayers.value = await apiClient.request<RoomPlayerDTO[]>('GET', '/map/absent')
+      const result = await apiClient.request<RoomPlayerDTO[]>('GET', '/map/absent')
+      if (request === absentRequest) absentPlayers.value = result
     } catch {
-      absentPlayers.value = []
+      if (request === absentRequest) absentPlayers.value = []
     }
   }
 
@@ -619,6 +628,7 @@ export function useWorld({ battle, actions, selectTab, cultivation, companions, 
   }
 
   function resetWorld() {
+    mailRequest++
     clearRoom()
     roomMapId.value = null
     pendingDuelReport.value = null

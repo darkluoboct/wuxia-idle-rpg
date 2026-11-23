@@ -18,7 +18,7 @@ const maps = computed(() => (IS_MOCK_MODE ? MAPS : ONLINE_MAPS).filter(store.can
 const atStatue = computed(() => store.currentMap.id === CHAPTER_ONE_STATUE_MAP && !store.activeBattle)
 const statue = shallowRef<Pick<ChapterOneStatueDTO, 'nickname' | 'avatarId'> | null>()
 const statueError = shallowRef(false)
-watch([atStatue, () => store.player.chapterOneChampion], async ([visible], _old, onCleanup) => {
+watch([() => atStatue.value && store.activeTab === 'CULTIVATE', () => store.player.chapterOneChampion], async ([visible], _old, onCleanup) => {
   if (!visible) return
   statueError.value = false
   if (IS_MOCK_MODE) {

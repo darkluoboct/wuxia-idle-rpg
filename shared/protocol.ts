@@ -117,6 +117,7 @@ export interface PlayerDTO {
   stallIncome?: { at: number; silver: number; returned: number } // 最近一次收摊结算：入账纹银、退回的货物份数
   defenseNotices?: DefenseNoticeDTO[] // 下线期间被劫镖、被追捕的战果，收功时告知后清空
   lastReportAt?: number             // 上次收功出江湖邸报的时刻
+  lastXiangyangReportAt?: number    // 值守积压时，邸报已收录到的出战时刻
   auctionTickets?: number[]         // 鬼市红封签：领过每日江湖事的鬼市日，当日子时开签兑付
   auctionDividend?: { day: number; ingot: number } // 最近一次兑付的红封（未中签为 0）
   gacha?: { pulls: number; pity: number }
@@ -867,6 +868,12 @@ export interface ChatConversationDTO {
   unread: number
 }
 
+export interface ChatBootstrapDTO extends ChatPrivateBoardDTO {
+  mapId: string
+  sectId: string | null
+  channels: Record<Exclude<ChatChannel, 'PRIVATE'>, ChatMessageDTO[]>
+}
+
 export interface ChatPrivateBoardDTO {
   conversations: ChatConversationDTO[]
   /** 我屏蔽的人 */
@@ -916,6 +923,11 @@ export interface MailDTO {
   createdAt: number
   expiresAt: number
   claimed: boolean
+}
+
+export interface RoomNoticesDTO {
+  mails: MailDTO[]
+  announcements: AnnouncementDTO[]
 }
 
 /** 全服公告（docs/22） */

@@ -113,7 +113,7 @@ const questReady = computed(() => (hasFeast.value && !cookedToday.value && DISHE
   <article v-if="area === 'draw' && store.featureOpen('GACHA')" class="workbench-detail flex-1" aria-label="醉仙结缘">
     <div class="workbench-scroll grid items-center gap-4 md:grid-cols-[minmax(12rem,32%)_1fr]">
       <div class="workbench-portrait h-36 md:h-64">
-        <InkFigure style-type="hero_sword" portrait-id="zuixian_innkeeper" />
+        <InkFigure style-type="hero_sword" portrait-id="zuixian_innkeeper" image-size="full" />
       </div>
       <div class="max-w-2xl space-y-4">
         <div class="flex items-center gap-3"><span class="seal h-10 w-10 text-2xl">缘</span><h4 class="font-brush text-3xl">醉仙楼 · 结缘</h4></div>
@@ -291,7 +291,7 @@ const questReady = computed(() => (hasFeast.value && !cookedToday.value && DISHE
             </div>
           </article>
         <div v-else class="grid items-center gap-4 md:grid-cols-[minmax(9rem,25%)_minmax(0,1fr)]" :class="TIER_META[view(c.id).tier].cls">
-          <div class="workbench-portrait h-32 md:h-64"><InkFigure :style-type="c.portraitStyle" :portrait-id="c.id" /></div>
+          <div class="workbench-portrait h-32 md:h-64"><InkFigure :style-type="c.portraitStyle" :portrait-id="c.id" image-size="full" /></div>
           <div class="min-w-0 space-y-4">
               <div class="flex items-baseline justify-between gap-2">
                 <h4 class="font-brush truncate text-xl leading-none">{{ c.name }}<span class="ml-1.5 font-sans text-xs tracking-normal text-ink3">{{ view(c.id).title }}</span></h4>

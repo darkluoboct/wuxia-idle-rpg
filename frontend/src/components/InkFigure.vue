@@ -63,7 +63,7 @@ const props = withDefaults(
     name?: string
     imageSize?: 'thumb' | 'full'
   }>(),
-  { pose: 'stand' }
+  { pose: 'stand', imageSize: 'thumb' }
 )
 
 const uid = useId().replace(/[^a-zA-Z0-9]/g, '')

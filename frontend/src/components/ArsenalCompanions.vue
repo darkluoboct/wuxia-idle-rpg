@@ -86,7 +86,7 @@ function changeWeapon(id: string, event: Event) {
     <article v-if="selected" id="arsenal-companion-detail" class="squad-profile" aria-label="伙伴详情">
       <figure class="squad-portrait">
         <div class="squad-portrait-art" role="img" :aria-label="`${selected.name}立绘`">
-          <InkFigure :style-type="selected.portraitStyle" :portrait-id="selected.id" />
+          <InkFigure :style-type="selected.portraitStyle" :portrait-id="selected.id" image-size="full" />
         </div>
         <figcaption>{{ selected.poem }}</figcaption>
       </figure>

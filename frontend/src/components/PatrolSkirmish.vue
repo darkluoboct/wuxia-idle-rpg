@@ -10,7 +10,7 @@ import { patrolBeat, type PatrolBeat } from '@/config/patrolBeat'
 import { boostPctOver } from '../../../shared/player.ts'
 import { featureUnlocked } from '../../../shared/features.ts'
 import { forgeMaterialLabel } from '../../../shared/equipmentForge.ts'
-import { IDLE_CAP_MS, patrolClock, patrolEncounterRate, patrolFightSteps, trialStageOf, tunePatrolFight } from '../../../shared/trialStages.ts'
+import { IDLE_CAP_MS, patrolClock, patrolEncounterRate, patrolFightSteps, trialStageOf } from '../../../shared/trialStages.ts'
 import PortraitCard from './PortraitCard.vue'
 
 /**
@@ -46,10 +46,11 @@ function toggle() {
 // 世界时钟 30 秒才走一格，这里按本机时间走，再加上与服务器的时差。
 // 只在下一招、倒计时跳秒或换下一场时刷新；收起时只等下一场。招式动画由浏览器自己播
 const now = ref(Date.now())
+const visible = computed(() => gameClock.isPageVisible && store.activeTab === 'CULTIVATE')
 let timer: ReturnType<typeof setTimeout> | undefined
 function tick() {
   clearTimeout(timer)
-  if (!gameClock.isPageVisible) return
+  if (!visible.value) return
   now.value = Date.now()
   const { intoBattleMs, battleMs } = clock.value
   const left = battleMs - intoBattleMs
@@ -59,7 +60,7 @@ function tick() {
 }
 onMounted(tick)
 onUnmounted(() => clearTimeout(timer))
-watch(() => gameClock.isPageVisible, tick)
+watch(visible, tick)
 const serverNow = computed(() => now.value + store.worldTime - playerStore.nowTick)
 
 const stage = computed(() => featureUnlocked(store.player, 'TRIAL') ? trialStageOf(store.player.trial.selectedStageId) : undefined)
@@ -70,28 +71,12 @@ const clock = computed(() => patrolClock(store.player.trial, serverNow.value, ra
 const full = computed(() => !idleOff.value && serverNow.value - store.player.trial.lastPatrolAt >= IDLE_CAP_MS)
 const battleNo = computed(() => clock.value.battle)
 
-/** 同一场每次算出来一样：种子取角色、关卡与场次 */
-function seeded(...parts: (string | number)[]) {
-  let seed = 2166136261
-  for (const char of parts.join(':')) seed = Math.imul(seed ^ char.charCodeAt(0), 16777619)
-  return () => {
-    seed = (seed + 0x6d2b79f5) | 0
-    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed)
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
-  }
-}
-
-const fight = computed(() => {
+const fight = computed<ReturnType<typeof store.patrolFight>>((previous) => {
+  if (!visible.value) return previous
   const current = stage.value
   if (!current || !shown.value || idleOff.value) return undefined
-  const player = { ...store.player, battleMedicines: undefined }
-  const environment = { ...store.mapEnvironment(store.player.currentMapId), ...current.environment }
   try {
-    return tunePatrolFight(current, battleNo.value, (foe) => playerStore.simulateServerBattle({
-      sceneTitle: `${current.code} ${current.title} · 巡历`, mode: 'SOLO_STORY', player, loadout: store.currentLoadout,
-      learnedSkills: store.learnedSkills, environment, enemyMain: foe, rng: seeded(store.player.id, current.id, battleNo.value),
-    }))
+    return store.patrolFight(current, battleNo.value)
   } catch {
     return undefined
   }
@@ -135,7 +120,7 @@ const beat = computed<(PatrolBeat & { key: string; impact: number; ko: boolean }
 // 冲刺、击退、震屏与击飞用 Web Animations 播：位移量要量出来，播完不留痕迹；对手登场是 CSS 动画
 const fieldEl = ref<HTMLElement>()
 const reduceMotion = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
-watch(() => beat.value?.key, () => { if (beat.value && !reduceMotion) play(beat.value) }, { flush: 'post' })
+watch(() => beat.value?.key, () => { if (visible.value && beat.value && !reduceMotion) play(beat.value) }, { flush: 'post' })
 
 function unitEl(slot: string | undefined) {
   return slot ? fieldEl.value?.querySelector<HTMLElement>(`[data-slot="${slot}"]`) ?? undefined : undefined

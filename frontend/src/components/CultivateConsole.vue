@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onDeactivated, ref } from 'vue'
 import { LockKeyhole, Sparkles, Wind } from 'lucide-vue-next'
 import { useGameStore } from '@/stores/gameStore'
 import { SKILLS } from '@/config/gameData'
@@ -14,6 +14,7 @@ import { useGameClock } from '@/composables/useGameClock'
 
 const store = useGameStore()
 const usePill = ref(false)
+onDeactivated(() => { usePill.value = false })
 const usingPill = computed(() => usePill.value && store.pillCount > 0)
 
 const p = computed(() => store.player)

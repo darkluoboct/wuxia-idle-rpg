@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { on, once } from 'node:events'
 import { readdir, readFile } from 'node:fs/promises'
 import { after, before, describe, it, mock } from 'node:test'
+import { setTimeout as delay } from 'node:timers/promises'
 import cookie from '@fastify/cookie'
 import rateLimit from '@fastify/rate-limit'
 import websocket from '@fastify/websocket'
@@ -20,12 +21,12 @@ import { AUCTION_BID_STEP, AUCTION_SOFT_CLOSE_MS, auctionDay, auctionDividendAt,
 import { computeDerivedStats } from '../../shared/battle.ts'
 import { huashanSeason } from '../../shared/huashan.ts'
 import { createStarterCharacter, innVisitDay, legacyAcupoints } from '../../shared/player.ts'
-import type { AnnouncementDTO, MailDTO, ArtifactBoardDTO, ArtifactResult, AuctionBoardDTO, AuctionResult, AwakenResult, BattleReportDTO, BountyBoardDTO, BountyEntryDTO, FeastResult, FtueClaimResult, GachaResult, GameAction, HuashanBoardDTO, HuashanResult, IdleGain, LibraryResult, LibraryStatusDTO, OriginId, PlayerSnapshot, RaidId, RaidMirrorBoardDTO, ReunionResult, RoomPlayerDTO, ShopGoodsDTO, ChatMessageDTO, ChatPrivateBoardDTO, ChatSendDTO, SectContestBoardDTO, SectContestResult, SectResult, StallBoardDTO, StallResult, StoryAdventureResult, StoryChallengeResult, TrialChallengeResult, TrialPatrolStatusDTO, TrialReplayResult, WsServerEvent, XiangyangBoardDTO, XiangyangResult } from '../../shared/protocol.ts'
+import type { AnnouncementDTO, ChatBootstrapDTO, RoomNoticesDTO, MailDTO, ArtifactBoardDTO, ArtifactResult, AuctionBoardDTO, AuctionResult, AwakenResult, BattleReportDTO, BountyBoardDTO, BountyEntryDTO, FeastResult, FtueClaimResult, GachaResult, GameAction, HuashanBoardDTO, HuashanResult, IdleGain, LibraryResult, LibraryStatusDTO, OriginId, PlayerSnapshot, RaidId, RaidMirrorBoardDTO, ReunionResult, RoomPlayerDTO, ShopGoodsDTO, ChatMessageDTO, ChatPrivateBoardDTO, ChatSendDTO, SectContestBoardDTO, SectContestResult, SectResult, StallBoardDTO, StallResult, StoryAdventureResult, StoryChallengeResult, TrialChallengeResult, TrialPatrolStatusDTO, TrialReplayResult, WsServerEvent, XiangyangBoardDTO, XiangyangResult } from '../../shared/protocol.ts'
 import { QUANZHEN_LIBRARY } from '../../shared/quanzhen.ts'
 import { BETRAYAL_BOUNTY, SECT_CHIEF_SALUTE_QI, SECT_SALUTE_QI, sectContestEndsAt, sectContestWeek } from '../../shared/sectProgress.ts'
 import { hasTrialPart, trialPartId, trialSetOfStage, trialStageOf } from '../../shared/trialStages.ts'
 import { ONLINE_STORY_CHAPTERS, ONLINE_STORY_PROGRESS_VERSION } from '../../shared/storyData.ts'
-import { xiangyangWar, xiangyangWarOf } from '../../shared/xiangyang.ts'
+import { xiangyangReward, xiangyangWar, xiangyangWarOf } from '../../shared/xiangyang.ts'
 import type { AdminAuditDTO, AdminChatMessageDTO, AdminDashboardDTO, AdminDeletedPlayerDTO, AdminMailDTO, AdminPlayerDetailDTO, AdminPlayerRowDTO, AdminReportDTO } from '../../shared/admin.ts'
 import { RAID_LEND, raidLendQi } from '../../shared/mirror.ts'
 import { GameError, TRUST_PROXY } from '../src/http.ts'
@@ -39,6 +40,8 @@ describe('联机战斗', { skip: connection ? false : '请设置 GAME_TEST_DATAB
   let db: pg.Pool
   let fixedServerTime: number | undefined
   const contestWeekId = sectContestWeek(Date.now()) + 1
+
+  let beforeRoomRegistration: (() => Promise<void>) | undefined
 
   before(async () => {
     await admin.query(`CREATE SCHEMA ${schema}`)
@@ -69,6 +72,9 @@ describe('联机战斗', { skip: connection ? false : '请设置 GAME_TEST_DATAB
       throw error
     })
     const { registerAdmin } = await import('../src/admin.ts')
+    app.addHook('preHandler', async (request) => {
+      if (request.url === '/ws') await beforeRoomRegistration?.()
+    })
     const rooms = registerRooms(app)
     registerAuth(app, false, rooms.closeSession)
     registerGame(app, rooms, registerRaidLobby(app, rooms))
@@ -1081,6 +1087,18 @@ describe('联机战斗', { skip: connection ? false : '请设置 GAME_TEST_DATAB
     assert.equal(awakened.snapshot.companionAffinity.songyanzi.tokens, 0)
   })
 
+  async function waitForXiangyang(check: () => Promise<boolean>) {
+    const deadline = performance.now() + 5_000
+    while (!await check()) {
+      assert.ok(performance.now() < deadline, '等待襄阳后台提交超时')
+      await delay(10)
+    }
+  }
+
+  async function waitForOrders(until: number) {
+    await waitForXiangyang(async () => !(await db.query('SELECT 1 FROM xiangyang_posts WHERE due_at <= $1 LIMIT 1', [until])).rowCount)
+  }
+
   it('襄阳守卫战：随时出战、一场一门、军令可攒；值守镜像按时刻先后代打，收兵时打完余下的；收功顺带领赏', async () => {
     const war = xiangyangWarOf(xiangyangWar(Date.now()).id + 1)
     const at = (hours: number) => war.opensAt + hours * 3_600_000
@@ -1136,6 +1154,8 @@ describe('联机战斗', { skip: connection ? false : '请设置 GAME_TEST_DATAB
         await blocker.query('ROLLBACK')
         blocker.release()
       }
+      await board(guard)
+      await waitForOrders(fixedServerTime)
       const thursday = await board(guard)
       assert.deepEqual([thursday.self?.sorties, thursday.self?.autoSorties, thursday.orders.count], [4, 1, 3])
       assert.deepEqual([(await board(ally)).self?.sorties, (await board(ally)).self?.autoSorties], [4, 3])
@@ -1143,6 +1163,8 @@ describe('联机战斗', { skip: connection ? false : '请设置 GAME_TEST_DATAB
 
       // 收兵后：此后十次满溢加收兵时的三道，两人各 17 次；收功顺带领赏
       fixedServerTime = war.closesAt + 60_000
+      await board(guard)
+      await waitForXiangyang(async () => (await board(guard)).awards.length === 1)
       const settled = await guard.act<IdleGain>('/cultivate/settle')
       assert.deepEqual(settled.result.away?.xiangyang?.sorties, 14)
       const [award] = settled.result.xiangyang ?? []
@@ -1163,13 +1185,134 @@ describe('联机战斗', { skip: connection ? false : '请设置 GAME_TEST_DATAB
 
       // 下一场第一次满溢：guard 的镜像改去北门
       fixedServerTime = xiangyangWarOf(war.id + 1).opensAt + 9 * 3_600_000
+      await board(guard)
+      await waitForOrders(fixedServerTime)
       const next = await board(guard)
       assert.deepEqual([next.self?.gate, next.self?.sorties, next.self?.autoSorties], ['NORTH', 1, 1])
     } finally {
+      await db.query('DELETE FROM xiangyang_posts WHERE player_id = ANY($1::uuid[])', [[guard.id, ally.id]])
       fixedServerTime = undefined
     }
     const newcomer = await createNewcomer('xy_new')
     assert.equal((await newcomer.get('/xiangyang')).json().code, 'FEATURE_LOCKED')
+  })
+
+
+  it('襄阳集中收兵分批提交，收功可在封榜前返回，跨周的战报与封赏各领一次', async () => {
+    const war = xiangyangWarOf(xiangyangWar(Date.now()).id + 3)
+    const guards = await Promise.all(Array.from({ length: 7 }, (_, i) => createPlayer(`xy_batch${i}`)))
+    guards.sort((a, b) => a.id.localeCompare(b.id))
+    const first = guards[0]
+    const board = () => first.read<XiangyangBoardDTO>('/xiangyang')
+    const headLock = await db.connect()
+    const warLock = await db.connect()
+    try {
+      fixedServerTime = war.closesAt - 12 * 3_600_000
+      for (const guard of guards) {
+        await profile(guard.id, { idleOff: true })
+        await guard.act('/xiangyang', { action: 'sortie', warId: war.id, gate: 'EAST' })
+      }
+      // 第二份自动战报遇到一次数据库错误。第一份也须回滚，重试后按原军令继续。
+      await db.query(`CREATE SEQUENCE xy_fail_once;
+        CREATE FUNCTION xy_fail_second() RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN
+          IF NEW.auto AND nextval('xy_fail_once') = 2 THEN RAISE EXCEPTION 'xy retry'; END IF;
+          RETURN NEW;
+        END $$;
+        CREATE TRIGGER xy_retry BEFORE INSERT ON xiangyang_sorties FOR EACH ROW EXECUTE FUNCTION xy_fail_second()`)
+      await headLock.query('BEGIN')
+      await headLock.query('SELECT 1 FROM players WHERE id = $1 FOR UPDATE', [guards[3].id])
+      await warLock.query('BEGIN')
+      await warLock.query('SELECT pg_advisory_xact_lock(834, 0)')
+      // 首次收功前换图只推进挂机收益。两人分别在旧周余令补打前、补打后第一次领取邸报。
+      fixedServerTime = war.closesAt + 50
+      for (const guard of [first, guards[1]]) {
+        const moved = await guard.act('/map/move', { mapId: 'zhongnan_forest' })
+        assert.equal(moved.snapshot.player.lastSettleAt, fixedServerTime)
+        assert.equal(moved.snapshot.player.lastReportAt, undefined)
+      }
+      fixedServerTime = war.closesAt + 8 * 3_600_000
+      const url = `http://127.0.0.1:${(app.server.address() as { port: number }).port}/api/v1/cultivate/settle`
+      const response = await fetch(url, { method: 'POST', headers: { ...first.headers, 'idempotency-key': randomUUID() }, signal: AbortSignal.timeout(3000) })
+      assert.equal(response.status, 200)
+      const early = (await response.json() as GameAction<IdleGain>).result
+      assert.equal(early.xiangyang, undefined)
+      assert.equal(early.away?.xiangyang, undefined)
+      await warLock.query('COMMIT')
+
+      await waitForXiangyang(async () => {
+        await board()
+        return (await db.query('SELECT count(*)::int AS n FROM xiangyang_sorties WHERE war_id = $1 AND auto', [war.id])).rows[0].n === 9
+      })
+      assert.deepEqual((await board()).awards, [])
+      const partial = await first.act<IdleGain>('/cultivate/settle')
+      assert.equal(partial.result.xiangyang, undefined)
+      assert.equal(partial.result.away?.xiangyang?.sorties, 3)
+      await headLock.query('COMMIT')
+      await waitForOrders(fixedServerTime)
+
+      const { rows: turns } = await db.query(`SELECT war_id, player_id, created_at, count(*)::int AS n FROM xiangyang_sorties
+        WHERE auto AND player_id = ANY($1::uuid[]) GROUP BY war_id, player_id, created_at ORDER BY war_id, player_id`, [guards.map(g => g.id)])
+      assert.deepEqual(turns, [war.id, war.id + 1].flatMap(id => guards.map(g => ({
+        war_id: id, player_id: g.id, created_at: String(id === war.id ? war.closesAt : fixedServerTime), n: id === war.id ? 3 : 1,
+      }))))
+      const { rows: batches } = await db.query(`SELECT count(*)::int AS n FROM xiangyang_sorties
+        WHERE auto AND player_id = ANY($1::uuid[]) GROUP BY xmin`, [guards.map(g => g.id)])
+      assert.ok(batches.every(({ n }) => n <= 6))
+
+      const { rows: scores } = await db.query<{ player_id: string; merit: number }>(
+        'SELECT player_id, sum(merit)::int AS merit FROM xiangyang_sorties WHERE war_id = $1 GROUP BY player_id', [war.id])
+      const { rows: [gate] } = await db.query("SELECT wave FROM xiangyang_gates WHERE war_id = $1 AND gate = 'EAST'", [war.id])
+      for (const [i, guard] of guards.entries()) {
+        const [award] = (await guard.read<XiangyangBoardDTO>('/xiangyang')).awards
+        assert.equal(award.warId, war.id)
+        assert.equal(award.sorties, 4)
+        const merit = scores.find(row => row.player_id === guard.id)!.merit
+        const topThree = scores.filter(row => row.merit > merit).length < 3
+        assert.deepEqual([award.merit, award.topThree, award.wavesCleared], [merit, topThree, gate.wave - 1])
+        const key = randomUUID()
+        const before = (await guard.read()).player
+        assert.deepEqual(award.reward, xiangyangReward({ merit, sorties: 4 }, gate.wave - 1, before.level, topThree))
+        // 同编号重放、不同编号重复收功、手动领赏，都只能入账一次。
+        if (i % 2) {
+          const claim = () => guard.act<XiangyangResult>('/xiangyang', { action: 'claim', warId: war.id }, key)
+          const [one, replay] = await Promise.all([claim(), claim()])
+          assert.deepEqual(one.result, replay.result)
+          assert.deepEqual(one.result.action === 'claim' && one.result.reward, award.reward)
+        }
+        const collectKey = i % 2 ? randomUUID() : key
+        const collect = () => guard.act<IdleGain>('/cultivate/settle', undefined, collectKey)
+        const [one, replay, competing] = await Promise.all([collect(), collect(),
+          i === 0 ? guard.post('/xiangyang', { action: 'claim', warId: war.id }) : undefined])
+        assert.deepEqual(replay.result, one.result)
+        if (competing) {
+          if (competing.statusCode === 200) assert.deepEqual(competing.json().result.reward, award.reward)
+          else assert.equal(competing.json().code, 'XIANGYANG_NO_AWARD')
+        }
+        assert.deepEqual(one.result.xiangyang?.[0]?.reward, i % 2 || competing?.statusCode === 200 ? undefined : award.reward)
+        assert.equal(one.result.away?.xiangyang?.sorties, i === 0 ? 1 : 4)
+        const again = await guard.act<IdleGain>('/cultivate/settle')
+        assert.equal(again.result.xiangyang, undefined)
+        assert.equal(again.result.away?.xiangyang, undefined)
+        assert.equal((await guard.post('/xiangyang', { action: 'claim', warId: war.id })).json().code, 'XIANGYANG_NO_AWARD')
+        const after = again.snapshot.player
+        assert.ok(award.skillId)
+        assert.deepEqual({
+          ingot: after.goldIngot - before.goldIngot, silver: after.silver - before.silver, qiExp: after.qiExp - before.qiExp,
+          iron: after.equipmentForge!.iron - (before.equipmentForge?.iron ?? 0), stones: after.equipmentForge!.stones - (before.equipmentForge?.stones ?? 0),
+          fragments: after.skillFragments![award.skillId] - (before.skillFragments?.[award.skillId] ?? 0),
+        }, award.reward)
+        assert.equal((await ledger(guard.id)).filter(row => row.ref === `xiangyang:${war.id}`).length, 1)
+      }
+    } finally {
+      await warLock.query('ROLLBACK')
+      await headLock.query('ROLLBACK')
+      warLock.release()
+      headLock.release()
+      await db.query('DROP TRIGGER IF EXISTS xy_retry ON xiangyang_sorties')
+      await db.query('DELETE FROM xiangyang_posts WHERE player_id = ANY($1::uuid[])', [guards.map(g => g.id)])
+      fixedServerTime = undefined
+    }
   })
 
   it('30 关历练联机验收：巡历时长解锁试炼，打赢升级换关；最多累计 24 小时；遭遇掉件、宝箱元宝按周封顶；章末复战与印记兑换', async () => {
@@ -1351,6 +1494,9 @@ describe('联机战斗', { skip: connection ? false : '请设置 GAME_TEST_DATAB
     assert.equal((await support.post('/announcements', { content: '今晚维护', endsAt: now + 3_600_000 })).json().code, 'ADMIN_FORBIDDEN')
     const { id: noticeId } = (await gm.post('/announcements', { content: '今晚 23:00 停服维护半小时', endsAt: now + 3_600_000 })).json<{ id: string }>()
     assert.ok((await latecomer.read<AnnouncementDTO[]>('/announcements')).some(({ id }) => id === noticeId))
+    assert.deepEqual(await latecomer.read<RoomNoticesDTO>('/room/notices'), {
+      mails: await latecomer.read<MailDTO[]>('/mail'), announcements: await latecomer.read<AnnouncementDTO[]>('/announcements'),
+    })
     await gm.post(`/announcements/${noticeId}/revoke`)
     assert.ok(!(await latecomer.read<AnnouncementDTO[]>('/announcements')).some(({ id }) => id === noticeId))
 
@@ -1549,6 +1695,13 @@ describe('联机战斗', { skip: connection ? false : '请设置 GAME_TEST_DATAB
       assert.ok(!got(third.id, '师兄弟们') && !got(third.id, '归云庄见') && !got(second.id, '借一步说话'))
 
       // 离线私聊留档：上线后看到未读，读过清零
+      for (const reader of [first, third]) {
+        const initial = await reader.read<ChatBootstrapDTO>('/chat/bootstrap')
+        for (const channel of ['WORLD', 'SECT', 'MAP'] as const) {
+          assert.deepEqual(initial.channels[channel], await reader.read(`/chat?channel=${channel}`))
+        }
+        assert.deepEqual({ conversations: initial.conversations, blocked: initial.blocked }, await reader.read('/chat/private'))
+      }
       say(d, { channel: 'PRIVATE', to: absent.id, content: '等你回来' })
       await message(rookie.id, '等你回来')
       const inbox = await absent.read<ChatPrivateBoardDTO>('/chat/private')
@@ -2213,6 +2366,28 @@ describe('联机战斗', { skip: connection ? false : '请设置 GAME_TEST_DATAB
       assert.match((await reject(buyer, { action: 'buy', listingId: system.id, qty: system.qty, unitPrice: system.unitPrice })).message, /已经收摊/)
     } finally {
       fixedServerTime = undefined
+    }
+  })
+
+  it('首次进房读完资料后并发换图，补发新地图与已提交版本', { timeout: 8_000 }, async () => {
+    const actor = await createPlayer('joingap')
+    const events: WsServerEvent[] = []
+    let revision = 0
+    beforeRoomRegistration = async () => {
+      revision = (await actor.act('/map/move', { mapId: 'zhongnan_forest' })).snapshot.revision
+    }
+    let socket: WebSocket | undefined
+    try {
+      socket = await actor.connect((event) => events.push(event))
+      for (let i = 0; i < 100 && !events.some((e) => e.event === 'PLAYER_CHANGED' && e.data.revision === revision); i++) {
+        await new Promise((resolve) => setTimeout(resolve, 10))
+      }
+      assert.ok(revision > actor.snapshot.revision)
+      assert.ok(events.some((e) => e.event === 'PLAYER_CHANGED' && e.data.revision === revision))
+      assert.equal(events.filter((e) => e.event === 'ROOM_SYNC').at(-1)?.data.mapId, 'zhongnan_forest')
+    } finally {
+      beforeRoomRegistration = undefined
+      socket?.close()
     }
   })
 

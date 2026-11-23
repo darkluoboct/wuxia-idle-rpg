@@ -1,9 +1,13 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import type { WebSocket } from 'ws'
-import { ITEMS, REALMS, SECTS } from '../../shared/gameData.ts'
+import { ITEMS, ONLINE_MAPS, REALMS, SECTS } from '../../shared/gameData.ts'
 import type { PlayerSnapshot, RoomPlayerDTO, WsServerEvent } from '../../shared/protocol.ts'
 import { requireSession, type Session } from './auth.ts'
-import { getSnapshot } from './game.ts'
+import { computeDerivedStats } from '../../shared/battle.ts'
+import { recruitTrialCompanions } from '../../shared/trialStages.ts'
+import { collectionBonus, equippedCompanion, restorePlayer, type CharacterRow } from './game.ts'
+import { db, serverTime, transaction } from './db.ts'
+import { GameError } from './http.ts'
 
 interface Connection {
   socket: WebSocket
@@ -11,12 +15,15 @@ interface Connection {
   alive: boolean
 }
 
-interface Member {
+interface Presence {
   info: RoomPlayerDTO
   mapId: string
   /** 门派频道按它投递 */
   sectId: string | null
   revision: number
+}
+
+interface Member extends Presence {
   connections: Set<Connection>
 }
 
@@ -50,29 +57,56 @@ export function roomWindow(players: RoomPlayerDTO[], limit = ROOM_LIST_LIMIT) {
   return [...players.filter(target), ...players.filter((player) => !target(player))].slice(0, limit)
 }
 
-function publicPlayer(snapshot: PlayerSnapshot): RoomPlayerDTO {
-  const { player, loadouts, derivedStats } = snapshot
+function presence(player: PlayerSnapshot['player'], loadout: PlayerSnapshot['loadouts'][number], combatPower: number,
+  holdingArtifact: boolean, revision: number, now: number): Presence {
   const escort = player.escortDart
   return {
-    id: player.id,
-    nickname: player.nickname,
-    avatarId: player.avatarId,
-    weaponName: ITEMS[loadouts[player.activePresetIdx - 1].weaponId ?? '']?.name,
-    sectName: SECTS.find((sect) => sect.id === player.currentSectId)?.name ?? '逍遥散人',
-    realmName: REALMS.find((realm) => realm.tier === player.realmTier)?.name ?? REALMS[0].name,
-    level: player.level,
-    combatPower: derivedStats.combatPower,
-    stance: loadouts[player.activePresetIdx - 1].stance,
-    isBetrayerBounty: (player.bountyUntil ?? 0) > snapshot.serverTime,
-    isEscortingDart: !!escort && escort.mapId === player.currentMapId && escort.endsAt > snapshot.serverTime && !escort.robbed,
-    holdingUniqueArtifact: snapshot.ownedItemIds.includes('dagou_stick_true') ? ITEMS.dagou_stick_true.name : undefined,
+    revision, mapId: player.currentMapId, sectId: player.currentSectId ?? null,
+    info: {
+      id: player.id, nickname: player.nickname, avatarId: player.avatarId,
+      weaponName: ITEMS[loadout.weaponId ?? '']?.name,
+      sectName: SECTS.find((sect) => sect.id === player.currentSectId)?.name ?? '逍遥散人',
+      realmName: REALMS.find((realm) => realm.tier === player.realmTier)?.name ?? REALMS[0].name,
+      level: player.level, combatPower, stance: loadout.stance,
+      isBetrayerBounty: (player.bountyUntil ?? 0) > now,
+      isEscortingDart: !!escort && escort.mapId === player.currentMapId && escort.endsAt > now && !escort.robbed,
+      holdingUniqueArtifact: holdingArtifact ? ITEMS.dagou_stick_true.name : undefined,
+    },
   }
+}
+
+type PresenceRow = CharacterRow & {
+  loadout: PlayerSnapshot['loadouts'][number]
+  companionAffinity: PlayerSnapshot['companionAffinity']
+  affixes: Record<string, number>
+  artifact: boolean
+}
+
+// 房间只需要当前方案、装备词条、真品和伙伴；各子查询使用 player_id 索引。
+const presenceColumns = `p.*,
+  (SELECT preset FROM player_loadouts WHERE player_id = p.id AND preset_idx = (p.profile->>'activePresetIdx')::int) AS loadout,
+  COALESCE((SELECT jsonb_object_agg(item_id, affix_roll) FROM player_items WHERE player_id = p.id AND affix_roll > 0), '{}') AS affixes,
+  EXISTS (SELECT 1 FROM player_items WHERE player_id = p.id AND item_id = 'dagou_stick_true') AS artifact,
+  COALESCE((SELECT jsonb_object_agg(companion_id, state) FROM player_companions WHERE player_id = p.id), '{}') AS "companionAffinity"`
+
+function presenceOfRow(row: PresenceRow, now: number) {
+  const { player } = restorePlayer(row, row.affixes)
+  recruitTrialCompanions(row.companionAffinity, player.trial.rewardedStageIds)
+  const stats = computeDerivedStats(player, row.loadout, collectionBonus(row), (id) => equippedCompanion(row, id))
+  return presence(player, row.loadout, stats.combatPower, row.artifact, row.revision, now)
+}
+
+async function readPresence(accountId: string, afterRevision = -1) {
+  const { rows: [row] } = await db.query<PresenceRow & { now: string }>(
+    `SELECT ${presenceColumns}, floor(extract(epoch FROM statement_timestamp()) * 1000)::bigint AS now
+     FROM players p WHERE p.account_id = $1 AND p.revision > $2`, [accountId, afterRevision])
+  return row && presenceOfRow(row, Math.max(Number(row.last_settle_at), Number(row.now)))
 }
 
 export function registerRooms(app: FastifyInstance) {
   const online = new Map<string, Member>()
   const rooms = new Map<string, Room>()
-  const joining = new WeakMap<FastifyRequest, { session: Session; snapshot: PlayerSnapshot }>()
+  const joining = new WeakMap<FastifyRequest, { session: Session; initial: Presence }>()
   let onPresence: ((playerId: string, resetReady: boolean) => void) | undefined
   let onJoin: ((playerId: string) => WsServerEvent | undefined) | undefined
   let onChat: ((speaker: ChatSpeaker, message: unknown) => void) | undefined
@@ -130,15 +164,18 @@ export function registerRooms(app: FastifyInstance) {
   }
 
   function publish(snapshot: PlayerSnapshot) {
-    const member = online.get(snapshot.player.id)
-    if (!member || member.revision >= snapshot.revision) return
+    if (!online.has(snapshot.player.id)) return
+    updatePresence(presence(snapshot.player, snapshot.loadouts[snapshot.player.activePresetIdx - 1], snapshot.derivedStats.combatPower,
+      snapshot.ownedItemIds.includes('dagou_stick_true'), snapshot.revision, snapshot.serverTime))
+  }
+
+  function updatePresence(next: Presence) {
+    const member = online.get(next.info.id)
+    if (!member || member.revision >= next.revision) return
     const oldMap = member.mapId
-    const info = publicPlayer(snapshot)
+    const { info } = next
     const profileChanged = JSON.stringify(info) !== JSON.stringify(member.info)
-    member.info = info
-    member.mapId = snapshot.player.currentMapId
-    member.sectId = snapshot.player.currentSectId ?? null
-    member.revision = snapshot.revision
+    Object.assign(member, next)
     if (oldMap !== member.mapId) {
       rooms.get(oldMap)?.members.delete(info.id)
       touch(oldMap)
@@ -165,21 +202,17 @@ export function registerRooms(app: FastifyInstance) {
     websocket: true,
     preValidation: async (request) => {
       const session = await requireSession(request)
-      const snapshot = await getSnapshot(session.accountId)
-      joining.set(request, { session, snapshot })
+      const initial = await readPresence(session.accountId)
+      if (!initial) throw new GameError(404, 'PLAYER_NOT_CREATED', '先创建你的角色')
+      joining.set(request, { session, initial })
     },
   }, (socket, request) => {
-    const { session, snapshot } = joining.get(request)!
+    const { session, initial } = joining.get(request)!
     joining.delete(request)
-    const id = snapshot.player.id
+    const id = initial.info.id
     const existing = online.get(id)
-    const member: Member = existing ?? {
-      info: publicPlayer(snapshot),
-      mapId: snapshot.player.currentMapId,
-      sectId: snapshot.player.currentSectId ?? null,
-      revision: snapshot.revision,
-      connections: new Set(),
-    }
+    if (existing) updatePresence(initial)
+    const member: Member = existing ?? { ...initial, connections: new Set() }
     const connection = { socket, session, alive: true }
     member.connections.add(connection)
     online.set(id, member)
@@ -210,12 +243,16 @@ export function registerRooms(app: FastifyInstance) {
       }, message.data)
     })
 
-    if (existing) publish(snapshot)
-    else {
+    if (!existing) {
       roomOf(member.mapId).members.set(id, member)
       touch(member.mapId)
-      // 加入时可能有写入在首次读档和房间登记之间提交。
-      void getSnapshot(session.accountId).then(publish).catch((error) => request.log.error(error))
+      // 登记后补查版本，覆盖首次读取与登记间已提交的写入；版本相同就跳过展示数据查询。
+      void readPresence(session.accountId, member.revision).then((next) => {
+        if (next && next.info.id === id) updatePresence(next)
+      }).catch((error) => {
+        request.log.error(error)
+        socket.close(1011, 'Room sync failed')
+      })
     }
     send(connection, roomSync(member.mapId))
     send(connection, { event: 'PLAYER_CHANGED', data: { revision: member.revision } })
@@ -252,8 +289,27 @@ export function registerRooms(app: FastifyInstance) {
     ) ? member.mapId : null
   }
 
+  async function absentPlayers(accountId: string): Promise<RoomPlayerDTO[]> {
+    return transaction(async (client) => {
+      const { rows: [self] } = await client.query<{ id: string; map: string }>(
+        "SELECT id, profile->>'currentMapId' AS map FROM players WHERE account_id = $1", [accountId])
+      if (!self) throw new GameError(404, 'PLAYER_NOT_CREATED', '先创建你的角色')
+      const now = await serverTime(client)
+      const peace = ONLINE_MAPS.find((map) => map.id === self.map)?.safety === 'PEACE'
+      const { rows } = await client.query<PresenceRow>(`
+        SELECT ${presenceColumns} FROM (
+          SELECT * FROM players WHERE id <> $1 AND profile->>'currentMapId' = $2 AND NOT (profile ? 'mapJourney') AND ($4
+            OR (profile->'escortDart'->>'mapId' = $2 AND (profile->'escortDart'->>'endsAt')::bigint > $3
+              AND NOT COALESCE((profile->'escortDart'->>'robbed')::boolean, false))
+            OR (profile->>'bountyUntil')::bigint > $3)
+          ORDER BY last_settle_at DESC, id LIMIT 20
+        ) p ORDER BY p.last_settle_at DESC, p.id`, [self.id, self.map, now, peace])
+      return rows.filter((row) => onlineMap(row.id) !== self.map).map((row) => ({ ...presenceOfRow(row, now).info, offline: true }))
+    }, true)
+  }
+
   return {
-    publish, closeSession, onlineMap, publicPlayer,
+    publish, closeSession, onlineMap, absentPlayers,
     onlineCount: () => [...online.keys()].filter((playerId) => onlineMap(playerId) !== null).length,
     isOnlineInMap: (playerId: string, mapId: string) => onlineMap(playerId) === mapId,
     onlinePlayer: (playerId: string) => onlineMap(playerId) ? online.get(playerId)?.info : undefined,

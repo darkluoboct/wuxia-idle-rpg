@@ -103,8 +103,8 @@ const verticalName = computed(() => {
 
       <div :key="animClass ? animKey : 'idle'" class="relative flex h-full items-end justify-center" :class="animClass">
         <div class="h-full" :class="[isEnemy ? '[transform:scaleX(-1)]' : '', pose === 'sit' ? 'anim-breathe' : '']">
-          <img v-if="avatarId" :src="PLAYER_AVATARS[avatarId].image" alt="" class="h-full w-auto object-contain" />
-          <InkFigure v-else :style-type="styleType" :pose="pose ?? 'stand'" :name="name" :portrait-id="portraitId" />
+          <img v-if="avatarId" :src="size === 'lg' ? PLAYER_AVATARS[avatarId].image : PLAYER_AVATARS[avatarId].thumbnail" alt="" class="h-full w-auto object-contain" />
+          <InkFigure v-else :style-type="styleType" :pose="pose ?? 'stand'" :name="name" :portrait-id="portraitId" :image-size="size === 'lg' ? 'full' : 'thumb'" />
         </div>
       </div>
 

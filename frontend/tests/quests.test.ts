@@ -10,6 +10,7 @@ import {
   TRIAL_ITEMS, TRIAL_STAGES, trialAffixQuality, trialPartId, trialStageOf, tunePatrolFight,
 } from '../../shared/trialStages.ts'
 import { patrolBeat } from '@/config/patrolBeat'
+import { usePlayerStore } from '@/stores/playerStore'
 import type { BattleEventDTO, CombatUnitDTO } from '@/network/protocol'
 import { boost, newStore, playNode, type Store } from './helpers'
 
@@ -314,6 +315,38 @@ describe('巡历遭遇', () => {
     expect(advancePatrol(trial, 90.5 * minute, 100)).toEqual({ battles: 90, elites: 3, firstBattle: 1 })
     expect(patrolClock(trial, 90.5 * minute, 100)).toEqual({ ...before, pending: 0 })
     expect(patrolClock(trial, 91 * minute, 110).battleMs).toBeCloseTo(minute / 1.1)
+  })
+
+  it('同场复用战报，出战装备改变或气血微沸到期后重新推演', () => {
+    const store = newStore('DEMO')
+    const player = usePlayerStore()
+    player.nowTick = Date.parse('2026-11-23T12:00:00+08:00')
+    const fight = () => store.patrolFight(TRIAL_STAGES[0], 1)
+    const first = fight()
+    expect(first).toBeDefined()
+    player.player = { ...JSON.parse(JSON.stringify(player.player)), silver: 1 }
+    player.nowTick += 30_000
+    expect(fight()).toBe(first)
+
+    player.currentLoadout.weaponId = 'henglian_tongjia_weapon_cuixin'
+    const withoutGearSkill = fight()
+    player.currentLoadout.gearSkillId = player.currentLoadout.weaponId
+    const withGearSkill = fight()
+    expect(withGearSkill).toBeDefined()
+    expect(withGearSkill).not.toBe(withoutGearSkill)
+    expect(fight()).toBe(withGearSkill)
+
+    player.currentLoadout.weaponId = null
+    player.currentLoadout.gearSkillId = null
+    const unarmed = fight()
+    expect(unarmed).toBeDefined()
+    expect(unarmed).not.toBe(first)
+    player.player.qiDeviationUntil = player.nowTick + 30_000
+    const weakened = fight()
+    const mainHp = (result: typeof first) => result?.report.units.find((unit) => unit.slot === 'ALLY_MAIN')?.maxHp
+    expect(mainHp(weakened)).toBeLessThan(mainHp(unarmed)!)
+    player.nowTick += 30_000
+    expect(mainHp(fight())).toBe(mainHp(unarmed))
   })
 
   it('巡历画面：各关的小怪与精英都能打赢，一场在一分钟里演得完', () => {

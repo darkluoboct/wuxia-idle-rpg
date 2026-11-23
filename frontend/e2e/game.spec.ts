@@ -59,15 +59,20 @@ test('游客进入演武，切换五个页签，完成横版武库换装和升�
     ['武库', 'ArsenalView'],
     ['门派', 'SectView'],
     ['市井', 'MarketView'],
-    ['修行', 'CultivateView'],
   ] as const
   const stage = game.getByRole('region', { name: '江湖舞台' })
+  const firstCultivatePage = await stage.locator('.scenic-stage').evaluateHandle(node => node)
   for (const [name, chunk] of tabs) {
     await tab(game, name).click()
     await expect(tab(game, name)).toHaveAttribute('aria-selected', 'true')
     await expect.poll(() => [...scripts].some((path) => path.includes(`/${chunk}-`))).toBe(true)
     await expect(stage.locator(':scope > *').first()).toBeVisible()
   }
+  await tab(game, '修行').click()
+  await expect(game.getByRole('button', { name: '领取修行收益' })).toBeVisible()
+  expect(await firstCultivatePage.evaluate(node => node === document.querySelector('.wuxia-stage .scenic-stage'))).toBe(true)
+  expect([...scripts].some(path => path.includes('/CultivateView-'))).toBe(false)
+  await firstCultivatePage.dispose()
 
   await tab(game, '武库').click()
   const characterRail = game.getByRole('complementary', { name: '人物卷', exact: true })
