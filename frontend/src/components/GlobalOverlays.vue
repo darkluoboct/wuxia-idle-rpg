@@ -10,6 +10,7 @@ import SceneSettingsDialog from '@/components/SceneSettingsDialog.vue'
 const LocalStartModal = defineAsyncComponent(() => import('@/components/LocalStartModal.vue'))
 const GachaOverlay = defineAsyncComponent(() => import('@/components/GachaOverlay.vue'))
 const PrologueStage = defineAsyncComponent(() => import('@/components/PrologueStage.vue'))
+const StageScroll = defineAsyncComponent(() => import('@/components/StageScroll.vue'))
 const FeatureStoryCard = defineAsyncComponent(() => import('@/components/FeatureStoryCard.vue'))
 const AwayReport = defineAsyncComponent(() => import('@/components/AwayReport.vue'))
 const Mailbox = defineAsyncComponent(() => import('@/components/Mailbox.vue'))
@@ -64,6 +65,8 @@ watch([() => store.player.id, () => store.gameMode, () => store.onlinePhase], ()
 /* ---------- 新手序章与玩法开放剧情 ---------- */
 // 序章演到主线 1-1 开打为止；战斗播放时让出舞台，打赢后由忘机客的剧情卡接上
 const inJianghu = computed(() => !IS_MOCK_MODE || !!store.gameMode)
+/** 关卡剧情卷轴（docs/27）：入关、首通结语与重温；回放播完才放结语 */
+const stageScrollOpen = computed(() => inJianghu.value && !!store.stageScroll && !store.isBattlePlaying && !store.gachaReveal)
 const prologueOpen = computed(() => inJianghu.value && !!store.player.featureGate && !store.featureOpen('TRIAL') && !store.activeBattle)
 const featureCardOpen = computed(() => inJianghu.value && !!store.featureCard && !store.activeBattle && !store.gachaReveal)
 /** 江湖邸报：剧情卡之后再弹 */
@@ -81,7 +84,8 @@ defineExpose({ openMail, openTasks, openSettings: () => { settingsOpen.value = t
   <GachaOverlay v-if="store.gachaReveal" />
 
   <!-- ==================== 新手序章 / 玩法开放剧情 ==================== -->
-  <PrologueStage v-if="prologueOpen" />
+  <StageScroll v-if="stageScrollOpen" />
+  <PrologueStage v-else-if="prologueOpen" />
   <FeatureStoryCard v-else-if="featureCardOpen" />
   <AwayReport v-else-if="awayReportOpen" />
   <Mailbox v-else-if="store.mailboxOpen && inJianghu && !inBattle" v-model:selected="mailId"

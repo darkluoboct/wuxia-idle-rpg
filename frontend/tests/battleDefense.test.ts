@@ -3,7 +3,7 @@ import type { BattleEventDTO, BattleReportDTO, LoadoutPresetDTO } from '@/networ
 import { computeDerivedStats, incomingDamage, innerPressure, simulateShaoshiRaid, strikeDamage } from '../../shared/battle.ts'
 import { applyDirectedDamage, battleEffectLoot, recoverHitMp, recoverRoundMp, resolveBattleLoadout } from '../../shared/battleEffects.ts'
 import { COMPANIONS, companionView, ITEMS, SECTS } from '../../shared/gameData.ts'
-import { TRIAL_PATROL_HOURS, trialPartId, trialStageOf } from '../../shared/trialStages.ts'
+import { TRIAL_PATROL_HOURS, trialFirstClearQi, trialPartId, trialRewardHp, trialStageOf } from '../../shared/trialStages.ts'
 import { BATTLE_STEP_MS } from '@/stores/battlePlayback'
 import { newStore } from './helpers'
 import { player, loadout, flaskId, nanBei, enemy, agileEnemy, baseCompanion, fight, effectEvents, mainUnit, mainCast, equipped } from './battleFixtures'
@@ -296,8 +296,9 @@ describe('单件减伤、反伤、开局先手与武学被动', () => {
       expect(effectEvents(report, accId)).toMatchObject([{ targetSlot: 'ENEMY_MAIN', qiDrop: Math.round(bossHp * 0.05) }])
       store.skipBattleToEnd()
       store.skipBattleToEnd()
-      expect(store.player.qiExp - before.qi).toBe(bossHp * 2 + Math.round(bossHp * 0.05))
-      expect(store.player.silver - before.silver).toBe(Math.round(bossHp * 0.8))
+      // 首胜奖励按关卡等级的基准首领算，挂坠击杀真气按实际气血算
+      expect(store.player.qiExp - before.qi).toBe(trialFirstClearQi(trialStageOf(1)!) + Math.round(bossHp * 0.05))
+      expect(store.player.silver - before.silver).toBe(Math.round(trialRewardHp(trialStageOf(1)!) * 0.8))
       expect(store.trial.rewardedStageIds).toEqual([1])
     } finally {
       store.closeBattleStage()
@@ -1581,7 +1582,7 @@ describe('护盾与九阴白骨爪', () => {
             vi.advanceTimersByTime(hitIndex * delay)
             expect(store.floatingPopups.ENEMY_MAIN).toMatchObject({ text: '护盾吸收 111', category: 'shield' })
             const hp = store.liveUnitStates.ENEMY_MAIN.hp
-            expect(hp).toBe(667)
+            expect(hp).toBe(trialStageOf(7)!.boss.hp)
             vi.advanceTimersByTime((tickIndex - hitIndex) * delay)
             expect(store.floatingPopups.ENEMY_MAIN).toMatchObject({ text: '流血 -17', category: 'bleed' })
             expect(store.liveUnitStates.ENEMY_MAIN.hp).toBe(hp - 17)

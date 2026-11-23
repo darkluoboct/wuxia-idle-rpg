@@ -3,6 +3,7 @@ import { DISHES } from '@/config/questData'
 import { simulateServerBattle } from '@/network/mockEngine'
 import { forgeEquipment, forgeMaterials } from '../../shared/equipmentForge.ts'
 import { backpackCapacity, equipmentItem, ITEMS, LINAN_CITY_MAP, MAPS, PILL_RECIPES, SKILLS } from '../../shared/gameData.ts'
+import { STORY_CHAPTERS } from '../../shared/storyData.ts'
 import { appraiseGhostCurio, canEnterMap, cultivationRates, GHOST_APPRAISAL_SWORD, innVisitDay, karmaAfterEvent, mapTravelMilliseconds, planMapJourney, recipeForPlayer, settlePatrolCaches, SNAKE_FEEDING_RECIPE } from '../../shared/player.ts'
 import { QUSAN_CACHE_KEY, QUSAN_CACHE_STAGE, skillFragmentDiscount } from '../../shared/skillMastery.ts'
 import {
@@ -844,6 +845,7 @@ describe('故人寻访', () => {
     s.reunionGift('meichaofeng')
     expect(s.reunionView('meichaofeng').step).toBe('BATTLE')
     s.player.stats.agi = 80
+    s.player.level = 32 // 重逢战按等级取推荐等级不超过它的主线首领（卷一最高 Lv.40），Lv.32 对上 4-2
     s.reunionBattle('meichaofeng')
     expect(s.activeBattle).toMatchObject({ sceneTitle: '故人重逢 · 梅超风', winner: 'ALLY' })
     expect(s.activeBattle?.units.find((unit) => unit.slot === 'ENEMY_LEFT')?.name).toBe('全真执剑弟子')
@@ -879,16 +881,20 @@ describe('故人寻访', () => {
     s.completeReunionWait('yangtiexin')
     s.reunionGift('yangtiexin')
     expect(s.reunionView('yangtiexin').step).toBe('BATTLE')
-    s.player.level = 32
-    s.player.realmTier = 3
+    s.player.level = 12
+    s.player.realmTier = 2
     Object.assign(s.player.stats, { str: 35, con: 55, agi: 29, intStat: 32 })
+    // 重逢战按等级取推荐等级不超过它的最后一个主线节点（Lv.12 是 3-1），血量攻击打九折
+    const ref = [...STORY_CHAPTERS].reverse().find((node) => node.recLevel <= 12)!
     s.updateLoadout({ stance: 'TAICHI' })
     try {
       s.reunionBattle('yangtiexin')
       const report = s.activeBattle
       expect(report).toMatchObject({ sceneTitle: '故人重逢 · 杨铁心', winner: 'ALLY' })
-      expect(report?.units.find((unit) => unit.slot === 'ENEMY_MAIN')).toMatchObject({ name: '金兵统领·段天德', maxHp: 13140 })
-      expect(report?.units.find((unit) => unit.slot === 'ENEMY_LEFT')).toMatchObject({ name: '金兵搜山斥候', maxHp: 3942 })
+      expect(ref.code).toBe('3-1')
+      const hp = Math.round(ref.bossHp * 0.9)
+      expect(report?.units.find((unit) => unit.slot === 'ENEMY_MAIN')).toMatchObject({ name: '金兵统领·段天德', maxHp: hp })
+      expect(report?.units.find((unit) => unit.slot === 'ENEMY_LEFT')).toMatchObject({ name: '金兵搜山斥候', maxHp: Math.round(hp * 0.3) })
       expect(report?.events.find((event) => event.actorSlot === 'ENEMY_LEFT' && event.type === 'SKILL_CAST')).toBeDefined()
       expect(report?.events.find((event) => event.effectSourceId === 'taichi_deflect')).toMatchObject({
         round: 3, targetSlot: 'ENEMY_MAIN', segments: [{ text: '太极借力 · 化解金兵合围' }],

@@ -4562,13 +4562,15 @@ export const PILL_RECIPES: Record<string, PillRecipeConfig> = {
     category: 'ACUPOINT',
     costQi: 300,
     costSilver: 60,
-    minInsight: 20,
+    // 行历第八阶就要炼它，新角色这时悟性在 12～18 之间（第一章通关模拟）
+    minInsight: 12,
     baseRate: 95,
     furnaceFlame: 'WEN',
+    // 行历第八阶要炼它：三味药都长在开局的嘉兴（红花活血通脉）
     requiredHerbs: [
       { herbId: 'sanqi', count: 2 },
       { herbId: 'cheqian_cao', count: 2 },
-      { herbId: 'fuling', count: 1 },
+      { herbId: 'honghua', count: 1 },
     ],
     desc: '玄门入门冲穴方，以温和药力温润气脉，服后无需消耗真气即可冲通一处经脉穴道。',
     flameHint: '文火细熬，待药香清透即可起炉。',

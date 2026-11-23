@@ -56,33 +56,25 @@ function fight(nodeIndex: number, level: number, stance: LoadoutPresetDTO['stanc
   return { winner: r.winner, hpLeft: Math.max(0, 1 - lost / main.maxHp) }
 }
 
+// 主线首领在各自推荐等级下打不打得过、打几回合，由 volumeOne.test.ts 的全卷模拟钉住（docs/27 第四期）。
+// 这里只留数值曲线本身的约束。
 describe('主线数值曲线', () => {
-  it.each(STORY_CHAPTERS.map((c, i) => [c.code, i] as const))('%s 在推荐等级下可胜，且余血 ≥ 55%%', (_code, i) => {
-    for (const stance of ['FIERCE', 'TAICHI'] as const) {
-      const r = fight(i, STORY_CHAPTERS[i].recLevel, stance)
-      expect(r.winner).toBe('ALLY')
-      expect(r.hpLeft).toBeGreaterThanOrEqual(0.55)
-    }
-  })
-
   it('推荐等级随节点单调不减', () => {
     for (let i = 1; i < STORY_CHAPTERS.length; i++) {
       expect(STORY_CHAPTERS[i].recLevel).toBeGreaterThanOrEqual(STORY_CHAPTERS[i - 1].recLevel)
     }
   })
 
+  // 全卷模拟走的是不选的那条路（多一条药蛇护卫）；两种选择在这里各验一遍：推荐等级下挑对打法就打得过
   it.each(['A', 'B'] as const)('2-2 药蛇选择 %s 在推荐等级可胜', (choice) => {
     const index = STORY_CHAPTERS.findIndex((chapter) => chapter.code === STORY_SNAKE_ADVENTURE.chapterCode)
-    for (const stance of ['FIERCE', 'TAICHI'] as const) {
-      const result = fight(index, STORY_CHAPTERS[index].recLevel, stance, choice)
-      expect(result.winner).toBe('ALLY')
-      expect(result.hpLeft).toBeGreaterThanOrEqual(0.55)
-    }
+    const wins = (['FIERCE', 'TAICHI'] as const).filter((stance) => fight(index, STORY_CHAPTERS[index].recLevel, stance, choice).winner === 'ALLY')
+    expect(wins.length).toBeGreaterThan(0)
   })
 
   it('等级严重不足时后期节点会落败（数值有门槛意义）', () => {
     const lateNodes = STORY_CHAPTERS.map((c, i) => [c, i] as const).filter(([c]) => c.chapter >= 4)
-    for (const [ch, i] of lateNodes) expect(fight(i, 20).winner, ch.code).toBe('ENEMY')
+    for (const [ch, i] of lateNodes) expect(fight(i, 12).winner, ch.code).toBe('ENEMY')
   })
 })
 

@@ -26,6 +26,13 @@ const { fullscreenError, toggleFullscreen } = useFullscreen()
       <label class="flex items-center justify-between gap-3">场景动态
         <input v-model="prefs.sceneMotion" class="h-5 w-5 accent-gold" type="checkbox" />
       </label>
+      <label class="flex items-center justify-between gap-3">关卡剧情
+        <select v-model="prefs.stageScripts" class="field" aria-label="关卡剧情">
+          <option value="FULL">完整演出</option>
+          <option value="AFTER">只看关后结语</option>
+          <option value="OFF">关闭</option>
+        </select>
+      </label>
       <button class="btn w-full" type="button" @click="toggleFullscreen"><Maximize2 :size="16" aria-hidden="true" />切换全屏</button>
       <p v-if="fullscreenError" class="text-sm text-cinnabar" role="status">{{ fullscreenError }}</p>
     </div>

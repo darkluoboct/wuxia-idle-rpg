@@ -70,6 +70,10 @@ export interface PlayerDTO {
   sectProgressFlags?: string[]
   sectSaluteDay?: number
   gaibangBeggingDay?: number
+  /** 师门差事（shared/sectDaily.ts）：攒下还没记功的挂机时长，和最近办过的几件 */
+  sectChores?: { ms: number; recent: SectChoreEntryDTO[] }
+  /** 师门宝库（shared/sectExchange.ts）：本周各样东西已兑换的份数 */
+  sectExchange?: { week: number; bought: Record<string, number> }
   isGuardingLibrary: boolean // 是否在藏经阁值守
   currentMapId: string
   mapJourney?: { mapId: string; arrivesAt: number; inspected?: true }
@@ -152,6 +156,13 @@ export interface TrialDropDTO {
   battle?: number
 }
 
+/** 办过的一件师门差事：哪一条、什么时辰、记了多少贡献 */
+export interface SectChoreEntryDTO {
+  id: string
+  at: number
+  contrib: number
+}
+
 export type SectResult =
   | { action: 'join'; name: string; items?: string[] }
   | { action: 'graduate'; name: string }
@@ -164,6 +175,7 @@ export type SectResult =
   | { action: 'prepare'; name: string; silver: number }
   | { action: 'debate'; correct: boolean; rewards?: BattleReportDTO['rewards'] }
   | { action: 'trial'; report: BattleReportDTO }
+  | { action: 'exchange'; goodId: string; count: number; price: number }
 
 /** 第一卷 30 关历练与巡历状态 */
 export interface TrialStateDTO {
@@ -287,6 +299,8 @@ export interface IdleGain {
   reunionClues?: Record<string, number>
   feastIngredient?: string
   contestIngot?: number
+  /** 挂机期间替师门办的差事 */
+  sectChores?: { count: number; contrib: number; entries: SectChoreEntryDTO[] }
   /** 下线期间镜像替你应战的劫镖与追捕，告知后清空 */
   defenseNotices?: DefenseNoticeDTO[]
   /** 江湖邸报：上次收功以来、你不在场时发生的事 */

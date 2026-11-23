@@ -7,6 +7,7 @@ import PortraitCard from './PortraitCard.vue'
 import SceneBackdrop from './SceneBackdrop.vue'
 import ItemIcon from './ItemIcon.vue'
 import RichLogSegments from './RichLogSegments.vue'
+import { STAGE_LINE_SOURCE } from '../../../shared/stageScripts.ts'
 
 const store = useGameStore()
 
@@ -36,6 +37,17 @@ const raidLog = computed(() => {
       round, title: segments.find((segment) => segment.type === 'tag')?.text,
       details: segments.flatMap((segment) => segment.type === 'text' ? [segment.text] : []),
     }))
+})
+
+/** 关卡剧情的对白按固定节奏一闪而过，在战报条上多留三步 */
+const STAGE_LINE_HOLD = 3
+const stageLine = computed(() => {
+  const events = store.activeBattle?.events ?? []
+  const cursor = store.battleEventCursor
+  for (let index = cursor - 2; index >= Math.max(0, cursor - 1 - STAGE_LINE_HOLD); index--) {
+    if (events[index]?.effectSourceId === STAGE_LINE_SOURCE) return events[index]
+  }
+  return undefined
 })
 
 function inspectReward(id: string) {
@@ -147,6 +159,7 @@ function inspectReward(id: string) {
       </div>
 
       <p v-if="store.currentBattleEvent" class="battle-summary relative z-10 border-t border-[var(--stage-border)] bg-[var(--stage-panel)] px-3 py-2 text-sm" aria-label="本回合战报">
+        <span v-if="store.isBattlePlaying && stageLine" class="block text-gold"><RichLogSegments :segments="stageLine.segments" /></span>
         <RichLogSegments :segments="store.currentBattleEvent.segments" @inspect="store.inspectById" />
       </p>
 

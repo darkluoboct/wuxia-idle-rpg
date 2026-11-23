@@ -14,6 +14,7 @@ import RaidLobbyPanel from '@/components/RaidLobbyPanel.vue'
 import RaidRewardTray from '@/components/RaidRewardTray.vue'
 import TrialWorkbench from '@/components/TrialWorkbench.vue'
 import { trialPartId, TRIAL_STAGES } from '../../../shared/trialStages.ts'
+import { storyGateBlock, storyKey, trialKey } from '../../../shared/stageScripts.ts'
 
 const XiangyangDefense = defineAsyncComponent(() => import('@/components/XiangyangDefense.vue'))
 const BountyBoard = defineAsyncComponent(() => import('@/components/BountyBoard.vue'))
@@ -46,6 +47,14 @@ function stateOf(id: number): State | 'OPEN' {
   return id === max ? 'CURRENT' : 'OPEN'
 }
 const cleared = computed(() => chapters.filter((chapter) => stateOf(chapter.id) === 'CLEARED').length)
+/** 卡片上的一句剧情：通关前是前情，通关后是小结 */
+const blurbs = computed(() => Object.fromEntries(chapters.map((ch) => [ch.id, store.stageBlurb(storyKey(ch.code))])))
+/** 新角色的主线要先过时间线上紧挨着的历练（docs/27 §四） */
+const gates = computed(() => Object.fromEntries(chapters.map((ch) => [ch.id, storyGateBlock(ch, store.player)])))
+function gotoGate(stage: NonNullable<ReturnType<typeof storyGateBlock>>) {
+  sub.value = 'TRIAL'
+  store.stageFocus = trialKey(stage.code)
+}
 
 const trialCleared = computed(() => TRIAL_STAGES.filter(({ id }) =>
   id < store.trial.maxStageId || store.trial.rewardedStageIds.includes(id)).length)
@@ -71,6 +80,17 @@ watch(() => focusedArc.value.chapter, () => {
   expandedStory.value = undefined
   if (storyScroll.value) storyScroll.value.scrollTop = 0
 })
+// 剧情结语点「前往下一回」：翻到那一章，展开那一回
+watch(() => store.stageFocus, (key) => {
+  const node = key?.startsWith('N') && chapters.find((n) => storyKey(n.code) === key)
+  if (!node) return
+  store.stageFocus = undefined
+  pickedArc.value = node.chapter
+  void Promise.resolve().then(() => {
+    expandedStory.value = node.id
+    storyScroll.value?.querySelector(`[data-node="${node.id}"]`)?.scrollIntoView({ block: 'nearest' })
+  })
+}, { immediate: true })
 
 const CN_NUM = ['一', '二', '三', '四', '五']
 const arcCleared = (nodes: typeof chapters) => nodes.filter((n) => stateOf(n.id) === 'CLEARED').length
@@ -121,7 +141,7 @@ function advState(a: AdventureConfig): 'DONE' | 'PENDING' | 'OPEN' | 'LOCKED' {
             <h3 class="font-brush text-2xl text-gold">第{{ CN_NUM[focusedArc.chapter - 1] }}章 · {{ focusedArc.title }}</h3>
             <p class="hint">{{ focusedArc.tagline }} · {{ focusedArc.summary }}</p>
           </header>
-          <article v-for="ch in focusedArc.nodes" :key="ch.id" class="border border-line"
+          <article v-for="ch in focusedArc.nodes" :key="ch.id" :data-node="ch.id" class="border border-line"
             :class="stateOf(ch.id) === 'CURRENT' ? 'border-gold/70' : ''">
             <button class="workbench-entry" :aria-expanded="stateOf(ch.id) === 'CURRENT' || stateOf(ch.id) === 'OPEN' || expandedStory === ch.id"
               :disabled="stateOf(ch.id) === 'CURRENT' || stateOf(ch.id) === 'OPEN'"
@@ -155,6 +175,10 @@ function advState(a: AdventureConfig): 'DONE' | 'PENDING' | 'OPEN' | 'LOCKED' {
                 <span v-if="storyGuards[ch.id]" class="chip">随从 {{ storyGuards[ch.id] }}</span>
               </div>
 
+              <p v-if="blurbs[ch.id]" class="stage-blurb">
+                <span>{{ blurbs[ch.id]!.text }}</span>
+                <button v-if="blurbs[ch.id]!.reviewable" class="btn btn-sm" @click="store.reviewStage(storyKey(ch.code))">重温</button>
+              </p>
               <p class="hint">{{ ch.mechanicTip }}</p>
 
               <fieldset
@@ -218,17 +242,23 @@ function advState(a: AdventureConfig): 'DONE' | 'PENDING' | 'OPEN' | 'LOCKED' {
               </div>
 
               <div class="clear-both flex flex-wrap items-center gap-2 border-t border-line pt-2.5">
+              <template v-if="gates[ch.id]">
+                <span class="hint">这一回接在历练第 {{ gates[ch.id]!.code }} 关「{{ gates[ch.id]!.title }}」之后。</span>
+                <button class="btn btn-seal w-full sm:w-auto" @click="gotoGate(gates[ch.id]!)">先去历练 {{ gates[ch.id]!.code }}</button>
+              </template>
+              <template v-else>
               <button
                 class="btn w-full sm:w-auto sm:min-w-[6.5rem]"
                 :class="stateOf(ch.id) === 'CURRENT' ? 'btn-seal min-h-[2.6rem]' : ''"
                 :disabled="stateOf(ch.id) === 'LOCKED' || store.onlineActionBusy || store.isBattlePlaying"
-                @click="store.challengeChapter(ch.id)"
+                @click="store.enterStoryNode(ch.id)"
               >
                 {{ { CLEARED: '再次历练', CURRENT: '拔剑闯关', OPEN: '补打首通', LOCKED: '未解锁' }[stateOf(ch.id)] }}
               </button>
               <button v-if="wearsRetreatBoots && stateOf(ch.id) !== 'LOCKED'" class="btn btn-sm"
-                :disabled="store.onlineActionBusy || store.isBattlePlaying" @click="store.challengeChapter(ch.id, true)"
+                :disabled="store.onlineActionBusy || store.isBattlePlaying" @click="store.enterStoryNode(ch.id, true)"
               >入场即撤退</button>
+              </template>
               </div>
             </div>
           </article>

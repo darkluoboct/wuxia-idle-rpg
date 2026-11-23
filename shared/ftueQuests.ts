@@ -8,6 +8,7 @@ import { gaibangSilverGain } from './gaibang.ts'
  *
  * 编号沿用旧版十阶（1~10 含义不变，老存档的已领记录照常有效），新加的从 11 起；
  * 先后以数组顺序为准，当前一阶是顺序里第一个还没领的。
+ * 顺序跟着剧情时间线（docs/27 §四）：主线节点要先过时间线上紧挨着的历练，所以 1-3、2-1、2-2、2-3 前各有一阶历练。
  */
 export type FtueTargetType =
   | 'STORY'        // 首胜指定历练关
@@ -77,7 +78,7 @@ export const FTUE_QUESTS: FtueQuestConfig[] = [
   },
   {
     id: 5, volume: 1, title: '本草寻真', subtitle: '在江湖地图上采药一次',
-    speaker: '了妄和尚', line: '南湖草甸就长着田七、车前草，搜一搜山便有。',
+    speaker: '了妄和尚', line: '南湖草甸就长着田七、车前草，红花少些，多搜几回便有。',
     targetType: 'FORAGE', targetValue: 'any', rewardQi: 400, rewardSilver: 100, jumpTab: 'JIANGHU', jumpSub: 'MAPS',
   },
   {
@@ -85,6 +86,11 @@ export const FTUE_QUESTS: FtueQuestConfig[] = [
     speaker: '了妄和尚', line: '药采回来，炉火要文，心要静。炼成的丹药冲穴用得上。',
     targetType: 'REFINE', targetValue: 'recipe_tongmai_dan', rewardQi: 1000, rewardSilver: 200, rewardPillId: 'pozhang_dan',
     jumpTab: 'MARKET', jumpSub: 'ALCHEMY',
+  },
+  {
+    id: 19, volume: 1, title: '醉仙楼头', subtitle: '首胜历练第 04 关「醉仙楼头 · 盲侠柯镇恶」',
+    speaker: '柯镇恶', line: '荒山那趟浑水，老瞎子得先掂掂你的斤两。',
+    targetType: 'STORY', targetValue: 4, rewardQi: 900, rewardSilver: 250, jumpTab: 'JIANGHU', jumpSub: 'TRIAL',
   },
   {
     id: 13, volume: 1, title: '荒山夜哭', subtitle: '通关主线 1-3「荒山夜哭 · 铜尸陈玄风」',
@@ -118,14 +124,29 @@ export const FTUE_QUESTS: FtueQuestConfig[] = [
   },
   // ───────────── 卷二 · 北上燕京：比武招亲到松林逢北丐 ─────────────
   {
-    id: 15, volume: 2, title: '比武招亲', subtitle: '通关主线 2-1「比武招亲 · 小王爷完颜康」',
+    id: 20, volume: 2, title: '中都擂台', subtitle: '首胜历练第 09 关「中都擂台 · 小王爷完颜康」',
     speaker: '郭靖', line: '中都有人摆擂台比武招亲，那小王爷仗势欺人……咱们去看看！',
+    targetType: 'STORY', targetValue: 9, rewardQi: 2500, rewardSilver: 700, jumpTab: 'JIANGHU', jumpSub: 'TRIAL',
+  },
+  {
+    id: 15, volume: 2, title: '客店夜围', subtitle: '通关主线 2-1「客店夜围 · 小王爷完颜康」',
+    speaker: '穆念慈', line: '那小王爷吃了亏，今夜必定带人来客店……恩公，求你再帮我们一回。',
     targetType: 'NODE', targetValue: 4, rewardQi: 3000, rewardSilver: 800, jumpTab: 'JIANGHU', jumpSub: 'STORY',
+  },
+  {
+    id: 21, volume: 2, title: '夜探王府', subtitle: '首胜历练第 12 关「药房秘坛 · 大手印灵智上人」',
+    speaker: '杨铁心', line: '王妃就在赵王府里……少侠，陪我走一趟。',
+    targetType: 'STORY', targetValue: 12, rewardQi: 3500, rewardSilver: 900, jumpTab: 'JIANGHU', jumpSub: 'TRIAL',
   },
   {
     id: 16, volume: 2, title: '王府夜宴', subtitle: '通关主线 2-2「赵王府夜宴 · 参仙梁子翁」',
     speaker: '黄蓉', line: '王府药房里锁着救人的解药。今夜咱们一起去取，你走前头，我替你看路。',
     targetType: 'NODE', targetValue: 5, rewardQi: 4000, rewardSilver: 1000, jumpTab: 'JIANGHU', jumpSub: 'STORY',
+  },
+  {
+    id: 22, volume: 2, title: '王府突围', subtitle: '首胜历练第 13 关「王府突围 · 参仙老怪梁子翁」',
+    speaker: '黄蓉', line: '解药到手了，可梁子翁那老怪追得紧——先甩掉他，再送王道长回山！',
+    targetType: 'STORY', targetValue: 13, rewardQi: 4500, rewardSilver: 1100, jumpTab: 'JIANGHU', jumpSub: 'TRIAL',
   },
   {
     id: 17, volume: 2, title: '终南问道', subtitle: '通关主线 2-3「终南金雁 · 重阳问道」',

@@ -768,7 +768,8 @@ describe('水系、阴寒、重甲与侠义克制', () => {
     try {
       store.player.level = 10
       store.player.realmTier = 1
-      Object.assign(store.player.stats, { str: 10, con: 18, agi: 0, intStat: 10, karma: 0 })
+      // 正常成长的 Lv.10：历练首领按第一章通关模拟调过强度（docs/27）
+      Object.assign(store.player.stats, { str: 24, con: 24, agi: 20, intStat: 14, karma: 0 })
       store.trial.maxStageId = 15
       if (previouslyCleared) store.trial.rewardedStageIds.push(10)
       store.trial.stageHours['10'] = TRIAL_PATROL_HOURS[10]

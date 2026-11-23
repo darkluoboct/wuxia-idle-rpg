@@ -3,7 +3,7 @@ import { affinityCapFor, COMPANIONS, STORY_CHAPTERS } from '@/config/gameData'
 import { simulateServerBattle } from '@/network/mockEngine'
 import { ACUPOINTS, MAPS, REALMS } from '../../shared/gameData.ts'
 import { effectiveMartialStats } from '../../shared/martialSchools.ts'
-import { acupointCost, createStarterCharacter, cultivatePlayer, cultivationRates, legacyAcupoints, realmBreakChance } from '../../shared/player.ts'
+import { acupointCost, autoSeatCompanions, createStarterCharacter, cultivatePlayer, cultivationRates, legacyAcupoints, realmBreakChance } from '../../shared/player.ts'
 import { patrolBattleCount, trialPartId } from '../../shared/trialStages.ts'
 import { boost, newStore, playNode, resolvePending } from './helpers'
 
@@ -333,6 +333,34 @@ describe('新游戏：开局与新手引导', () => {
     expect(s.companionAffinity.guojing.recruited).toBe(true)
     expect(s.companionAffinity.kezhene.recruited).toBe(true)
     expect(s.companionOf('guojing')).toMatchObject({ tier: 'purple', form: 'base' })
+  })
+})
+
+describe('新游戏：伙伴入队自动编进空着的左右翼', () => {
+  it('只补空位、只排这一回新入队的，不顶替已在阵中的伙伴', () => {
+    const presets = [
+      { presetIdx: 1, leftCompanionId: 'ruanqinggao', rightCompanionId: null },
+      { presetIdx: 2, leftCompanionId: null, rightCompanionId: null },
+      { presetIdx: 3, leftCompanionId: 'guojing', rightCompanionId: 'huangrong' },
+    ] as never as Parameters<typeof autoSeatCompanions>[0] & { leftCompanionId: string | null; rightCompanionId: string | null }[]
+    expect(autoSeatCompanions(presets, ['guojing', 'huangrong'])).toBe(true)
+    expect(presets.map(({ leftCompanionId, rightCompanionId }) => [leftCompanionId, rightCompanionId])).toEqual([
+      ['ruanqinggao', 'guojing'], ['guojing', 'huangrong'], ['guojing', 'huangrong'],
+    ])
+    expect(autoSeatCompanions(presets, ['kezhene'])).toBe(false)
+  })
+
+  it('新角色打完 1-2 郭靖入队，下一战就在阵中；自己腾空的位置不会被补回', () => {
+    const s = newStore('NEW', { gated: true, origin: 'yujia' })
+    s.player.maxChapterId = 2
+    expect(s.currentLoadout.rightCompanionId).toBeNull()
+    s.companionAffinity.guojing.recruited = true
+    expect(s.currentLoadout.rightCompanionId).toBe('guojing')
+    s.currentLoadout.rightCompanionId = null
+    s.companionAffinity.kezhene.affinity += 10
+    expect(s.currentLoadout.rightCompanionId).toBeNull()
+    s.companionAffinity.huangrong.recruited = true
+    expect(s.currentLoadout.rightCompanionId).toBe('huangrong')
   })
 })
 

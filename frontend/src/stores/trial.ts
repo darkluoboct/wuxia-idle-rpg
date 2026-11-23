@@ -7,6 +7,7 @@ import { battleEnvironmentAt } from '../../../shared/combatMeta.ts'
 import { forgeMaterialLabel, forgeMaterials } from '../../../shared/equipmentForge.ts'
 import { settlePatrolCaches, trialFirstClearSilver } from '../../../shared/player.ts'
 import { patrolCacheIngot } from '../../../shared/economy.ts'
+import { trialGateBlock, trialGateText } from '../../../shared/stageScripts.ts'
 import {
   advancePatrol,
   collectTrialDrop,
@@ -22,6 +23,9 @@ import {
   TRIAL_REPLAY_HOURS,
   TRIAL_STAGES,
   trialFirstClearKarma,
+  trialBossMp,
+  trialFirstClearQi,
+  trialRewardHp,
   announceChapterOneTitle,
   CHAPTER_ONE_FINAL_STAGE,
   trialItemOf,
@@ -37,7 +41,7 @@ import { storeToRefs } from 'pinia'
 import { useGameUiStore } from './gameUiStore'
 import type { GameActions } from '@/network/gameActions'
 import type { useCultivation } from './cultivation'
-import type { useBattlePlayback } from './battlePlayback'
+import type { BattleStaging, useBattlePlayback } from './battlePlayback'
 
 export function useTrial({ actions, cultivation, battle }: {
   actions: GameActions
@@ -140,11 +144,11 @@ export function useTrial({ actions, cultivation, battle }: {
     })
   }
 
-  function challengeTrialStage(stageId: number, answer?: string, retreat = false) {
+  function challengeTrialStage(stageId: number, answer?: string, retreat = false, staging?: BattleStaging) {
     if (isBattlePlaying.value) return
     return actions.run('trial', { stageId, answer, retreat }, ({ report, firstClear, drops }) => {
       if (firstClear) showToast(`首胜奖励：${drops.length ? drops.map((drop) => drop.name).join('、') : '真气与纹银'}`, 'gold')
-      startBattlePlayback(report)
+      startBattlePlayback(report, staging)
     }, () => {
       mockSettlePatrol()
       const stage = trialStageOf(stageId)
@@ -152,6 +156,12 @@ export function useTrial({ actions, cultivation, battle }: {
       const t = player.value.trial
       if (stageId > t.maxStageId) {
         showToast('先打过上一关，才能挑战这里。', 'danger')
+        return
+      }
+      // 新角色按剧情时间线走：历练首战先打完时间线上紧挨着的那个主线节点（联机由服务端拦，规则相同）
+      const gate = trialGateBlock(stage, player.value)
+      if (gate) {
+        showToast(trialGateText(gate), 'info')
         return
       }
       const required = TRIAL_PATROL_HOURS[stageId] ?? 0
@@ -169,8 +179,8 @@ export function useTrial({ actions, cultivation, battle }: {
       const skill = stage.clearSkillId && !learnedSkills.value[stage.clearSkillId] ? SKILLS[stage.clearSkillId] : undefined
       const recruits = stage.clearCompanionIds?.filter((id) => !companionAffinity.value[id]?.recruited) ?? []
       const rewards = firstClear || drops.length || skill || recruits.length ? {
-        qiExp: firstClear ? Math.round(stage.boss.hp * 2) : 0,
-        silver: firstClear ? trialFirstClearSilver(stage.boss.hp, player.value) : 0,
+        qiExp: firstClear ? trialFirstClearQi(stage) : 0,
+        silver: firstClear ? trialFirstClearSilver(trialRewardHp(stage), player.value) : 0,
         items: [...drops, ...(skill ? [skill] : [])].map(({ id, name, tier }) => ({ id, name, tier })),
         ...(recruits.length ? { companions: recruits } : {}),
       } : undefined
@@ -184,7 +194,7 @@ export function useTrial({ actions, cultivation, battle }: {
         environment: { ...battleEnvironmentAt(player.value.currentMapId), ...stage.environment },
         enemyMain: {
           ...stage.boss,
-          mp: Math.round(stage.boss.hp * 0.45),
+          mp: trialBossMp(stage),
           isBoss: true,
         },
         enemyGuards: stage.guards,
@@ -207,7 +217,7 @@ export function useTrial({ actions, cultivation, battle }: {
           switchPatrolStage(t, next)
         }
         if (recruits.length) recruitTrialCompanions(companionAffinity.value, [stageId])
-      } : null)
+      } : null, staging)
     })
   }
 
@@ -241,7 +251,7 @@ export function useTrial({ actions, cultivation, battle }: {
         environment: { ...battleEnvironmentAt(player.value.currentMapId), ...stage.environment },
         enemyMain: {
           ...stage.boss,
-          mp: Math.round(stage.boss.hp * 0.45),
+          mp: trialBossMp(stage),
           isBoss: true,
         },
         enemyGuards: stage.guards,

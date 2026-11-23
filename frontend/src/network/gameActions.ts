@@ -54,6 +54,7 @@ type SectAction =
   | { action: 'debate'; sectId: string; expectedRank: number; answer: number }
   | { action: 'prepare'; sectId: string; expectedRank: number; dishId: string }
   | { action: 'trial'; sectId: string; expectedRank: number; branch?: 'WUYI' }
+  | { action: 'exchange'; sectId: string; goodId: string; count: number }
 
 type CoCultivationAction =
   | { action: 'invite'; targetPlayerId: string }

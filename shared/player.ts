@@ -264,6 +264,23 @@ export function autoEquipSkill(presets: Iterable<LoadoutPresetDTO>, skillId: str
   return changed
 }
 
+/** 剧情里递到手上的兵刃：1-3 拾得「靖」字匕首，历练 07 的罩门要它才能一击制敌（docs/27） */
+export const STORY_WEAPONS: Partial<Record<string, string>> = { '1-3': 'xuantie_dagger' }
+
+/** 首通剧情节点时把那件兵刃换到手上；手上已有更锋利的就不换，免得冲掉玩家自己挑的兵刃 */
+export function wieldStoryWeapon(presets: Iterable<LoadoutPresetDTO>, code: string, ownedItemIds: readonly string[]) {
+  const id = STORY_WEAPONS[code]
+  const weapon = id ? ITEMS[id] : undefined
+  if (!id || !weapon || !ownedItemIds.includes(id)) return false
+  let changed = false
+  for (const preset of presets) {
+    if ((ITEMS[preset.weaponId ?? '']?.atkBonus ?? 0) >= (weapon.atkBonus ?? 0)) continue
+    preset.weaponId = id
+    changed = true
+  }
+  return changed
+}
+
 /** 新得的装备在属性达标时自动穿到空槽 */
 export function autoEquipItem(presets: Iterable<LoadoutPresetDTO>, itemId: string, stats: SixStats) {
   const item = ITEMS[itemId]
@@ -274,6 +291,28 @@ export function autoEquipItem(presets: Iterable<LoadoutPresetDTO>, itemId: strin
     if (preset[key]) continue
     Object.assign(preset, { [key]: itemId })
     changed = true
+  }
+  return changed
+}
+
+/** 已入队的伙伴 */
+export const recruitedCompanionIds = (affinity: Readonly<Record<string, CompanionState>>) =>
+  Object.keys(affinity).filter((id) => affinity[id]?.recruited)
+
+/**
+ * 新入队的伙伴在左右翼空着时自动编入，与新得的装备、武功自动装到空槽一个规矩。
+ * 只排这一回新入队的；玩家自己腾空的位置，不会被已经在册的伙伴补回去。
+ */
+export function autoSeatCompanions(presets: Iterable<LoadoutPresetDTO>, newcomers: readonly string[]) {
+  let changed = false
+  for (const preset of presets) {
+    for (const id of newcomers) {
+      if (preset.leftCompanionId === id || preset.rightCompanionId === id) continue
+      const field = !preset.leftCompanionId ? 'leftCompanionId' : !preset.rightCompanionId ? 'rightCompanionId' : undefined
+      if (!field) break
+      preset[field] = id
+      changed = true
+    }
   }
   return changed
 }
