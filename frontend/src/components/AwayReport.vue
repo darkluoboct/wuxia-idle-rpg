@@ -4,6 +4,7 @@ import { useGameStore } from '@/stores/gameStore'
 import { COMPANIONS, SKILLS } from '@/config/gameData'
 import { IDLE_CAP_MS } from '../../../shared/trialStages.ts'
 import { xiangyangRewardText } from '../../../shared/xiangyang.ts'
+import { sectChoreLine } from '../../../shared/sectDaily.ts'
 
 /** 江湖邸报（docs/21）：收功后汇总上次收功以来、你不在场时发生的事 */
 const store = useGameStore()
@@ -22,7 +23,7 @@ const capped = computed(() => report.value.at - away.value.since > IDLE_CAP_MS)
 
 /** 每段一行标题加若干句，没发生的不列 */
 const sections = computed(() => {
-  const { gainedQi, gainedSilver, drops = [], patrolBattles, forgeMaterials, patrolCache, xiangyang = [], defenseNotices = [], contestIngot, reunionClues = {}, feastIngredient } = gain.value
+  const { gainedQi, gainedSilver, drops = [], patrolBattles, forgeMaterials, patrolCache, xiangyang = [], defenseNotices = [], contestIngot, reunionClues = {}, feastIngredient, sectChores } = gain.value
   const { xiangyang: guard, stallSales, dividends = [], raidLends } = away.value
   const list: { title: string; lines: string[] }[] = []
   if (gainedQi || gainedSilver) list.push({ title: '修行', lines: [`真气 +${n(gainedQi)} · 纹银 +${n(gainedSilver)}${capped.value ? '（按最多 24 小时计）' : ''}`] })
@@ -53,7 +54,12 @@ const sections = computed(() => {
   ]
   if (market.length) list.push({ title: '鬼市', lines: market })
   if (raidLends) list.push({ title: '结义', lines: [`结义镜像随人破阵 ${raidLends.count} 次，助战真气 +${n(raidLends.qiExp)}`] })
-  const sect = contestIngot ? [`门派演武论功：元宝 +${contestIngot}`] : []
+  const latestChore = sectChores && sectChoreLine(sectChores.entries.at(-1)!)
+  const sect = [
+    ...(sectChores ? [`师门差事 ${sectChores.count} 件：门派贡献 +${n(sectChores.contrib)}`] : []),
+    ...(latestChore ? [`【${latestChore.heading}】${latestChore.text}`] : []),
+    ...(contestIngot ? [`门派演武论功：元宝 +${contestIngot}`] : []),
+  ]
   if (sect.length) list.push({ title: '门派', lines: sect })
   const errands = [
     ...Object.entries(reunionClues).map(([id, count]) => `${COMPANIONS[id]?.name ?? id}的寻访线索 +${count}`),

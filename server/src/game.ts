@@ -10,18 +10,21 @@ import { forgeEquipment, forgeMaterials } from '../../shared/equipmentForge.ts'
 import { activeJianghuTitle, activeSetBonuses, canEquipCompanionItem, companionView, COMPANIONS, COOP_RAIDS, GHOST_MARKET_LISTINGS, hiddenWeaponCapacity, INN_GIFT_COST, INN_TEA_COST, ITEMS, JIANGHU_TITLES, marketListingPrice, MEDICINES, meetsItemStatRequirement, ONLINE_MAPS, PILL_RECIPES, REALMS, SECTS, SKILLS, totalCompanionSetBonuses, trialRewardItems, unlockedHiddenWeapons } from '../../shared/gameData.ts'
 import {
   advancePatrol, announceChapterOneTitle, CHAPTER_ONE_FINAL_STAGE, collectTrialDrop, equippedGearSkill, hasTrialPart, patrolBattleCount, patrolEncounterCount, patrolEncounterRate, recruitTrialCompanions, rollPatrolDrops, rollTrialDrop,
-  IDLE_CAP_MS, switchPatrolStage, TRIAL_PATROL_HOURS, TRIAL_REPLAY_HOURS, TRIAL_STAGES, trialFirstClearKarma, trialItemOf, trialPartId, trialPuzzleOutcome,
+  IDLE_CAP_MS, switchPatrolStage, TRIAL_PATROL_HOURS, TRIAL_REPLAY_HOURS, TRIAL_STAGES, trialBossMp, trialFirstClearKarma, trialFirstClearQi, trialRewardHp, trialItemOf, trialPartId, trialPuzzleOutcome,
   trialStageOf, upgradesPatrolYield, type TrialRoll, type TrialStageConfig,
 } from '../../shared/trialStages.ts'
-import { appraiseGhostCurio, autoEquipItem, averageBoostPct, autoEquipSkill, canEnterMap, canReceiveSnakeRecipe, cityInspectionDue, coCultivationRate, createNewGameCharacter, createStarterCharacter, cultivatePlayer, cultivationRate, cultivationRates, GHOST_APPRAISAL_SWORD, idleQiNumerator, innAffinityGain, startIdle, innGiftsRemaining, innVisitDay, karmaAfterEvent, legacyAcupoints, planMapJourney, recipeForPlayer, resolveSeaVoyage, settlePatrolCaches, trialFirstClearSilver } from '../../shared/player.ts'
+import { appraiseGhostCurio, autoEquipItem, autoSeatCompanions, recruitedCompanionIds, wieldStoryWeapon, averageBoostPct, autoEquipSkill, canEnterMap, canReceiveSnakeRecipe, cityInspectionDue, coCultivationRate, createNewGameCharacter, createStarterCharacter, cultivatePlayer, cultivationRate, cultivationRates, GHOST_APPRAISAL_SWORD, idleQiNumerator, innAffinityGain, startIdle, innGiftsRemaining, innVisitDay, karmaAfterEvent, legacyAcupoints, planMapJourney, recipeForPlayer, resolveSeaVoyage, settlePatrolCaches, trialFirstClearSilver } from '../../shared/player.ts'
 import { HUASHAN_HONORS, HUASHAN_RESPECT_QI, huashanDay, huashanRankReward, huashanRatingSwing, huashanSeason, huashanSeasonEndsAt } from '../../shared/huashan.ts'
 import { GAIBANG_DEBATE, GAIBANG_FINAL_DISHES, gaibangDishFlag, gaibangDishPrepared, gaibangSilverGain } from '../../shared/gaibang.ts'
 import { BETRAYAL_BOUNTY, SECT_CHIEF_SALUTE_QI, SECT_CONTEST_MIN_RANK, SECT_SALUTE_QI, sectContestEndsAt, sectContestWeek, sectContributionGain, sectExamBlockReason, sectPromotion, sectPromotionRewards, simulateSectTrial } from '../../shared/sectProgress.ts'
 import { eligibleWandererEquipment, gaibangBeggingSilver, sectEquipmentRewardIds, WANDERER_EQUIPMENT } from '../../shared/sectEquipment.ts'
+import { accrueSectChores, drawSectChores, resetSectChores } from '../../shared/sectDaily.ts'
+import { buySectGood } from '../../shared/sectExchange.ts'
 import { MAX_SKILL_MASTERY, QUSAN_CACHE_KEY, searchQusanCache, skillFragmentDiscount, skillPowerAtMastery, skillUpgradeCost } from '../../shared/skillMastery.ts'
 import { effectiveMartialStats, hasMartialFreedom } from '../../shared/martialSchools.ts'
 import { addAdventureObjective, adventureById, adventureEncounter, affinityCapFor, onlineStoryChapter, ONLINE_STORY_PROGRESS_VERSION, restoreOnlineStoryProgress, STAT_LABEL, storyFirstClearReward, storyProgressFlags, type AdventureBattle, type Reward, type StatKey } from '../../shared/storyData.ts'
 import { canChooseStorySnake, STORY_SNAKE_ADVENTURE, storyEncounter } from '../../shared/storySnake.ts'
+import { storyGateBlock, storyGateText, trialGateBlock, trialGateText } from '../../shared/stageScripts.ts'
 import { QUANZHEN_LIBRARY } from '../../shared/quanzhen.ts'
 import { claimDailyIngot, claimMilestoneIngots, huashanIngot, INGOT, markDailyTask, patrolCacheIngot, resolvedAdventures, type DailyTaskId } from '../../shared/economy.ts'
 import { awakenCompanion, blankCompanionState, pullGacha, REUNION_TICKET_COST } from '../../shared/gacha.ts'
@@ -369,6 +372,8 @@ function creditIdle(character: Character, now: number): IdleGain {
   const { gainedQi, gainedSilver, qiRemainder, silverRemainder } = idleRewards(character, now, rate)
   player.qiExp += gainedQi
   player.silver += gainedSilver
+  // 师门差事按这段挂机时长攒，收功时记功（shared/sectDaily.ts）
+  accrueSectChores(player, now - player.lastSettleAt)
   player.lastSettleAt = Math.max(now, player.lastSettleAt)
   character.qiRemainder = qiRemainder
   character.silverRemainder = silverRemainder
@@ -801,6 +806,7 @@ async function writeAction<T>(request: FastifyRequest, apply: ApplyAction<T>): P
         await touchArtifact(client, character, now)
         await settleStalls(client, character, now)
         const patrolChanged = await settlePatrol(character, now, client)
+        const recruitedBefore = recruitedCompanionIds(character.companionAffinity)
         const { result, changed: applied, related = [] } = await apply(character, now, client, async (ids) => {
           if (ids.includes(row.id)) throw new GameError(400, 'INVALID_PARTNER', '请选择另一位侠客')
           // 释放单人锁后按角色 ID 一起加锁，再校验当前共修关系或副本队伍。
@@ -813,6 +819,9 @@ async function writeAction<T>(request: FastifyRequest, apply: ApplyAction<T>): P
           }
           return characters
         })
+        // 这一回新入队的伙伴补进空着的左右翼
+        const newcomers = recruitedCompanionIds(character.companionAffinity).filter((id) => !recruitedBefore.includes(id))
+        if (newcomers.length && autoSeatCompanions(character.loadouts, newcomers)) character.loadoutsDirty = true
         for (const { key, amount } of claimMilestoneIngots({
           player: character.player, rewardedChapters: character.rewardedChapters,
           adventureIds: resolvedAdventures(character.player), companionAffinity: character.companionAffinity,
@@ -1644,11 +1653,14 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
       }
     }
     const gain = settle(character, now)
+    const sectChores = drawSectChores(character.player, activeLoadout(character), now)
+    if (sectChores) changed = true
     return {
       result: {
         ...gain, drops: character.patrolDrops, patrolBattles: character.patrolBattles, forgeMaterials: character.patrolForgeMaterials,
         patrolCache: character.patrolCache, reunionClues,
         ...(feastIngredient ? { feastIngredient } : {}), ...(contestIngot ? { contestIngot } : {}), ...(xiangyang.length ? { xiangyang } : {}),
+        ...(sectChores ? { sectChores } : {}),
         ...(defenseNotices?.length ? { defenseNotices } : {}),
         away,
       } satisfies IdleGain,
@@ -2106,7 +2118,7 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
 
   app.post('/api/v1/sect', (request) => respond<SectResult>(request, async (character, now, client, readRelated) => {
     requireFeature(character.player, 'SECT')
-    const { action, sectId, expectedRank, branch, answer, dishId } = objectBody(request.body)
+    const { action, sectId, expectedRank, branch, answer, dishId, goodId, count } = objectBody(request.body)
     const { player } = character
     if (action === 'wanderer-gear') {
       if (!eligibleWandererEquipment(player)) throw new GameError(409, 'WANDERER_GEAR_LOCKED', '散人胜过历练第 13 关后可领取千机任侠套装')
@@ -2126,6 +2138,7 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
       player.currentSectId = sect.id
       player.sectRank = 1
       delete player.gaibangBranch
+      resetSectChores(player)
       player.sectContribution = 100 + (sect.introFlag && flags.includes(sect.introFlag) ? sect.introBonus ?? 0 : 0)
       const items = await grantSectPromotion(client, character, sect, 1, now)
       return { result: { action, name: sect.name, items: items.filter(({ id }) => !!ITEMS[id]).map(({ id }) => id) }, changed: true }
@@ -2133,6 +2146,15 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
     const sect = SECTS.find((entry) => entry.id === player.currentSectId)
     if (!sect || sect.id !== sectId) throw new GameError(409, 'SECT_CHANGED', '当前师门已变更')
     const loadout = activeLoadout(character)
+    if (action === 'exchange') {
+      const stock = {
+        pills: player.acupointPills ??= {}, medicines: player.battleMedicines ??= {},
+        herbs: (player.alchemy ??= { herbs: {}, pity: {}, residue: 0 }).herbs, fragments: player.skillFragments ??= {},
+      }
+      const bought = buySectGood(player, stock, character.learnedSkills, goodId, count, now)
+      if ('error' in bought) throw new GameError(409, 'SECT_EXCHANGE_UNAVAILABLE', bought.error)
+      return { result: { action, goodId: bought.good.id, count: bought.count, price: bought.price }, changed: true }
+    }
     if (action === 'snake-recipe') {
       if (player.snakeFeedingRecipe) return { result: { action }, changed: false }
       if (!canReceiveSnakeRecipe(player, loadout)) throw new GameError(409, 'SNAKE_TITLE_REQUIRED', '白驼弟子以噬魂蛇君之名来访时可领取蛇药饲喂方')
@@ -2248,6 +2270,7 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
     player.sectContribution = 0
     player.isGuardingLibrary = false
     delete player.gaibangBranch
+    resetSectChores(player)
     if (action === 'graduate') {
       const graduated = player.graduatedSectIds ??= []
       if (!graduated.includes(sect.id)) graduated.push(sect.id)
@@ -3271,6 +3294,9 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
     if (!chapter) throw new GameError(404, 'CHAPTER_NOT_FOUND', '江湖图上没有这一关')
     const { player, rewardedChapters } = character
     if (chapter.id > player.maxChapterId) throw new GameError(409, 'CHAPTER_LOCKED', '先打过上一关，就能挑战这里')
+    // 新角色按剧情时间线走：主线节点先过时间线上紧挨着的那关历练（docs/27 §四）
+    const gate = storyGateBlock(chapter, player)
+    if (gate) throw new GameError(409, 'CHAPTER_GATED', storyGateText(gate))
 
     const { report, changed } = storyBattle(character, now, `${chapter.code} ${chapter.title}`,
       storyEncounter(chapter, player.storySnakeChoice, chapter.isBoss), battleRetreatRequested(request.body))
@@ -3286,6 +3312,7 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
       }, now)
       report.rewards = rewards
       addStoryNarration(report, narration)
+      if (wieldStoryWeapon(character.loadouts, chapter.code, character.ownedItemIds)) character.loadoutsDirty = true
     }
 
     const otherSanskritChapter = chapter.code === '4-2' ? 16 : chapter.code === '5-3' ? 12 : undefined
@@ -3469,7 +3496,7 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
       environment: { ...battleEnvironmentAt(character.player.currentMapId, new Date(now)), ...stage.environment },
       enemyMain: {
         ...stage.boss,
-        mp: Math.round(stage.boss.hp * 0.45),
+        mp: trialBossMp(stage),
         isBoss: true,
       },
       enemyGuards: stage.guards,
@@ -3496,6 +3523,8 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
     const player = character.player
     const trial = player.trial
     if (stage.id > trial.maxStageId) throw new GameError(409, 'TRIAL_STAGE_LOCKED', '先打过上一关，才能挑战这里')
+    const gate = trialGateBlock(stage, player)
+    if (gate) throw new GameError(409, 'TRIAL_GATED', trialGateText(gate))
 
     const required = TRIAL_PATROL_HOURS[stage.id] ?? 0
     const hours = trial.stageHours[String(stage.id)] ?? 0
@@ -3514,8 +3543,8 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
     const skillDrop = skill ? { id: skill.id, name: skill.name, tier: skill.tier } : undefined
     const rewardDrops = [...drops.map(({ id, name, tier }) => ({ id, name, tier })), ...(skillDrop ? [skillDrop] : [])]
     const recruits = stage.clearCompanionIds?.filter((id) => !character.companionAffinity[id]?.recruited) ?? []
-    const rewardQi = firstClear ? Math.round(stage.boss.hp * 2) : 0
-    const rewardSilver = firstClear ? trialFirstClearSilver(stage.boss.hp, player) : 0
+    const rewardQi = firstClear ? trialFirstClearQi(stage) : 0
+    const rewardSilver = firstClear ? trialFirstClearSilver(trialRewardHp(stage), player) : 0
     const report = trialBattle(character, stage, now, firstClear || drops.length || skillDrop || recruits.length
       ? { qiExp: rewardQi, silver: rewardSilver, items: rewardDrops, ...(recruits.length ? { companions: recruits } : {}) }
       : undefined, answer, battleRetreatRequested(request.body))

@@ -21,6 +21,9 @@ function mockLines(channel: PublicChannel): ChatLine[] {
     ({ id, channel, sender: { id, nickname, sectName }, content, sentAt: Date.now() - 3_600_000 })
   if (channel === 'WORLD') {
     return [
+      // 嘉兴本地的闲话，新人一进江湖就听得到
+      say('mock-0', '南湖船家·阮老三', '散人', '今早南湖起了大雾，烟雨楼下的船一条都没敢出。'),
+      say('mock-4', '醉仙楼茶客', '散人', '城外荒山夜里又有鬼哭，樵夫都不敢上山了，你们谁去瞧过？'),
       say('mock-1', '重阳首座·清风道长', '全真教', '松鹤楼结义秘境【少林金刚伏魔圈】2缺1高爆发少侠，来个会降龙掌的兄弟！'),
       say('mock-2', '桃花小师妹', '桃花岛', '哪位散人大哥鬼市淘到了《九阴残页》？诚心高价收！'),
     ]

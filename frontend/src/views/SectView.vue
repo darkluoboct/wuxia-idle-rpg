@@ -12,15 +12,17 @@ import { meetsSectRequirement } from '../../../shared/gameData.ts'
 import { equippedMartialSkills, martialOrigin, WANDERER_MASTERY } from '../../../shared/martialSchools.ts'
 import { karmaAfterEvent } from '../../../shared/player.ts'
 import { SECT_EQUIPMENT_SETS, sectEquipmentPartId, WANDERER_EQUIPMENT } from '../../../shared/sectEquipment.ts'
+import { SECT_LORE } from '../../../shared/sectLore.ts'
 import { sectPromotion } from '../../../shared/sectProgress.ts'
 import ItemIcon from '@/components/ItemIcon.vue'
 import PortraitCard from '@/components/PortraitCard.vue'
 import QuanzhenLibrary from '@/components/QuanzhenLibrary.vue'
 import SectContest from '@/components/SectContest.vue'
+import SectTreasury from '@/components/SectTreasury.vue'
 import WorkbenchDialog from '@/components/WorkbenchDialog.vue'
 
 const store = useGameStore()
-const chapterTab = ref<'HALL' | 'CONTEST' | 'LIBRARY'>('HALL')
+const chapterTab = ref<'HALL' | 'TREASURY' | 'CONTEST' | 'LIBRARY'>('HALL')
 const selectedSect = ref<string>()
 const selectedRank = ref<number>()
 const sheet = ref<HTMLElement>()
@@ -62,11 +64,13 @@ const representatives: Record<string, { name: string; style: PortraitStyle; id?:
   yideng: { name: '南帝·一灯大师', style: 'yideng', id: 'yideng' },
 }
 const representative = computed(() => focusedSect.value && representatives[focusedSect.value.id])
+/** 山门、引路人、江湖传言与门规（shared/sectLore.ts） */
+const lore = computed(() => focusedSect.value && SECT_LORE[focusedSect.value.id])
 const glyphs: Record<string, string> = { gaibang: '丐', quanzhen: '全', taohua: '桃', baituo: '驼', jiangnan_wuguan: '武', tiezhang: '铁', yideng: '灯' }
 const glyphOf = (sect: SectConfig) => glyphs[sect.id] ?? sect.name.slice(0, 1)
 
 watch([() => store.currentSect?.id, rank], () => {
-  chapterTab.value = 'HALL'
+  if (chapterTab.value !== 'TREASURY' || !store.currentSect) chapterTab.value = 'HALL'
   selectedRank.value = undefined
   debating.value = false
 })
@@ -107,11 +111,13 @@ function confirmBetray() {
         <button class="tab" role="tab" :aria-selected="chapterTab === 'HALL'" @click="chapterTab = 'HALL'">
           {{ store.currentSect ? '师门大殿' : '拜师选派' }}
         </button>
+        <button v-if="store.currentSect" class="tab" role="tab" :aria-selected="chapterTab === 'TREASURY'" @click="chapterTab = 'TREASURY'">师门宝库</button>
         <button v-if="store.currentSect" class="tab" role="tab" :aria-selected="chapterTab === 'CONTEST'" @click="chapterTab = 'CONTEST'">门派演武</button>
         <button v-if="!IS_MOCK_MODE" class="tab" role="tab" :aria-selected="chapterTab === 'LIBRARY'" @click="chapterTab = 'LIBRARY'">藏经阁</button>
       </nav>
 
       <QuanzhenLibrary v-if="chapterTab === 'LIBRARY'" />
+      <SectTreasury v-else-if="store.currentSect && chapterTab === 'TREASURY'" />
       <template v-else-if="store.currentSect && chapterTab === 'CONTEST'">
         <SectContest v-if="!IS_MOCK_MODE" :key="store.currentSect.id" :sect-id="store.currentSect.id" />
         <article v-else class="workbench-detail flex-1">
@@ -153,7 +159,8 @@ function confirmBetray() {
               <span class="switch" :aria-checked="store.player.isGuardingLibrary" /> 看守藏经阁
             </button>
             <WorkbenchDialog title="师门规矩">
-              <p>第四阶可出师，江南武馆可以随时出师。出师后保留已习武学，可再拜别派。</p>
+              <p>挂机每满一个时辰（两小时），替师门办一件差事，收功时记门派贡献。贡献可在师门宝库换丹药、药材和本门武学残页。</p>
+              <p>第四阶可出师，江南武馆可以随时出师。出师后保留已习武学，可再拜别派，门派贡献清零。</p>
               <p>叛出师门会损失侠义，触发 48 小时追杀令，此后不能再拜入原师门。</p>
             </WorkbenchDialog>
           </div>
@@ -203,6 +210,17 @@ function confirmBetray() {
                 </div>
                 <PortraitCard v-if="representative" bare class="workbench-portrait min-w-0" :name="representative.name" :style-type="representative.style" :portrait-id="representative.id" />
               </header>
+
+              <section v-if="lore" class="space-y-2" aria-label="山门与门规">
+                <p v-if="!store.currentSect" class="stage-blurb"><span>{{ lore.hearsay }}</span></p>
+                <p class="hint">山门 · {{ lore.seat }}<template v-if="!store.currentSect"> · 引路人 {{ lore.mentor.name }}</template></p>
+                <div class="flex flex-wrap items-start justify-between gap-2">
+                  <ol class="sect-rules" aria-label="门规">
+                    <li v-for="rule in lore.rules" :key="rule">{{ rule }}</li>
+                  </ol>
+                  <button v-if="store.currentSect" class="btn btn-sm" @click="store.showSectTale(store.currentSect.id)">重温拜师</button>
+                </div>
+              </section>
 
               <section v-if="!store.currentSect" aria-label="入门门槛">
                 <h4 class="sec-title">入门门槛</h4>
@@ -345,3 +363,9 @@ function confirmBetray() {
     </section>
   </div>
 </template>
+
+<style scoped>
+.sect-rules { display: grid; gap: .2rem; margin: 0; padding: 0; list-style: none; counter-reset: rule; font-size: .875rem; color: var(--ink-2); }
+.sect-rules li { counter-increment: rule; }
+.sect-rules li::before { content: "门规" counter(rule, cjk-ideographic); margin-right: .6em; color: var(--gold); font-size: .8rem; }
+</style>

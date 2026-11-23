@@ -13,6 +13,12 @@ const DAMAGE_POPUP_LABELS: Partial<Record<string, string>> = { poison: '毒伤 '
 /** 战报逐步播放的间隔 */
 export const BATTLE_STEP_MS = 920
 
+/** 随这场战斗一起演的剧情（stores/stageScripts.ts）：回放前改战报插对白，打赢后接着放结语 */
+export interface BattleStaging {
+  prepare?: (report: BattleReportDTO) => void
+  onWon?: (report: BattleReportDTO) => void
+}
+
 export function useBattlePlayback({ claimNodeFirstClear, onStoryNodeWon, playPendingDuel }: {
   claimNodeFirstClear: (nodeId: number) => void
   onStoryNodeWon: (nodeId: number) => void
@@ -44,6 +50,7 @@ export function useBattlePlayback({ claimNodeFirstClear, onStoryNodeWon, playPen
   const floatingPopups = ref<Record<string, { text: string; isCrit: boolean; category: string; key: number }>>({})
   let battleTimer: ReturnType<typeof setTimeout> | null = null
   let battleOnWin: (() => void) | null = null
+  let battleStaging: BattleStaging | undefined
   let localBattle = false
   onScopeDispose(() => { if (battleTimer) clearTimeout(battleTimer) })
 
@@ -51,18 +58,20 @@ export function useBattlePlayback({ claimNodeFirstClear, onStoryNodeWon, playPen
   const initialUnitState = (unit: CombatUnitDTO) => ({
     hp: unit.hp, maxHp: unit.maxHp, rage: unit.rage, mp: unit.maxMp, maxMp: unit.maxMp, anim: 'NONE' as const,
   })
-  function startBattlePlayback(report: BattleReportDTO) {
-    playReport(report, false, null, null)
+  function startBattlePlayback(report: BattleReportDTO, staging?: BattleStaging) {
+    playReport(report, false, null, null, staging)
   }
 
-  function startLocalBattle(report: BattleReportDTO, storyNodeId: number | null = null, onWin: (() => void) | null = null) {
+  function startLocalBattle(report: BattleReportDTO, storyNodeId: number | null = null, onWin: (() => void) | null = null, staging?: BattleStaging) {
     // 主线、历练、奇遇出战记一件每日江湖事，与服务端一致
     if (report.mode === 'SOLO_STORY') markDaily('battle')
-    playReport(report, true, storyNodeId, onWin)
+    playReport(report, true, storyNodeId, onWin, staging)
   }
 
-  function playReport(report: BattleReportDTO, local: boolean, storyNodeId: number | null, onWin: (() => void) | null) {
+  function playReport(report: BattleReportDTO, local: boolean, storyNodeId: number | null, onWin: (() => void) | null, staging?: BattleStaging) {
     if (battleTimer) clearTimeout(battleTimer)
+    staging?.prepare?.(report)
+    battleStaging = staging
     localBattle = local
     if (localBattle) spendBattleMedicines(player.value, report)
     mobileDrawer.value = 'NONE'
@@ -276,6 +285,10 @@ export function useBattlePlayback({ claimNodeFirstClear, onStoryNodeWon, playPen
       ])
       showToast('这次没打过，试试换个打法再战。', 'danger')
     }
+    // 首通进度与奖励都结算完了再放结语，结语里的「下一回」才算得准
+    const staging = battleStaging
+    battleStaging = undefined
+    if (won) staging?.onWon?.(report)
   }
 
   function closeBattleStage() {
@@ -284,6 +297,7 @@ export function useBattlePlayback({ claimNodeFirstClear, onStoryNodeWon, playPen
     battleOpponentEntry.value = undefined
     activeChapterId = null
     battleOnWin = null
+    battleStaging = undefined
     isBattlePlaying.value = false
     slashBanner.value = null
     floatingPopups.value = {}

@@ -27,6 +27,7 @@ import { useLocalGame } from '@/stores/localGame'
 import { useEconomy } from './economy'
 import { useXiangyang } from './xiangyang'
 import { useFeatures } from './features'
+import { useStageScripts } from './stageScripts'
 import { featureLockedText, featureUnlocked } from '../../../shared/features.ts'
 
 export type { MainTab } from './gameUiStore'
@@ -96,7 +97,7 @@ export const useGameStore = defineStore('wuxiaGame', () => {
 
   const artifacts = useArtifacts({ actions, battle, chat })
 
-  const sect = useSect({ actions, cultivation, battle, story, chat, companions, artifacts })
+  const sect = useSect({ actions, cultivation, battle, story, chat, companions, artifacts, onJoined: (sectId) => stageScripts.showSectTale(sectId) })
 
   const market = useMarket({ actions, cultivation })
 
@@ -109,6 +110,8 @@ export const useGameStore = defineStore('wuxiaGame', () => {
   const economy = useEconomy({ actions })
 
   const features = useFeatures({ actions, selectTab })
+
+  const stageScripts = useStageScripts({ story, trial, battle, chat, selectTab })
 
   const playerRefs = storeToRefs(playerStore)
   const { onlineState, activeCoCultivation, player, coCultivationInvite } = playerRefs
@@ -313,6 +316,8 @@ export const useGameStore = defineStore('wuxiaGame', () => {
     gaibangDishes: sect.gaibangDishes,
     sectPromotionExam: sect.sectPromotionExam,
     sectPromotionBlockReason: sect.sectPromotionBlockReason,
+    sectTreasury: sect.sectTreasury,
+    sectGoodsList: sect.sectGoodsList,
     battleOpponentEntry: battle.battleOpponentEntry,
     battleEventCursor: battle.battleEventCursor,
     currentBattleEvent: battle.currentBattleEvent,
@@ -388,6 +393,16 @@ export const useGameStore = defineStore('wuxiaGame', () => {
     moveMap: world.moveMap,
     travelTo: world.travelTo,
     challengeChapter: story.challengeChapter,
+    stageScroll: stageScripts.stageScroll,
+    stageFocus: uiRefs.stageFocus,
+    enterStoryNode: stageScripts.enterStoryNode,
+    enterTrialStage: stageScripts.enterTrialStage,
+    reviewStage: stageScripts.reviewStage,
+    stageBlurb: stageScripts.stageBlurb,
+    closeStageScroll: stageScripts.closeStageScroll,
+    showTale: stageScripts.showTale,
+    showSectTale: stageScripts.showSectTale,
+    gotoStage: stageScripts.gotoStage,
     trial: trial.trial,
     daily: economy.daily,
     claimDailyIngot: economy.claimDailyIngot,
@@ -434,6 +449,7 @@ export const useGameStore = defineStore('wuxiaGame', () => {
     endCoCultivation: world.endCoCultivation,
     cancelCoCultivationInvite: world.cancelCoCultivationInvite,
     joinSect: sect.joinSect,
+    exchangeSectGood: sect.exchangeSectGood,
     sectEligibility: sect.sectEligibility,
     saluteChiefPlayer: sect.saluteChiefPlayer,
     claimSectEquipment: sect.claimSectEquipment,

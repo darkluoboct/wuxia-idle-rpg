@@ -407,6 +407,27 @@ body::before {
     line-height: 1.65;
   }
 
+  /* 关卡卡片上的一句剧情：通关前是前情，通关后是小结（docs/27） */
+  .stage-blurb {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.6rem;
+    padding: 0.45rem 0.7rem;
+    border-left: 2px solid var(--gold);
+    background: var(--gold-soft);
+    font-size: 0.875rem;
+    line-height: 1.75;
+    color: var(--ink-2);
+  }
+  .stage-blurb > span {
+    flex: 1;
+    min-width: 0;
+    text-wrap: pretty;
+  }
+  .stage-blurb > .btn {
+    flex: none;
+  }
+
   /* 神品流光描边 */
   .glow-border {
     position: relative;

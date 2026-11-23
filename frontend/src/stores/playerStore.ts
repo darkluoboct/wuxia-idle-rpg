@@ -34,6 +34,8 @@ import {
   innVisitDay,
   legacyAcupoints,
   planMapJourney,
+  autoSeatCompanions,
+  recruitedCompanionIds,
 } from '../../../shared/player.ts'
 import { effectiveMartialStats, equippedMartialSkills, hasWandererMastery } from '../../../shared/martialSchools.ts'
 import { storyProgressFlags } from '../../../shared/storyData.ts'
@@ -227,6 +229,13 @@ export const usePlayerStore = defineStore('wuxiaPlayer', () => {
     const key = EQUIP_SLOT_META[it.slot].field
     for (const p of Object.values(presets.value)) if (!p[key]) p[key] = id
   }
+  // 新入队的伙伴补进空着的左右翼（试玩；联机由服务端排）。同步触发，入队后紧接着的那一战就带上
+  watch(() => [player.value.id, recruitedCompanionIds(companionAffinity.value).join()] as const, ([id, ids], [prevId, prevIds]) => {
+    if (id !== prevId || onlineState.value || !limitsEnabled.value) return
+    const before = prevIds ? prevIds.split(',') : []
+    const newcomers = ids ? ids.split(',').filter((c) => !before.includes(c)) : []
+    if (newcomers.length) autoSeatCompanions(Object.values(presets.value), newcomers)
+  }, { flush: 'sync' })
   const mapArrivedAt = ref(Date.now())
   /** 给“故地相候”进度条用的粗粒度时钟 */
   const nowTick = ref(Date.now())

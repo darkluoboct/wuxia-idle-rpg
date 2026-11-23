@@ -3,6 +3,7 @@ import { ACUPOINTS, MEDICINES, getMapHerbs, COMPANIONS } from '@/config/gameData
 import { gaibangSilverGain } from '../../../shared/gaibang.ts'
 import { cultivatePlayer, cultivationRate, cultivationRates, idleQiNumerator, karmaAfterEvent, startIdle } from '../../../shared/player.ts'
 import { IDLE_CAP_MS } from '../../../shared/trialStages.ts'
+import { accrueSectChores, drawSectChores, sectChoreLine } from '../../../shared/sectDaily.ts'
 
 /** 离开超过一个时辰（两小时）才弹江湖邸报；不在场时有事发生则随时弹 */
 const AWAY_REPORT_MS = 2 * 3_600_000
@@ -136,6 +137,7 @@ export function useCultivation({
       ])
     }
     if (result.feastIngredient) logFeastIngredient(result.feastIngredient)
+    if (result.sectChores) logSectChores(result.sectChores)
     if (result.contestIngot) {
       appendLog('JIANGHU', [{ type: 'tag', text: '门派演武', tone: 'gold' }, { type: 'text', text: ` 上周演武论功，领得 ${result.contestIngot} 元宝。` }])
     }
@@ -156,8 +158,13 @@ export function useCultivation({
     const idle = settleMockIdle(now, true)
     const patrol = mockSettlePatrol(now)
     const { awards, xiangyang } = claimLocalXiangyang(now, since)
+    const sectChores = drawSectChores(player.value, currentLoadout.value, now)
+    if (sectChores) logSectChores(sectChores)
     markDaily('settle')
-    openAwayReport({ ...idle, ...patrol, ...(awards.length ? { xiangyang: awards } : {}), away: { since, ...(xiangyang ? { xiangyang } : {}) } }, now)
+    openAwayReport({
+      ...idle, ...patrol, ...(awards.length ? { xiangyang: awards } : {}), ...(sectChores ? { sectChores } : {}),
+      away: { since, ...(xiangyang ? { xiangyang } : {}) },
+    }, now)
   }
 
   function settleMockIdle(now: number, claim = false) {
@@ -173,6 +180,7 @@ export function useCultivation({
     }
     player.value.qiExp += gainedQi
     player.value.silver += gainedSilver
+    accrueSectChores(player.value, now - player.value.lastSettleAt)
     player.value.lastSettleAt = now
     onOfflineSettled(elapsedSec)
 
@@ -209,6 +217,16 @@ export function useCultivation({
     }
     p.stats.karma = karma
     return karma - prior
+  }
+
+  /** 挂机期间替师门办的差事：最近几件写进日志，最上面一行记功（docs/29） */
+  function logSectChores({ count, contrib, entries }: NonNullable<IdleGain['sectChores']>) {
+    for (const entry of entries.slice(-3)) {
+      const line = sectChoreLine(entry)
+      if (line) appendLog('JIANGHU', [{ type: 'text', text: `【${line.heading}】${line.text}` }])
+    }
+    appendLog('JIANGHU', [{ type: 'tag', text: '师门差事', tone: 'jade' },
+      { type: 'text', text: ` 挂机这些时辰，你替师门办了 ${count} 件差事，门派贡献 +${contrib}。` }])
   }
 
   function showIdleGain({ gainedQi, gainedSilver }: IdleGain, herbs: string[] = []) {

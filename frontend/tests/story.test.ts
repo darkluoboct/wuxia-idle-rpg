@@ -1019,6 +1019,7 @@ describe('主线 2-2 药蛇选择', () => {
     const resumed = newStore()
     resumed.continueGame()
     expect(resumed.player.storySnakeChoice).toBe('A')
+    const manorAtk = STORY_CHAPTERS.find(({ code }) => code === '2-2')!.bossAtk
     for (const replay of [false, true]) {
       resumed.challengeChapter(5)
       const report = resumed.activeBattle!
@@ -1027,7 +1028,7 @@ describe('主线 2-2 药蛇选择', () => {
       const enraged = report.events.filter((event) => event.statusApplied === '药蛇惊怒')
       expect(enraged).toMatchObject([{ round: 1, actorSlot: 'ENEMY_MAIN', targetSlot: 'ENEMY_MAIN' }])
       expect(enraged[0].segments).toContainEqual({
-        type: 'tag', text: '参仙老怪·梁子翁 · 药蛇惊怒 · 攻击 400 → 600 · 防御归零', tone: 'red',
+        type: 'tag', text: `参仙老怪·梁子翁 · 药蛇惊怒 · 攻击 ${manorAtk} → ${manorAtk * 1.5} · 防御归零`, tone: 'red',
       })
       expect(report.events.indexOf(enraged[0])).toBeLessThan(report.events.findIndex((event) => event.type === 'SKILL_CAST'))
       resumed.skipBattleToEnd()

@@ -1243,12 +1243,22 @@ function performStrike(
     }, events)
   }
   const weakSpot = target.combat?.weakSpot
-  if (regularOuter && target.weakSpotOpen && weakSpot && strike.weaponId === weakSpot.weaponId && target.shield === 0 && remaining > 0) {
+  // 罩门露出的那一回合，持对的兵刃出手就能刺中：常规外功或绝技都算（绝技也是这把兵刃使出来的）
+  const weaponStrike = regularOuter || (strike.isUlt && !extra && !trueAttack)
+  if (weaponStrike && target.weakSpotOpen && weakSpot && strike.weaponId === weakSpot.weaponId && target.shield === 0) {
     const source = { sourceId: weakSpot.weaponId, sourceName: ITEMS[weakSpot.weaponId]?.name ?? weakSpot.weaponId }
-    const bonus = resolveTrueDamage(remaining, target, remaining, [])
-    remaining = applyBonusDamage(source, bonus, target, {
-      actorSlot: unit.slot, targetHp: remaining, round, label: `刺中${weakSpot.name}`, category: 'true',
-    }, events)
+    if (remaining > 0) {
+      const bonus = resolveTrueDamage(remaining, target, remaining, [])
+      remaining = applyBonusDamage(source, bonus, target, {
+        actorSlot: unit.slot, targetHp: remaining, round, label: `刺中${weakSpot.name}`, category: 'true',
+      }, events)
+    } else if (targetHp > 0) {
+      // 这一击本身就致命：照样记作刺中罩门，战报里交代对手倒在哪一下
+      events.push({
+        round, type: 'EFFECT', actorSlot: unit.slot, targetSlot: target.unit.slot, effectSourceId: source.sourceId,
+        segments: [{ type: 'tag', text: `${source.sourceName} · 刺中${weakSpot.name}`, tone: 'gold' }],
+      })
+    }
   }
   if (!fullyCovered) {
     applyBleedOnHit(skill, target, { actorSlot: unit.slot, attackerAtk, targetHp: remaining, round }, effects, events)

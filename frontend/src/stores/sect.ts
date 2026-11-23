@@ -16,6 +16,8 @@ import {
 } from '../../../shared/sectProgress.ts'
 import { eligibleWandererEquipment, gaibangBeggingSilver, sectEquipmentRewardIds, WANDERER_EQUIPMENT } from '../../../shared/sectEquipment.ts'
 import { canReceiveSnakeRecipe } from '../../../shared/player.ts'
+import { resetSectChores } from '../../../shared/sectDaily.ts'
+import { buySectGood, SECT_TREASURIES, sectGoods, type SectGood } from '../../../shared/sectExchange.ts'
 import { GAIBANG_FINAL_DISHES } from '@/config/questData'
 import { usePlayerStore } from './playerStore'
 import { storeToRefs } from 'pinia'
@@ -28,7 +30,7 @@ import type { useChat } from './chat'
 import type { useCompanions } from './companions'
 import type { useArtifacts } from './artifacts'
 
-export function useSect({ actions, cultivation, battle, story, chat, companions, artifacts }: {
+export function useSect({ actions, cultivation, battle, story, chat, companions, artifacts, onJoined }: {
   actions: GameActions
   cultivation: Pick<ReturnType<typeof useCultivation>, 'settleMockIdle' | 'changeMockKarma'>
   battle: Pick<ReturnType<typeof useBattlePlayback>, 'isBattlePlaying' | 'startBattlePlayback' | 'startLocalBattle' | 'activeBattle'>
@@ -36,6 +38,8 @@ export function useSect({ actions, cultivation, battle, story, chat, companions,
   chat: Pick<ReturnType<typeof useChat>, 'postRumor'>
   companions: Pick<ReturnType<typeof useCompanions>, 'feast'>
   artifacts: Pick<ReturnType<typeof useArtifacts>, 'holdLocally' | 'loseLocally'>
+  /** 拜师成功：放拜师那一段剧情（shared/sectLore.ts） */
+  onJoined?: (sectId: string) => void
 }) {
   const playerStore = usePlayerStore()
   const {
@@ -52,6 +56,8 @@ export function useSect({ actions, cultivation, battle, story, chat, companions,
     limitsEnabled,
     learnedSkills,
     collectionBonus,
+    pillInventory,
+    herbInventory,
   } = storeToRefs(playerStore)
   const { learnSkill, gainItem, companionOf } = playerStore
   const uiStore = useGameUiStore()
@@ -103,12 +109,14 @@ export function useSect({ actions, cultivation, battle, story, chat, companions,
       if (result.action !== 'join') return
       recordSectEquipment(result.items ?? [])
       showToast(`恭喜拜入【${result.name}】！`, 'gold')
+      onJoined?.(sectId)
     }, () => {
       const hasIntro = !!sect.introFlag && storyFlags.value.includes(sect.introFlag)
       settleMockIdle(Date.now())
       player.value.currentSectId = sect.id
       player.value.sectRank = 1
       delete player.value.gaibangBranch
+      resetSectChores(player.value)
       player.value.sectContribution = 100 + (hasIntro ? (sect.introBonus ?? 0) : 0)
       for (const id of sect.signatureSkills[0] ?? []) learnSkill(id)
       claimSectEquipment()
@@ -119,6 +127,7 @@ export function useSect({ actions, cultivation, battle, story, chat, companions,
         ...(hasIntro ? [{ type: 'text' as const, text: `（凭引荐信入门，起始门派贡献 +${sect.introBonus}）` }] : []),
       ])
       showToast(`恭喜拜入【${sect.name}】！`, 'gold')
+      onJoined?.(sectId)
     })
   }
 
@@ -349,6 +358,7 @@ export function useSect({ actions, cultivation, battle, story, chat, companions,
         player.value.sectContribution = 0
         player.value.isGuardingLibrary = false
         delete player.value.gaibangBranch
+        resetSectChores(player.value)
         appendLog('JIANGHU', [
           { type: 'tag', text: '圆满出师', tone: 'gold' },
           { type: 'text', text: ` 你拜别「${oldSect.name}」，保留了学过的武功，也可以再拜别的门派。` },
@@ -367,6 +377,7 @@ export function useSect({ actions, cultivation, battle, story, chat, companions,
       player.value.sectContribution = 0
       player.value.isGuardingLibrary = false
       delete player.value.gaibangBranch
+      resetSectChores(player.value)
       player.value.bountyUntil = Date.now() + 1000 * 3600 * 48
       const lostKarma = Math.abs(changeMockKarma(-120))
       if (oldSect.id === DAGOU_STAFF.sectId) artifacts.loseLocally('BETRAY', Date.now())
@@ -384,6 +395,33 @@ export function useSect({ actions, cultivation, battle, story, chat, companions,
       showToast(`已叛出「${oldSect.name}」，你将被通缉 48 小时。`, 'danger')
     })
   }
+  // ==================== 师门宝库（shared/sectExchange.ts，docs/29） ====================
+  const sectTreasury = computed(() => currentSect.value ? SECT_TREASURIES[currentSect.value.id] : undefined)
+  const sectGoodsList = computed(() => currentSect.value ? sectGoods(currentSect.value, learnedSkills.value) : [])
+
+  function exchangeSectGood(goodId: string, count = 1) {
+    const sect = currentSect.value
+    if (!sect) return
+    const announce = (good: Pick<SectGood, 'name' | 'tier'>, n: number, price: number) => {
+      appendLog('JIANGHU', [{ type: 'tag', text: '师门宝库', tone: 'gold' },
+        { type: 'text', text: ` 以 ${price} 点门派贡献换得【${good.name}】×${n}。` }])
+      showToast(`换得${good.name} ×${n}`, 'gold')
+    }
+    return actions.run('sect', { action: 'exchange', sectId: sect.id, goodId, count }, (result) => {
+      if (result.action !== 'exchange') return
+      const good = sectGoods(sect, learnedSkills.value).find(({ id }) => id === result.goodId)
+      if (good) announce(good, result.count, result.price)
+    }, () => {
+      const stock = {
+        pills: pillInventory.value, medicines: player.value.battleMedicines ??= {},
+        herbs: herbInventory.value, fragments: player.value.skillFragments ??= {},
+      }
+      const result = buySectGood(player.value, stock, learnedSkills.value, goodId, count, Date.now())
+      if ('error' in result) showToast(result.error, 'danger')
+      else announce(result.good, result.count, result.price)
+    })
+  }
+
   const gaibangDishes = computed(() => GAIBANG_FINAL_DISHES.map((dish) => ({
     ...dish,
     mapName: MAPS.find((map) => map.id === dish.mapId)?.name ?? dish.mapId,
@@ -416,5 +454,8 @@ export function useSect({ actions, cultivation, battle, story, chat, companions,
     answerGaibangDebate,
     prepareGaibangDish,
     leaveSect,
+    sectTreasury,
+    sectGoodsList,
+    exchangeSectGood,
   }
 }

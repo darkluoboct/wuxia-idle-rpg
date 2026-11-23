@@ -3,6 +3,9 @@ import {
   FEATURES, featureLockedText, featureRequirementText, featureUnlocked, markFeatureSeen, nextFeature, unseenFeature,
 } from '../../shared/features.ts'
 import { currentFtueQuest, FTUE_QUESTS, ftueVolumeDone } from '../../shared/ftueQuests.ts'
+import { storyGateBlock, trialGateBlock } from '../../shared/stageScripts.ts'
+import { STORY_CHAPTERS } from '@/config/gameData'
+import { TRIAL_STAGES } from '../../shared/trialStages.ts'
 import { createNewGameCharacter, createStarterCharacter } from '../../shared/player.ts'
 import { newStore, playNode } from './helpers'
 
@@ -116,13 +119,22 @@ describe('江湖行历 · 剧情带路', () => {
     expect(ftueVolumeDone({ index: 0, claimed: volumeOne.slice(1), forageCount: 0, refinedRecipeIds: [] }, 1)).toBe(false)
   })
 
-  it('每一阶的「前往」在轮到它时都已开放', () => {
+  it('每一阶的「前往」在轮到它时都已开放，主线和历练也不再被对方挡着', () => {
     const s = newStore('NEW', { gated: true })
     s.player.maxChapterId = 2 // 行历从序章打完之后开始
     for (const quest of FTUE_QUESTS) {
       expect(s.mainTabOpen(quest.jumpTab), quest.title).toBe(true)
       if (quest.jumpTab === 'JIANGHU' && quest.jumpSub) expect(s.jianghuTabOpen(quest.jumpSub as never), quest.title).toBe(true)
       if (quest.jumpTab === 'MARKET' && quest.jumpSub) expect(s.marketTabOpen(quest.jumpSub as never), quest.title).toBe(true)
+      if (quest.targetType === 'NODE') {
+        const node = STORY_CHAPTERS.find(({ id }) => id === quest.targetValue)!
+        expect(s.player.maxChapterId, quest.title).toBe(node.id)
+        expect(storyGateBlock(node, s.player), quest.title).toBeUndefined()
+      }
+      if (quest.targetType === 'STORY') {
+        const stage = TRIAL_STAGES.find(({ id }) => id === quest.targetValue)!
+        expect(trialGateBlock(stage, s.player), quest.title).toBeUndefined()
+      }
       // 达成这一阶：历练、主线、境界会推动玩法开放，其余不影响
       if (quest.targetType === 'STORY') s.player.trial.rewardedStageIds.push(Number(quest.targetValue))
       if (quest.targetType === 'NODE') s.player.maxChapterId = Math.max(s.player.maxChapterId, Number(quest.targetValue) + 1)

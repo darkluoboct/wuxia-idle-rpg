@@ -7,6 +7,7 @@ import { STANCE_META, TIER_META, stanceRelation, trialDropLabel } from '@/config
 import { hasTrialPart, patrolEncounterRate, TRIAL_PATROL_HOURS, TRIAL_REPLAY_HOURS, TRIAL_STAGES, TRIAL_VARIANTS, trialFirstClearKarma, trialItemOf, trialPartId, trialSetOf } from '../../../shared/trialStages.ts'
 import { QUSAN_CACHE_KEY, QUSAN_CACHE_STAGE, qusanCacheBlockReason } from '../../../shared/skillMastery.ts'
 import { karmaAfterEvent } from '../../../shared/player.ts'
+import { storyKey, trialGateBlock, trialKey } from '../../../shared/stageScripts.ts'
 import ItemIcon from './ItemIcon.vue'
 import PortraitCard from './PortraitCard.vue'
 import TrialRewardTray from './TrialRewardTray.vue'
@@ -55,7 +56,11 @@ const firstKarma = computed(() => {
   return karmaAfterEvent(karma, trialFirstClearKarma(stage.value), store.currentLoadout.headId) - karma
 })
 const relation = computed(() => stage.value && stanceRelation(store.currentLoadout.stance, stage.value.boss.stance))
-const canChallenge = computed(() => !!stage.value && !busy.value && state(stage.value.id) !== '未开放' && progress(stage.value.id) === 100)
+/** 本关的一句剧情：通关前是前情，通关后是小结 */
+const blurb = computed(() => stage.value && store.stageBlurb(trialKey(stage.value.code)))
+/** 新角色的历练首战要先打完时间线上紧挨着的主线节点（docs/27 §四） */
+const gate = computed(() => stage.value && trialGateBlock(stage.value, store.player))
+const canChallenge = computed(() => !!stage.value && !busy.value && state(stage.value.id) !== '未开放' && progress(stage.value.id) === 100 && !gate.value)
 
 function progress(id: number) {
   const required = TRIAL_PATROL_HOURS[id] ?? 0
@@ -71,6 +76,13 @@ function locate(id: number) {
   selected.value = id
   list.value?.querySelector(`[data-stage="${id}"]`)?.scrollIntoView({ block: 'nearest' })
 }
+// 剧情结语点「前往下一回」：选中那一关
+watch(() => store.stageFocus, (key) => {
+  const target = key?.startsWith('T') && TRIAL_STAGES.find((s) => trialKey(s.code) === key)
+  if (!target) return
+  store.stageFocus = undefined
+  locate(target.id)
+}, { immediate: true })
 watch([list, () => stage.value?.id], ([el, id], [, previous]) => {
   if (id !== previous && detail.value) detail.value.scrollTop = 0
   el?.querySelector(`[data-stage="${id}"]`)?.scrollIntoView({ block: 'nearest' })
@@ -133,6 +145,10 @@ watch([list, () => stage.value?.id], ([el, id], [, previous]) => {
               </span>
               <span v-if="stage.id <= trial.maxStageId" class="tabular-nums text-ink2">巡历 {{ progress(stage.id) }}%</span>
             </div>
+            <p v-if="blurb" class="stage-blurb max-w-[65ch]">
+              <span>{{ blurb.text }}</span>
+              <button v-if="blurb.reviewable" class="btn btn-sm" @click="store.reviewStage(trialKey(stage.code))">重温</button>
+            </p>
             <p class="hint max-w-[65ch]">{{ stage.mechanicTip }}</p>
           </div>
           <PortraitCard bare class="workbench-portrait min-w-0" :name="stage.boss.name" :subtitle="stage.boss.title" :style-type="stage.boss.portrait" />
@@ -191,9 +207,13 @@ watch([list, () => stage.value?.id], ([el, id], [, previous]) => {
           @click="store.replayTrialBoss(stage.id, answers[stage.id] ?? undefined, true)">复战入场即撤退</button>
         <button v-if="stage.replayPartIds" class="btn btn-sm btn-gold" :disabled="busy || replay < TRIAL_REPLAY_HOURS"
           @click="store.replayTrialBoss(stage.id, answers[stage.id] ?? undefined)">首领复战 {{ replay.toFixed(1) }}/{{ TRIAL_REPLAY_HOURS }}h</button>
+        <template v-if="gate">
+          <span class="hint mr-auto">巡历够了以后，先打主线 {{ gate.code }}「{{ gate.title }}」，这里才能首战。</span>
+          <button class="btn btn-sm btn-gold" @click="store.gotoStage(storyKey(gate.code))">先去主线 {{ gate.code }}</button>
+        </template>
         <button v-if="wearsRetreatBoots && state(stage.id) !== '未开放'" class="btn btn-sm" :disabled="!canChallenge"
-          @click="store.challengeTrialStage(stage.id, answers[stage.id] ?? undefined, true)">入场即撤退</button>
-        <button class="btn btn-sm btn-seal" :disabled="!canChallenge" @click="store.challengeTrialStage(stage.id, answers[stage.id] ?? undefined)">
+          @click="store.enterTrialStage(stage.id, answers[stage.id] ?? undefined, true)">入场即撤退</button>
+        <button class="btn btn-sm btn-seal" :disabled="!canChallenge" @click="store.enterTrialStage(stage.id, answers[stage.id] ?? undefined)">
           {{ state(stage.id) === '已通关' ? '再战一次' : state(stage.id) === '未开放' ? '未开放' : progress(stage.id) === 100 ? '拔剑试炼' : '巡历中' }}
         </button>
       </footer>

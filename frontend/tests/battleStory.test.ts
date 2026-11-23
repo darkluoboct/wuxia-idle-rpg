@@ -36,6 +36,7 @@ import {
   CHAPTER_ONE_TITLE,
   TRIAL_PATROL_HOURS,
   TRIAL_REPLAY_HOURS,
+  trialBossHp,
   trialPartId,
   trialPuzzleOutcome,
   trialStageOf,
@@ -547,8 +548,8 @@ describe('终南金雁与铁枪庙的战斗机制', () => {
       const report = store.activeBattle!
       const unit = report.units.find((entry) => entry.slot === 'ENEMY_MAIN')!
       const changes = report.events.filter((event) => event.actorSlot === unit.slot && event.mpDelta)
-      expect(changes[0]).toMatchObject({ round: 3, rageDelta: -85, mpDelta: -1305 })
-      expect(changes[1]).toMatchObject({ round: 3, effectSourceId: 'quanzhen_tuna', mpDelta: 313 })
+      expect(changes[0]).toMatchObject({ round: 3, rageDelta: -85, mpDelta: -1181 })
+      expect(changes[1]).toMatchObject({ round: 3, effectSourceId: 'quanzhen_tuna', mpDelta: 284 })
       expect(store.liveUnitStates.ENEMY_MAIN.mp).toBe(unit.maxMp)
       store.skipBattleToEnd()
       expect(store.liveUnitStates.ENEMY_MAIN.mp).toBe(unit.maxMp + changes.reduce((total, event) => total + event.mpDelta!, 0))
@@ -1326,6 +1327,10 @@ describe('射雕三绝、重阳遗泽与东邪西毒', () => {
 
   it('历练正常入口按首领上限结算东邪西毒，跳过回放保留引爆战报和气血', () => {
     const store = newStore('NEW')
+    // 只验引爆的结算与回放，首领按关卡等级的基准血量（首战演出调过的血量见 volumeOne）
+    const boss = trialStageOf(22)!.boss
+    const tunedHp = boss.hp
+    boss.hp = trialBossHp(22)
     try {
       Object.assign(store.player.stats, player.stats, { con: 95 })
       store.trial.maxStageId = 22
@@ -1341,6 +1346,7 @@ describe('射雕三绝、重阳遗泽与东邪西毒', () => {
       expect(store.logs.filter((entry) => entry.channel === 'BATTLE').flatMap((entry) => entry.segments))
         .toContainEqual({ type: 'damage', value: damage, category: 'true' })
     } finally {
+      boss.hp = tunedHp
       store.closeBattleStage()
     }
   })

@@ -23,6 +23,8 @@ import { huashanSeason } from '../../shared/huashan.ts'
 import { createStarterCharacter, innVisitDay, legacyAcupoints } from '../../shared/player.ts'
 import type { AnnouncementDTO, ChatBootstrapDTO, RoomNoticesDTO, MailDTO, ArtifactBoardDTO, ArtifactResult, AuctionBoardDTO, AuctionResult, AwakenResult, BattleReportDTO, BountyBoardDTO, BountyEntryDTO, FeastResult, FtueClaimResult, GachaResult, GameAction, HuashanBoardDTO, HuashanResult, IdleGain, LibraryResult, LibraryStatusDTO, OriginId, PlayerSnapshot, RaidId, RaidMirrorBoardDTO, ReunionResult, RoomPlayerDTO, ShopGoodsDTO, ChatMessageDTO, ChatPrivateBoardDTO, ChatSendDTO, SectContestBoardDTO, SectContestResult, SectResult, StallBoardDTO, StallResult, StoryAdventureResult, StoryChallengeResult, TrialChallengeResult, TrialPatrolStatusDTO, TrialReplayResult, WsServerEvent, XiangyangBoardDTO, XiangyangResult } from '../../shared/protocol.ts'
 import { QUANZHEN_LIBRARY } from '../../shared/quanzhen.ts'
+import { sectChoreOf } from '../../shared/sectDaily.ts'
+import { fragmentGoodId } from '../../shared/sectExchange.ts'
 import { BETRAYAL_BOUNTY, SECT_CHIEF_SALUTE_QI, SECT_SALUTE_QI, sectContestEndsAt, sectContestWeek } from '../../shared/sectProgress.ts'
 import { hasTrialPart, trialPartId, trialSetOfStage, trialStageOf } from '../../shared/trialStages.ts'
 import { ONLINE_STORY_CHAPTERS, ONLINE_STORY_PROGRESS_VERSION } from '../../shared/storyData.ts'
@@ -341,6 +343,45 @@ describe('联机战斗', { skip: connection ? false : '请设置 GAME_TEST_DATAB
     } finally {
       fixedServerTime = undefined
     }
+  })
+
+  it('师门差事随挂机攒、收功记功；师门宝库按阶位与每周份数兑换，离开师门清零', async () => {
+    const hero = await createPlayer('sectchore')
+    const sectId = 'jiangnan_wuguan'
+    await hero.act('/sect', { action: 'join', sectId })
+    await db.query('UPDATE players SET last_settle_at = last_settle_at - $2 WHERE id = $1', [hero.id, 5 * 3_600_000])
+    const settled = await hero.act<IdleGain>('/cultivate/settle')
+    const chores = settled.result.sectChores!
+    assert.equal(chores.count, 2)
+    assert.ok(chores.entries.every(({ id }) => id.startsWith(`${sectId}.`) && sectChoreOf(id)))
+    assert.deepEqual(settled.snapshot.player.sectChores?.recent, chores.entries)
+    const rest = settled.snapshot.player.sectChores!.ms
+    assert.ok(rest >= 3_600_000 && rest < 3_700_000, String(rest))
+    assert.equal(settled.snapshot.player.sectContribution, 100 + chores.contrib)
+    // 再收一次功：不满一个时辰，不记
+    assert.equal((await hero.act<IdleGain>('/cultivate/settle')).result.sectChores, undefined)
+
+    await profile(hero.id, { sectContribution: 1000 })
+    const before = await hero.read()
+    const exchange = (goodId: string, count: number) => ({ action: 'exchange', sectId, goodId, count })
+    const bought = await hero.act<SectResult>('/sect', exchange('tongmai_dan', 2))
+    assert.deepEqual(bought.result, { action: 'exchange', goodId: 'tongmai_dan', count: 2, price: 360 })
+    assert.equal(bought.snapshot.player.sectContribution, 640)
+    assert.equal(bought.snapshot.pillInventory?.tongmai_dan, (before.pillInventory?.tongmai_dan ?? 0) + 2)
+    for (const [goodId, count, message] of [['tongmai_dan', 2, '本周还能兑换 1 份'], ['forge', 1, '升到第 2 阶'], ['kongming_quan', 1, '宝库里没有']] as const) {
+      const refused = await hero.post('/sect', exchange(goodId, count))
+      assert.equal(refused.statusCode, 409)
+      assert.equal(refused.json().code, 'SECT_EXCHANGE_UNAVAILABLE')
+      assert.ok(refused.json().message.includes(message), refused.body)
+    }
+    const fragments = await hero.act<SectResult>('/sect', exchange(fragmentGoodId('kaishan_zhang'), 5))
+    assert.equal(fragments.snapshot.player.skillFragments?.kaishan_zhang, (before.player.skillFragments?.kaishan_zhang ?? 0) + 5)
+    assert.equal(fragments.snapshot.player.sectContribution, 640 - 50)
+
+    const left = await hero.act<SectResult>('/sect', { action: 'graduate', sectId })
+    assert.equal(left.snapshot.player.sectContribution, 0)
+    assert.equal(left.snapshot.player.sectChores, undefined)
+    assert.equal((await hero.post('/sect', exchange('tongmai_dan', 1))).json().code, 'SECT_CHANGED')
   })
 
   type RaidEventData = { [E in Extract<WsServerEvent, { event: 'TEAM_ROOM_SYNC' | 'RAID_REPORT' }> as E['event']]: E['data'] }
@@ -838,7 +879,7 @@ describe('联机战斗', { skip: connection ? false : '请设置 GAME_TEST_DATAB
     assert.deepEqual(oldReplay.result, receipt)
     assert.deepEqual(oldReplay.snapshot.rewardedChapters, restored.rewardedChapters)
     const manor = await player.act<StoryChallengeResult>(oldPath)
-    assert.equal(manor.result.report.units.find((unit) => unit.slot === 'ENEMY_MAIN')?.maxHp, 8200)
+    assert.equal(manor.result.report.units.find((unit) => unit.slot === 'ENEMY_MAIN')?.maxHp, ONLINE_STORY_CHAPTERS.find(({ code }) => code === '2-2')!.bossHp)
     assert.equal(manor.result.firstClear, false)
     assert.equal(manor.result.report.rewards, undefined)
     assert.equal(manor.snapshot.player.qiExp, restored.player.qiExp)
@@ -1822,8 +1863,17 @@ describe('联机战斗', { skip: connection ? false : '请设置 GAME_TEST_DATAB
     // 序章就是主线 1-1：打赢后历练开放，客栈仍要等 1-2
     const prologue = await newcomer.act<StoryChallengeResult>('/story/1-1/challenge')
     assert.equal(prologue.result.report.winner, 'ALLY')
+    // 剧情时间线上 1-2 接在历练第 1 关之后（docs/27 §四）
+    assert.equal(await code('/story/1-2/challenge'), 'CHAPTER_GATED')
     assert.equal((await newcomer.post('/trial/1/challenge')).statusCode, 200)
     assert.equal(await code('/market/inn/gift', { companionId: 'kezhene', favorite: false }), 'FEATURE_LOCKED')
+    // 历练第 2 关接在 1-2 之后：首战要先打完 1-2；打完 1-2，新入队的郭靖自动编进空着的一翼
+    assert.equal(await code('/trial/2/challenge'), 'TRIAL_GATED')
+    await strength(newcomer.id, 30, 30, 5, 1, 24)
+    const zuixian = await newcomer.act<StoryChallengeResult>('/story/1-2/challenge')
+    assert.equal(zuixian.result.report.winner, 'ALLY')
+    assert.ok(zuixian.snapshot.loadouts.every((preset) => [preset.leftCompanionId, preset.rightCompanionId].includes('guojing')))
+    assert.notEqual(await code('/trial/2/challenge'), 'TRIAL_GATED')
     const seen = await newcomer.act('/features/seen', { featureId: 'TRIAL' })
     assert.deepEqual(seen.snapshot.player.featuresSeen, ['TRIAL'])
     const again = await newcomer.act('/features/seen', { featureId: 'TRIAL' })

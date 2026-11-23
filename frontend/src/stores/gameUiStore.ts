@@ -8,6 +8,7 @@ import { formatBattleStatBonuses } from '../../../shared/combatMeta.ts'
 import { temperedItem } from '../../../shared/equipmentForge.ts'
 import { sectEquipmentSetOf } from '../../../shared/sectEquipment.ts'
 import { trialAffixLabel, trialAffixQuality, trialSetOf } from '../../../shared/trialStages.ts'
+import type { StageKey } from '../../../shared/stageScripts.ts'
 import { usePlayerStore } from './playerStore'
 import { useInterfacePrefs } from './interfacePrefs'
 import { useGameClock } from '@/composables/useGameClock'
@@ -30,6 +31,8 @@ export const useGameUiStore = defineStore('wuxiaUi', () => {
   const activeTab = ref<MainTab>('CULTIVATE')
   const jianghuTab = ref<'STORY' | 'TRIAL' | 'MAPS' | 'RAID' | 'XIANGYANG' | 'BOUNTY'>('TRIAL')
   const bountyTargetId = ref<string>()
+  /** 剧情结语「前往」要打开的那一回；江湖页与历练页看到后选中它再清空 */
+  const stageFocus = ref<StageKey>()
   const arsenalTab = ref<'SKILLS' | 'SQUAD' | 'EQUIP' | 'BAG' | 'MERIDIAN'>('SKILLS')
   // 窄屏下左 / 右侧栏以抽屉形式呈现
   const worldPane = ref<'SOCIAL' | 'EVENTS' | 'LOGS'>('SOCIAL')
@@ -173,6 +176,7 @@ export const useGameUiStore = defineStore('wuxiaUi', () => {
     jianghuTab,
     marketTab,
     bountyTargetId,
+    stageFocus,
     inspectModal,
     confirmDialog,
     toasts,

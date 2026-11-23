@@ -5,8 +5,8 @@ import { IS_MOCK_MODE } from '@/network/apiClient'
 import { COMPANIONS, ONLINE_STORY_CHAPTERS, STORY_CHAPTERS } from '@/config/gameData'
 import { STANCE_META, stanceRelation } from '@/config/uiMeta'
 import type { LoadoutPresetDTO } from '@/network/protocol'
-import dusk from '@/assets/_optimized/scenes/jiaxing-dusk.webp'
 import InkFigure from './InkFigure.vue'
+import InkScroll from './ui/InkScroll.vue'
 import { ORIGINS } from '../../../shared/origins.ts'
 
 /**
@@ -56,33 +56,26 @@ async function fight() {
   if (busy.value) return
   attempted.value = true
   if (store.player.activePresetIdx !== chosen.value) await store.switchLoadout(chosen.value)
-  await store.challengeChapter(node.id)
+  // 与江湖页同走关卡剧情入口；1-1 的结语就是忘机客的剧情卡
+  await store.enterStoryNode(node.id)
 }
 </script>
 
 <template>
-  <section class="prologue" role="dialog" aria-modal="true" aria-labelledby="prologue-title">
-    <img class="prologue-scene" :src="dusk" alt="" aria-hidden="true" />
-    <div class="prologue-shade" aria-hidden="true" />
-
-    <header class="prologue-head">
-      <span class="prologue-seal">序章</span>
-      <span>第一卷 · 射雕篇</span>
-    </header>
-
-    <article v-if="!atStance" :key="page" class="prologue-scroll">
+  <InkScroll seal="序章" label="第一卷 · 射雕篇" labelledby="prologue-title">
+    <article v-if="!atStance" :key="page" class="ink-page">
       <h2 id="prologue-title" class="font-brush">{{ current.title }}</h2>
       <p>{{ current.text }}</p>
       <footer>
-        <ol class="prologue-dots" aria-label="序章进度">
+        <ol class="ink-dots" aria-label="序章进度">
           <li v-for="(_, i) in pages" :key="i" :aria-current="i === page ? 'step' : undefined" />
         </ol>
-        <button class="prologue-skip" @click="page = pages.length">跳过剧情</button>
-        <button class="prologue-next" @click="page++">{{ page === pages.length - 1 ? '挺身而出' : '继续' }}</button>
+        <button class="ink-skip" @click="page = pages.length">跳过剧情</button>
+        <button class="ink-next" @click="page++">{{ page === pages.length - 1 ? '挺身而出' : '继续' }}</button>
       </footer>
     </article>
 
-    <article v-else class="prologue-scroll prologue-duel">
+    <article v-else class="ink-page prologue-duel">
       <h2 id="prologue-title" class="font-brush">{{ attempted ? '再来一次' : '拔剑' }}</h2>
       <div class="prologue-foe">
         <div class="prologue-figure"><InkFigure :style-type="node.bossPortrait" :name="node.bossName" /></div>
@@ -113,46 +106,13 @@ async function fight() {
       </div>
       <footer>
         <span class="prologue-hint">这一战不能跳过</span>
-        <button class="prologue-next" :disabled="busy" @click="fight">以{{ STANCE_META[store.presets[chosen].stance].name }}出手</button>
+        <button class="ink-next" :disabled="busy" @click="fight">以{{ STANCE_META[store.presets[chosen].stance].name }}出手</button>
       </footer>
     </article>
-  </section>
+  </InkScroll>
 </template>
 
 <style scoped>
-.prologue {
-  position: fixed; inset: 0; z-index: 75; isolation: isolate; overflow: hidden;
-  display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 1.5rem;
-  color: #eee6d8; background: #12171c; font-family: var(--font-body);
-}
-.prologue-scene { position: absolute; z-index: -2; inset: 0; width: 100%; height: 100%; object-fit: cover; filter: saturate(.55) brightness(.62); animation: prologue-drift 30s ease-out both; }
-.prologue-shade { position: absolute; z-index: -1; inset: 0; background: radial-gradient(ellipse 60% 70% at 50% 55%, #0c1014a0, #0a0d10ee 85%); }
-.prologue-head { position: absolute; top: 1.4rem; left: 2rem; display: flex; align-items: center; gap: .7rem; font-size: .85rem; letter-spacing: .3em; color: #cdb88f; }
-.prologue-seal { writing-mode: vertical-rl; padding: .3rem .15rem; border-radius: 45%; background: #9a2c2d; font-size: .8rem; letter-spacing: .1em; color: #f6e6c8; box-shadow: inset 0 0 0 1px #d57e6850; }
-
-.prologue-scroll {
-  width: min(44rem, 100%); padding: 2.2rem 2.6rem 1.6rem;
-  border-block: 1px solid #c6a66a70; background: linear-gradient(180deg, #161b20e6, #12161bf2);
-  box-shadow: 0 1.5rem 3rem -1rem #000c; animation: prologue-in .5s ease-out both;
-}
-.prologue-scroll h2 { margin: 0 0 1rem; font-size: 2.4rem; line-height: 1.1; color: #f4dfb1; letter-spacing: .06em; }
-.prologue-scroll > p { margin: 0; font-size: 1.12rem; line-height: 2; color: #e4dccd; text-wrap: pretty; }
-.prologue-scroll footer { display: flex; align-items: center; gap: 1rem; margin-top: 1.6rem; }
-
-.prologue-dots { display: flex; gap: .45rem; margin: 0 auto 0 0; padding: 0; list-style: none; }
-.prologue-dots li { width: .45rem; height: .45rem; border-radius: 50%; background: #c6a66a55; }
-.prologue-dots li[aria-current] { background: #e6c88a; }
-.prologue-skip { font-size: .9rem; color: #b9ab90; text-decoration: underline; text-underline-offset: .25rem; }
-.prologue-skip:hover { color: #f4dfb1; }
-.prologue-next {
-  min-width: 9rem; min-height: 2.8rem; padding: 0 1.4rem; border: 1px solid #e0b46a; border-radius: 2px;
-  background: linear-gradient(180deg, #a8332c, #7e2420); color: #fbefd6; font: 1.35rem/1 var(--font-brush); letter-spacing: .08em;
-  box-shadow: inset 0 0 0 1px #f0c08a40, 0 .5rem 1rem -.5rem #000;
-}
-.prologue-next:hover:not(:disabled) { filter: brightness(1.12); }
-.prologue-next:disabled { opacity: .55; cursor: wait; }
-.prologue-next:focus-visible, .prologue-skip:focus-visible, .prologue-stances button:focus-visible { outline: 2px solid #f4dfb1; outline-offset: 3px; }
-
 .prologue-duel { padding-top: 1.8rem; }
 .prologue-foe { display: flex; align-items: center; gap: 1rem; margin-bottom: .9rem; }
 .prologue-figure { width: 4.4rem; height: 5.8rem; flex: none; overflow: hidden; border: 1px solid #c6a66a50; background: #0d1013; }
@@ -167,6 +127,7 @@ async function fight() {
   border: 1px solid #c6a66a40; background: #0e1216c0; text-align: left; color: #d8cfbf;
 }
 .prologue-stances button:hover { border-color: #c6a66a90; }
+.prologue-stances button:focus-visible { outline: 2px solid #f4dfb1; outline-offset: 3px; }
 .prologue-stances button[aria-checked="true"] { border-color: #e6c88a; background: #2a2418d0; box-shadow: inset 0 0 0 1px #e6c88a60; }
 .prologue-stances b { font-size: 1.6rem; line-height: 1; color: #f4dfb1; }
 .prologue-stances span { font-size: .85rem; color: #b9ab90; }
@@ -176,15 +137,7 @@ async function fight() {
 .prologue-stances [data-relation="EVEN"] em { color: #b9ab90; }
 .prologue-hint { margin-right: auto; font-size: .85rem; color: #9e927c; }
 
-@keyframes prologue-in { from { opacity: 0; transform: translateY(.6rem); } to { opacity: 1; transform: none; } }
-@keyframes prologue-drift { from { transform: scale(1.08); } to { transform: scale(1); } }
-@media (prefers-reduced-motion: reduce) { .prologue-scene, .prologue-scroll { animation: none; } }
 @media (max-width: 640px) {
-  .prologue { padding: 1rem; }
-  .prologue-head { left: 1rem; }
-  .prologue-scroll { padding: 1.6rem 1.2rem 1.2rem; }
-  .prologue-scroll h2 { font-size: 2rem; }
-  .prologue-scroll > p { font-size: 1rem; }
   .prologue-stances { grid-template-columns: 1fr; }
 }
 </style>

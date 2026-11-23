@@ -809,13 +809,13 @@ describe('混天气功、江南七怪与白驼驭蛇的出手条件', () => {
       }
       store.challengeChapter(5)
       const [guard, leader] = mainCasts(store.activeBattle!)
-      expect(guard).toMatchObject({ targetSlot: 'ENEMY_LEFT', hpDelta: -200 })
-      expect(guard.segments).toContainEqual(jiangnanTag(21))
+      expect(guard).toMatchObject({ targetSlot: 'ENEMY_LEFT', hpDelta: -203 })
+      expect(guard.segments).toContainEqual(jiangnanTag(22))
       expect(leader.targetSlot).toBe('ENEMY_MAIN')
       expect(hasTag(leader, '对刚猛增伤')).toBe(false)
       store.skipBattleToEnd()
       const logs = store.logs.filter((entry) => entry.channel === 'BATTLE').flatMap((entry) => entry.segments)
-      expect(logs).toContainEqual(jiangnanTag(21))
+      expect(logs).toContainEqual(jiangnanTag(22))
     } finally {
       store.closeBattleStage()
     }

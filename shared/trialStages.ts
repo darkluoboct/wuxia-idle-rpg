@@ -108,6 +108,21 @@ export function trialBossAtk(level: number) {
   return Math.round(28 * Math.pow(1.14, level - 1))
 }
 
+/** 首胜真气按关卡等级的基准首领算，单关首领调过血量也不影响奖励 */
+export function trialFirstClearQi(stage: Pick<TrialStageConfig, 'id'>) {
+  return Math.round(trialBossHp(stage.id) * 2)
+}
+
+/** 首领内力按关卡等级的基准算：单关加血只拉长战斗，不改内力对拼（内力优势） */
+export function trialBossMp(stage: Pick<TrialStageConfig, 'id'>) {
+  return Math.round(trialBossHp(stage.id) * 0.45)
+}
+
+/** 首胜纹银的基准血量，同上 */
+export function trialRewardHp(stage: Pick<TrialStageConfig, 'id'>) {
+  return trialBossHp(stage.id)
+}
+
 const S = (slot: EquipSlotType, name: string, rest: Omit<TrialPartConfig, 'slot' | 'name'> = {}): TrialPartConfig =>
   ({ slot, name, ...rest })
 
@@ -1018,6 +1033,9 @@ interface StageSeed {
   title: string
   environment?: BattleEnvironment
   boss: [string, string, PortraitStyle]
+  /** 首领相对本关基准曲线的气血、攻击（%），用来调单关的战斗节奏；首胜奖励仍按基准算 */
+  hpPercent?: number
+  atkPercent?: number
   stance: StanceType
   combat?: EnemyCombatConfig
   guards?: (Omit<BattleEnemyGuard, 'hp' | 'atk'> & { hpPercent: number; atkPercent: number })[]
@@ -1042,38 +1060,38 @@ const JIN_DEATH_GUARD: EnemyCombatConfig = {
 
 const STAGE_SEEDS: StageSeed[] = [
   {
-    id: 1, title: '破庙夜雨 · 荒山草贼', environment: { rain: true, night: true }, boss: ['黑风寨逃寇·赖三', '绿林流寇', 'assassin'], stance: 'FIERCE',
+    id: 1, title: '破庙夜雨 · 荒山草贼', environment: { rain: true, night: true }, boss: ['黑风寨逃寇·赖三', '绿林流寇', 'assassin'], hpPercent: 350, atkPercent: 300, stance: 'FIERCE',
     combat: { creature: 'BANDIT', scareable: true, weapon: { form: 'BLADE', tier: 'green' }, alignment: 'HERETIC', karma: -15,
       strikeWeakness: { name: '刀势被破', matches: [{ skillIds: ['yuenv_jian', 'kaishan_zhang', 'nanshan_zhang'] }],
         status: { status: 'ATTACK_DOWN', percent: 30, rounds: 1 } } },
     setId: 'pomiao_caomang', firstClearParts: ['WEAPON', 'ARMOR'], tip: '越女剑或开山掌命中可破刀势，使他的攻击降低 30%。',
   },
-  { id: 2, title: '醉仙酒肆 · 淮南恶霸', boss: ['恶虎镖局弃徒·焦大亨', '江南酒楼恶霸', 'assassin'], stance: 'FIERCE', combat: { weapon: { form: 'ODD', tier: 'green' }, hitStreakWeakness: { rounds: 3, critPoints: 25, name: '重心失衡' } }, setId: 'zuixian_xingshang', firstClearParts: ['HEAD'], clearSkillId: 'tianchu_qigong', tip: '连续 3 回合命中可令他重心失衡，之后对他出手的暴击率提高 25 个百分点。' },
+  { id: 2, title: '醉仙酒肆 · 淮南恶霸', boss: ['恶虎镖局弃徒·焦大亨', '江南酒楼恶霸', 'assassin'], hpPercent: 750, atkPercent: 450, stance: 'FIERCE', combat: { weapon: { form: 'ODD', tier: 'green' }, hitStreakWeakness: { rounds: 3, critPoints: 25, name: '重心失衡' } }, setId: 'zuixian_xingshang', firstClearParts: ['HEAD'], clearSkillId: 'tianchu_qigong', tip: '连续 3 回合命中可令他重心失衡，之后对他出手的暴击率提高 25 个百分点。' },
   {
-    id: 3, title: '法华古寺 · 焦木盲僧', boss: ['法华寺知客·了妄和尚', '罗汉棍僧', 'monk'], stance: 'TAICHI',
+    id: 3, title: '法华古寺 · 焦木盲僧', boss: ['法华寺知客·了妄和尚', '罗汉棍僧', 'monk'], hpPercent: 450, atkPercent: 450, stance: 'TAICHI',
     combat: { def: 80, alignment: 'RIGHTEOUS', weapon: { form: 'STAFF', tier: 'blue' },
       strikeWeakness: { name: '护体棍势被破', matches: [{ pointStrike: true }, { stance: 'AGILE', lightSkill: true }], breakDefense: true } },
     setId: 'fahua_zuyi', firstClearParts: ['WRIST'], tip: '点穴招式或装配轻功后用奇门出手，命中可破护体棍势。',
   },
   {
-    id: 4, title: '醉仙楼头 · 盲侠柯镇恶', boss: ['飞天蝙蝠·柯镇恶', '江南七怪之首', 'assassin'], stance: 'FIERCE',
+    id: 4, title: '醉仙楼头 · 盲侠柯镇恶', boss: ['飞天蝙蝠·柯镇恶', '江南七怪之首', 'assassin'], hpPercent: 420, atkPercent: 500, stance: 'FIERCE',
     combat: { alignment: 'RIGHTEOUS', weapon: { form: 'STAFF', tier: 'purple' }, openingRage: 65,
       rageMove: { ...KE_POISON_DART, lightHitPenalty: 50 } },
     setId: 'jiangnan_qiguai', firstClearParts: ['BELT'], tip: '柯镇恶平时近身使杖，攒怒后掷出毒菱。轻功可扰乱其听声辨位。',
   },
   {
-    id: 5, title: '塞外瀚海 · 蒙古骑射手', boss: ['哲别麾下·帖木儿', '大漠神射斥候', 'assassin'], stance: 'AGILE',
+    id: 5, title: '塞外瀚海 · 蒙古骑射手', boss: ['哲别麾下·帖木儿', '大漠神射斥候', 'assassin'], hpPercent: 800, atkPercent: 480, stance: 'AGILE',
     combat: { range: 'RANGED', faction: 'MONGOL', mounted: true, weapon: { form: 'BOW', tier: 'blue' },
       strikeWeakness: { name: '贴身乱箭', matches: [{ forms: ['FIST', 'PALM', 'CLAW', 'KICK'] }], status: { status: 'DISARM', rounds: 1 } } },
     setId: 'damo_qibing', firstClearParts: ['BOOTS'], tip: '贴身拳掌、爪法或腿法命中可使他短暂无法射箭。',
   },
   {
-    id: 6, title: '荒山骷髅 · 塞外双煞残阵', boss: ['白驼山盗墓使·阴陵客', '黑风双煞爪牙', 'assassin'], stance: 'AGILE',
+    id: 6, title: '荒山骷髅 · 塞外双煞残阵', boss: ['白驼山盗墓使·阴陵客', '黑风双煞爪牙', 'assassin'], hpPercent: 800, atkPercent: 480, stance: 'AGILE',
     combat: { alignment: 'HERETIC', karma: -30, periodicOnHit: { status: 'bonePoison', attackPercent: 12, rounds: 2 } },
     setId: 'huangshan_kulou', firstClearParts: ['ACC'], tip: '阴陵客命中附带阴寒骨毒。全真吐纳功可抵抗骨毒。',
   },
   {
-    id: 7, title: '荒山绝杀 · 铜尸陈玄风', boss: ['铜尸·陈玄风', '黑风双煞', 'assassin'], stance: 'FIERCE',
+    id: 7, title: '荒山绝杀 · 铜尸陈玄风', boss: ['铜尸·陈玄风', '黑风双煞', 'assassin'], hpPercent: 1100, atkPercent: 450, stance: 'FIERCE',
     combat: { alignment: 'HERETIC', karma: -50, def: 140, openingShield: 240,
       weakSpot: { round: 5, name: '肚脐罩门', weaponId: 'xuantie_dagger', openingAttackPercent: 120, exposedAttackPercent: 150 } },
     setId: 'henglian_tongjia', firstClearParts: ['WEAPON', 'ARMOR'],
@@ -1081,33 +1099,33 @@ const STAGE_SEEDS: StageSeed[] = [
     replayPartIds: ['henglian_tongjia_weapon', 'henglian_tongjia_armor'],
   },
   {
-    id: 8, title: '张家口外 · 黄河四鬼截道', boss: ['断魂刀·沈青刚', '黄河四鬼', 'assassin'], stance: 'FIERCE',
+    id: 8, title: '张家口外 · 黄河四鬼截道', boss: ['断魂刀·沈青刚', '黄河四鬼', 'assassin'], hpPercent: 400, atkPercent: 350, stance: 'FIERCE',
     combat: SHEN_QINGGANG_COMBAT,
     guards: [{ name: '追命枪·吴青烈', title: '黄河四鬼', portrait: 'bandit', stance: 'FIERCE', hpPercent: 60, atkPercent: 65,
       combat: WU_QINGLIE_COMBAT }],
     setId: 'huanghe_sigui', firstClearParts: ['WEAPON'], tip: '沈青刚的刀势可封穴，吴青烈会追枪。先杀沈青刚，吴青烈攻击降低 40%。',
   },
   {
-    id: 9, title: '中都擂台 · 小王爷完颜康', boss: ['赵王世子·完颜康', '金国小王爷', 'assassin'], stance: 'AGILE',
+    id: 9, title: '中都擂台 · 小王爷完颜康', boss: ['赵王世子·完颜康', '金国小王爷', 'assassin'], hpPercent: 500, atkPercent: 350, stance: 'AGILE',
     combat: WANYAN_KANG_COMBAT,
     setId: 'jinwang_fuxiu', firstClearParts: ['HEAD'], tip: '完颜康攒满怒气时释放破盾流血的白骨爪。用太极招架可降低他的下一次攻击。',
   },
-  { id: 10, title: '赵王外院 · 鬼门龙王沙通天', boss: ['鬼门龙王·沙通天', '黄河帮帮主', 'assassin'], stance: 'FIERCE', combat: SHA_TONGTIAN_COMBAT, setId: 'huanghe_nilang', firstClearParts: ['WRIST'], clearSkillId: 'duanhun_qiang', tip: '沙通天第 1 回合蓄力怒浪排壑，下一回合可用兰花拂穴手打断。获胜可习得黄河断魂枪。', unlock: 'INNER_LEFT' },
-  { id: 11, title: '王府校场 · 千手人屠彭连虎', boss: ['千手人屠·彭连虎', '华北绿林大盗', 'assassin'], stance: 'AGILE', combat: PENG_LIANHU_COMBAT, setId: 'qianshou_panguan', firstClearParts: ['BELT'], tip: '他的暗器会施加针毒并有概率点穴。贴身短打命中可封住暗器。' },
+  { id: 10, title: '赵王外院 · 鬼门龙王沙通天', boss: ['鬼门龙王·沙通天', '黄河帮帮主', 'assassin'], hpPercent: 420, atkPercent: 350, stance: 'FIERCE', combat: SHA_TONGTIAN_COMBAT, setId: 'huanghe_nilang', firstClearParts: ['WRIST'], clearSkillId: 'duanhun_qiang', tip: '沙通天第 1 回合蓄力怒浪排壑，下一回合可用兰花拂穴手打断。获胜可习得黄河断魂枪。', unlock: 'INNER_LEFT' },
+  { id: 11, title: '王府校场 · 千手人屠彭连虎', boss: ['千手人屠·彭连虎', '华北绿林大盗', 'assassin'], hpPercent: 450, atkPercent: 350, stance: 'AGILE', combat: PENG_LIANHU_COMBAT, setId: 'qianshou_panguan', firstClearParts: ['BELT'], tip: '他的暗器会施加针毒并有概率点穴。贴身短打命中可封住暗器。' },
   {
-    id: 12, title: '药房秘坛 · 大手印灵智上人', boss: ['密宗大师·灵智上人', '西域密宗高僧', 'monk'], stance: 'FIERCE',
+    id: 12, title: '药房秘坛 · 大手印灵智上人', boss: ['密宗大师·灵智上人', '西域密宗高僧', 'monk'], hpPercent: 380, atkPercent: 280, stance: 'FIERCE',
     combat: LINGZHI_COMBAT,
     setId: 'xiyu_mizong', firstClearParts: ['BOOTS'], tip: '灵智上人开局使密宗大手印。刀剑命中可破其双肋气门，阻止第 4 回合开始的火毒。',
   },
   {
-    id: 13, title: '王府突围 · 参仙老怪梁子翁', boss: ['长白参仙·梁子翁', '长白山武学名宿', 'zhoubotong'], stance: 'AGILE',
+    id: 13, title: '王府突围 · 参仙老怪梁子翁', boss: ['长白参仙·梁子翁', '长白山武学名宿', 'zhoubotong'], hpPercent: 500, atkPercent: 280, stance: 'AGILE',
     combat: LIANG_ZIWENG_COMBAT,
     guards: [{ ...LIANG_SNAKE_GUARD, hpPercent: 42, atkPercent: 50 }],
     setId: 'changbai_canxian', firstClearParts: ['WEAPON', 'HEAD'], tip: '药蛇会从旁叠毒。先击败药蛇会让梁子翁攻击提高 50%，但护体防御归零。',
     replayPartIds: ['changbai_canxian_weapon', 'changbai_canxian_head'],
   },
   {
-    id: 14, title: '宝应松林 · 白驼少主欧阳克', boss: ['白驼山少主·欧阳克', '西毒嫡传', 'assassin'], stance: 'AGILE',
+    id: 14, title: '宝应松林 · 白驼少主欧阳克', boss: ['白驼山少主·欧阳克', '西毒嫡传', 'assassin'], stance: 'AGILE', hpPercent: 630, atkPercent: 500,
     combat: {
       speed: 210, preferFemaleCompanion: true, alignment: 'HERETIC', karma: -40, weapon: { form: 'ODD', tier: 'purple' },
       companionCounter: { id: 'huangrong', slot: 'ALLY_RIGHT', damageReductionPercent: 30, hitPenalty: 25 },
@@ -1115,20 +1133,20 @@ const STAGE_SEEDS: StageSeed[] = [
     setId: 'baituo_zheshan', firstClearParts: ['ACC'], tip: '欧阳克优先攻击女伴。右翼黄蓉在场时，他的伤害降低 30%、命中降低 25 个百分点。',
   },
   {
-    id: 15, title: '太湖水寨 · 归云庄翻江蛟', environment: { water: true }, boss: ['归云庄大统领·陆冠英', '太湖群盗首领', 'assassin'], stance: 'TAICHI',
+    id: 15, title: '太湖水寨 · 归云庄翻江蛟', environment: { water: true }, boss: ['归云庄大统领·陆冠英', '太湖群盗首领', 'assassin'], stance: 'TAICHI', hpPercent: 340, atkPercent: 500,
     combat: { weapon: { form: 'SPEAR', tier: 'blue' }, water: { def: 160, strikeWeakness: { name: '水上枪阵被破', matches: [{ stance: 'FIERCE' }], breakDefense: true } } },
     setId: 'taihu_shuizhai', firstClearParts: ['WEAPON'], tip: '刚猛架势命中可破水上枪阵，使护体防御归零。',
   },
-  { id: 16, title: '归云正堂 · 欺世盗名裘千丈', boss: ['江湖招摇客·裘千丈', '假裘千仞', 'zhoubotong'], stance: 'AGILE', combat: QIU_QIANZHANG_COMBAT, setId: 'jiamian_piaoping', firstClearParts: ['HEAD'], tip: '一次实扣气血超过 500 点便能识破障眼法，令他的防御归零。' },
-  { id: 17, title: '太湖芦苇 · 铁尸梅超风', boss: ['铁尸·梅超风', '黑风双煞', 'meichaofeng'], stance: 'FIERCE', combat: { female: true, alignment: 'HERETIC', karma: -50, weapon: { form: 'WHIP', tier: 'orange' }, rageSkillId: 'jiuyin_baiguzhua', hearingWeakness: { skillIds: ['jinyan_gong', 'bihai_chaosheng'], hitPenalty: 40 } }, setId: 'jiuyin_baigu', firstClearParts: ['WRIST'], clearItemId: 'xuantie_feizhua', tip: '梅超风攒怒后施展白骨爪。装备金雁功或用碧海潮生曲命中可扰乱她的听声辨位。获胜可取得白骨镀银九节鞭。' },
+  { id: 16, title: '归云正堂 · 欺世盗名裘千丈', boss: ['江湖招摇客·裘千丈', '假裘千仞', 'zhoubotong'], stance: 'AGILE', hpPercent: 570, atkPercent: 500, combat: QIU_QIANZHANG_COMBAT, setId: 'jiamian_piaoping', firstClearParts: ['HEAD'], tip: '一次实扣气血超过 500 点便能识破障眼法，令他的防御归零。' },
+  { id: 17, title: '太湖芦苇 · 铁尸梅超风', boss: ['铁尸·梅超风', '黑风双煞', 'meichaofeng'], stance: 'FIERCE', hpPercent: 370, atkPercent: 500, combat: { female: true, alignment: 'HERETIC', karma: -50, weapon: { form: 'WHIP', tier: 'orange' }, rageSkillId: 'jiuyin_baiguzhua', hearingWeakness: { skillIds: ['jinyan_gong', 'bihai_chaosheng'], hitPenalty: 40 } }, setId: 'jiuyin_baigu', firstClearParts: ['WRIST'], clearItemId: 'xuantie_feizhua', tip: '梅超风攒怒后施展白骨爪。装备金雁功或用碧海潮生曲命中可扰乱她的听声辨位。获胜可取得白骨镀银九节鞭。' },
   {
-    id: 18, title: '东海巨舶 · 桃花哑仆舵手', environment: { water: true }, boss: ['桃花哑仆领班·铜首', '黄药师座下哑仆', 'monk'], stance: 'FIERCE',
+    id: 18, title: '东海巨舶 · 桃花哑仆舵手', environment: { water: true }, boss: ['桃花哑仆领班·铜首', '黄药师座下哑仆', 'monk'], stance: 'FIERCE', hpPercent: 470, atkPercent: 500,
     combat: { def: 180, speed: 65, strikeWeakness: { name: '绕后破防', matches: [{ stance: 'AGILE' }], breakDefense: true },
       statusPulse: { every: 2, lastRound: 2, name: '巨锚震浪', rule: { status: 'FALL_IN_WATER', rounds: 1, nextRound: true }, waterOnly: true } },
     setId: 'canghai_kuanglan', firstClearParts: ['BELT'], tip: '奇门架势命中可绕后破防。铜首第 2 回合出手时会以巨锚震浪，落水者下回合无法行动。逆浪分波重靴可免疫。',
   },
   {
-    id: 19, title: '积翠深处 · 奇门九宫石阵', boss: ['九宫木人偶', '桃花岛石阵阵灵', 'monk'], stance: 'TAICHI',
+    id: 19, title: '积翠深处 · 奇门九宫石阵', boss: ['九宫木人偶', '桃花岛石阵阵灵', 'monk'], stance: 'TAICHI', hpPercent: 570, atkPercent: 500,
     combat: { def: 180, ninePalace: { minInsight: 28, gates: [
       { name: '休门', defensePercent: 120, attackPercent: 85 }, { name: '生门', defensePercent: 0, attackPercent: 80, opening: true },
       { name: '伤门', defensePercent: 100, attackPercent: 125 }, { name: '杜门', defensePercent: 150, attackPercent: 95 },
@@ -1137,9 +1155,9 @@ const STAGE_SEEDS: StageSeed[] = [
     ] } },
     setId: 'qimen_dunjia', firstClearParts: ['BOOTS'], tip: '八门循环，生门防御归零。悟性达到 28 的黄蓉可在生门引路，命中中宫后永久破阵。',
   },
-  { id: 20, title: '清音石洞 · 老顽童周伯通', boss: ['老顽童·周伯通', '全真教师叔祖', 'zhoubotong'], stance: 'TAICHI', combat: { openingMercy: { belowInt: 35, itemId: 'kongming_wantong_acc', attackPercent: 50 } }, setId: 'kongming_wantong', firstClearParts: ['ACC'], clearItemId: 'kongming_peach_sword', tip: '悟性低于 35 或随身带着促织笼，他的攻击会减半。获胜可得空明桃木剑。' },
+  { id: 20, title: '清音石洞 · 老顽童周伯通', boss: ['老顽童·周伯通', '全真教师叔祖', 'zhoubotong'], stance: 'TAICHI', hpPercent: 470, atkPercent: 500, combat: { openingMercy: { belowInt: 35, itemId: 'kongming_wantong_acc', attackPercent: 50 } }, setId: 'kongming_wantong', firstClearParts: ['ACC'], clearItemId: 'kongming_peach_sword', tip: '悟性低于 35 或随身带着促织笼，他的攻击会减半。获胜可得空明桃木剑。' },
   {
-    id: 21, title: '碧海听箫 · 东邪黄药师', boss: ['东邪·黄药师', '天下五绝·桃花岛主', 'huangyaoshi'], stance: 'AGILE', combat: HUANG_YAOSHI_COMBAT,
+    id: 21, title: '碧海听箫 · 东邪黄药师', boss: ['东邪·黄药师', '天下五绝·桃花岛主', 'huangyaoshi'], stance: 'AGILE', hpPercent: 1300, atkPercent: 500, combat: HUANG_YAOSHI_COMBAT,
     puzzle: { name: '奇门背诵', prompt: '休、生、伤、杜、景、死、惊、开八门中，哪一门可直入九宫中枢？',
       options: ['休门', '生门', '开门'], answer: '生门', round: 6,
       correctText: '背诵无误，第六回合全队免受乱心。', wrongText: '背诵有误，第六回合须继续抵挡乱心。' },
@@ -1148,50 +1166,50 @@ const STAGE_SEEDS: StageSeed[] = [
     victory: 'SURVIVE_ROUNDS', surviveRounds: 10, replayPartIds: ['bihai_chaosheng_weapon', 'bihai_chaosheng_acc'], unlock: 'RIGHT_ULT',
   },
   {
-    id: 22, title: '狂澜火船 · 白驼蛇奴统领', environment: { water: true }, boss: ['白驼山驭蛇长老·蛇奴统领', '白驼精锐', 'assassin'], stance: 'AGILE',
+    id: 22, title: '狂澜火船 · 白驼蛇奴统领', environment: { water: true }, boss: ['白驼山驭蛇长老·蛇奴统领', '白驼精锐', 'assassin'], stance: 'AGILE', hpPercent: 450, atkPercent: 500,
     combat: { alignment: 'HERETIC', karma: -35, def: 130,
       periodicOnHit: { status: 'snakeVenom', attackPercent: 12, rounds: 2, maxStacks: 3 },
       strikeWeakness: { name: '蛇阵被破', matches: [{ forms: ['PALM'], stance: 'FIERCE' }, { skillIds: ['mizong_da_shou'] }], breakDefense: true, stopPeriodic: true } },
     setId: 'baituo_yushe', firstClearParts: ['WEAPON'], tip: '白驼金丝锦袍可抵抗毒雾。刚猛掌法或火毒大手印命中可破蛇阵，阻止再叠蛇毒。',
   },
-  { id: 23, title: '压鬼孤岛 · 西毒欧阳锋残影', boss: ['西毒·欧阳锋', '天下五绝', 'ouyangfeng'], stance: 'FIERCE', combat: { alignment: 'HERETIC', karma: -100, weapon: { form: 'STAFF', tier: 'orange' }, charge: { round: 2, name: '蛤蟆扑', damageMultiplier: 2, taichiCounterPercent: 10 } }, setId: 'hama_nimai', firstClearParts: ['HEAD'], tip: '欧阳锋第 2 回合蓄力。兰花拂穴手可打断，太极可在扑出时引他撞石。' },
+  { id: 23, title: '压鬼孤岛 · 西毒欧阳锋残影', boss: ['西毒·欧阳锋', '天下五绝', 'ouyangfeng'], stance: 'FIERCE', hpPercent: 320, atkPercent: 500, combat: { alignment: 'HERETIC', karma: -100, weapon: { form: 'STAFF', tier: 'orange' }, charge: { round: 2, name: '蛤蟆扑', damageMultiplier: 2, taichiCounterPercent: 10 } }, setId: 'hama_nimai', firstClearParts: ['HEAD'], tip: '欧阳锋第 2 回合蓄力。兰花拂穴手可打断，太极可在扑出时引他撞石。' },
   {
-    id: 24, title: '牛家密室 · 侯通海与金兵斥候', boss: ['三头蛟·侯通海', '黄河帮三当家', 'assassin'], stance: 'FIERCE',
+    id: 24, title: '牛家密室 · 侯通海与金兵斥候', boss: ['三头蛟·侯通海', '黄河帮三当家', 'assassin'], stance: 'FIERCE', hpPercent: 240, atkPercent: 500,
     combat: { faction: 'JIN', alignment: 'HERETIC', karma: -35, weapon: { form: 'SPEAR', tier: 'blue' },
       strikeWeakness: { name: '肉瘤被点中', matches: [{ pointStrike: true }], hits: 3, status: { status: 'STUN', rounds: 2 } } },
-    guards: [{ name: '金国内廷斥候统领', title: '金兵暗探', portrait: 'assassin', stance: 'AGILE', hpPercent: 42, atkPercent: 58,
+    guards: [{ name: '金国内廷斥候统领', title: '金兵暗探', portrait: 'assassin', stance: 'AGILE', hpPercent: 100, atkPercent: 290,
       combat: { joinsRound: true, staysBehindLeader: true, speed: 112, openingConcealment: 10, faction: 'JIN', range: 'RANGED', weapon: { form: 'BOW', tier: 'purple' },
         leaderDown: { name: '斥候阵脚大乱', attackPercent: 70 } } }],
     setId: 'qianying_mixing', firstClearParts: ['WRIST'], tip: '斥候首回合隐蔽，会从旁射击。三次点穴命中使侯通海眩晕 2 回合，侯通海落败后斥候攻击降低 30%。',
   },
   {
-    id: 25, title: '湘西黑沼 · 神算子瑛姑', environment: { swamp: true }, boss: ['神算子·刘瑛姑', '前大理皇妃', 'meichaofeng'], stance: 'AGILE',
+    id: 25, title: '湘西黑沼 · 神算子瑛姑', environment: { swamp: true }, boss: ['神算子·刘瑛姑', '前大理皇妃', 'meichaofeng'], stance: 'AGILE', hpPercent: 300, atkPercent: 500,
     combat: { female: true, dodge: 30, lightDodge: 30 },
     puzzle: { name: '九宫算题', prompt: '把一至九填入九宫，每数恰好用一次，横、竖与两条对角线之和均相等。中宫填几？',
       options: ['三', '五', '七'], answer: '五', round: 1, correctText: '瑛姑失神两回合，暂时无法行动和闪避。', wrongText: '瑛姑摇头，施展泥鳅功迎战。',
       statuses: [{ status: 'STUN', rounds: 2 }, { status: 'DODGE_DOWN', percent: 100, rounds: 2 }] },
     setId: 'jiuwei_linghu', firstClearParts: ['BELT'], tip: '可先答九宫算题。答对后瑛姑会失神两回合。',
   },
-  { id: 26, title: '铁掌孤峰 · 水上漂裘千仞', boss: ['铁掌水上漂·裘千仞', '湘西铁掌帮主', 'ouyangfeng'], stance: 'FIERCE', combat: QIU_QIANREN_COMBAT, setId: 'tiezhang_kaishan', firstClearParts: ['WEAPON', 'ACC'], tip: '铁掌命中使疗伤降低 50%，持续 3 回合。第 2 回合蓄力焚石掌风，太极可化解，一阳指命中可打断。', replayPartIds: ['tiezhang_kaishan_weapon', 'tiezhang_kaishan_acc'] },
-  { id: 27, title: '大漠西征 · 撒麻尔罕铁甲千户', boss: ['花剌子模重甲亲军帅·忽鲁忽', '撒麻尔罕守将', 'assassin'], stance: 'FIERCE', combat: { def: 300, mounted: true, heavyArmor: true, weapon: { form: 'SPEAR', tier: 'orange' } }, setId: 'xizheng_jindao', firstClearParts: ['BOOTS'], tip: '普通刀剑破不了重甲，借武穆遗书奇谋卸其战马。' },
+  { id: 26, title: '铁掌山门 · 水上漂裘千仞', boss: ['铁掌水上漂·裘千仞', '湘西铁掌帮主', 'ouyangfeng'], stance: 'FIERCE', hpPercent: 220, atkPercent: 500, combat: QIU_QIANREN_COMBAT, setId: 'tiezhang_kaishan', firstClearParts: ['WEAPON', 'ACC'], tip: '铁掌命中使疗伤降低 50%，持续 3 回合。第 2 回合蓄力焚石掌风，太极可化解，一阳指命中可打断。', replayPartIds: ['tiezhang_kaishan_weapon', 'tiezhang_kaishan_acc'] },
+  { id: 27, title: '大漠西征 · 撒麻尔罕铁甲千户', boss: ['花剌子模重甲亲军帅·忽鲁忽', '撒麻尔罕守将', 'assassin'], stance: 'FIERCE', hpPercent: 320, atkPercent: 500, combat: { def: 300, mounted: true, heavyArmor: true, weapon: { form: 'SPEAR', tier: 'orange' } }, setId: 'xizheng_jindao', firstClearParts: ['BOOTS'], tip: '普通刀剑破不了重甲，借武穆遗书奇谋卸其战马。' },
   {
-    id: 28, title: '烟雨楼头 · 全真七子天罡北斗', boss: ['长春子·丘处机', '全真七子', 'monk'], stance: 'TAICHI',
+    id: 28, title: '烟雨楼头 · 全真七子天罡北斗', boss: ['长春子·丘处机', '全真七子', 'monk'], stance: 'TAICHI', hpPercent: 130, atkPercent: 400,
     combat: { speed: 132, parry: 30, alignment: 'RIGHTEOUS', weapon: { form: 'BLADE', tier: 'orange' }, formation: { name: '天罡北斗阵', parryPoints: 20 } },
-    guards: [{ name: '玉阳子·王处一', title: '全真七子', portrait: 'daoist', stance: 'TAICHI', hpPercent: 52, atkPercent: 58,
+    guards: [{ name: '玉阳子·王处一', title: '全真七子', portrait: 'daoist', stance: 'TAICHI', hpPercent: 80, atkPercent: 290,
       combat: { joinsRound: true, speed: 118, parry: 20, alignment: 'RIGHTEOUS', weapon: { form: 'BLADE', tier: 'purple' } } }],
     setId: 'quanzhen_beidou', firstClearParts: ['ACC'], clearItemId: 'beidou_formation_book', clearCompanionIds: QUANZHEN_SEVEN_IDS,
     tip: '丘处机、王处一交替护阵，当前前排招架提高 20 个百分点。出手速度超过二人可抢占阵眼。胜后获北斗阵图，尚未入队的七子也会加入。',
   },
   {
-    id: 29, title: '铁枪古庙 · 完颜洪烈死士营', boss: ['大金六王爷·完颜洪烈', '死士亲卫统领', 'assassin'], stance: 'FIERCE',
+    id: 29, title: '铁枪古庙 · 完颜洪烈死士营', boss: ['大金六王爷·完颜洪烈', '死士亲卫统领', 'assassin'], stance: 'FIERCE', hpPercent: 150, atkPercent: 350,
     combat: { faction: 'JIN', alignment: 'HERETIC', karma: -60, weapon: { form: 'BLADE', tier: 'purple' } },
     guards: [
-      { name: '金国左翼死士', title: '赵王亲卫', portrait: 'bandit', stance: 'FIERCE', hpPercent: 32, atkPercent: 45, combat: JIN_DEATH_GUARD },
-      { name: '金国右翼死士', title: '赵王亲卫', portrait: 'assassin', stance: 'FIERCE', hpPercent: 30, atkPercent: 45, combat: JIN_DEATH_GUARD },
+      { name: '金国左翼死士', title: '赵王亲卫', portrait: 'bandit', stance: 'FIERCE', hpPercent: 47, atkPercent: 180, combat: JIN_DEATH_GUARD },
+      { name: '金国右翼死士', title: '赵王亲卫', portrait: 'assassin', stance: 'FIERCE', hpPercent: 44, atkPercent: 180, combat: JIN_DEATH_GUARD },
     ],
     setId: 'dajin_sishi', firstClearParts: ['WEAPON'], tip: '两名死士阵亡时各自爆一次。配轻功以奇门架势击飞，爆炸只波及己方前排。',
   },
-  { id: 30, title: '华山之巅 · 疯魔逆九阴欧阳锋', boss: ['疯魔西毒·欧阳锋', '天下第一狂', 'ouyangfeng'], stance: 'FIERCE', combat: OUYANG_FENG_FRENZY, setId: 'niluan_jiuyin', firstClearParts: ['WEAPON', 'HEAD'],
+  { id: 30, title: '华山之巅 · 疯魔逆九阴欧阳锋', boss: ['疯魔西毒·欧阳锋', '天下第一狂', 'ouyangfeng'], stance: 'FIERCE', hpPercent: 380, atkPercent: 400, combat: OUYANG_FENG_FRENZY, setId: 'niluan_jiuyin', firstClearParts: ['WEAPON', 'HEAD'],
     tip: '每三回合以太极抵御全体掌风。欧阳锋气血降至两成时，靖蓉可配合主角绝技破局。击败第 24、30 关且黄蓉已入队，可译成梵文总纲。',
     replayPartIds: ['niluan_jiuyin_weapon', 'niluan_jiuyin_head'] },
 ]
@@ -1207,8 +1225,8 @@ export const TRIAL_STAGES: TrialStageConfig[] = STAGE_SEEDS.map((seed) => ({
     name: seed.boss[0],
     title: seed.boss[1],
     portrait: seed.boss[2],
-    hp: trialBossHp(seed.id),
-    atk: trialBossAtk(seed.id),
+    hp: Math.round(trialBossHp(seed.id) * (seed.hpPercent ?? 100) / 100),
+    atk: Math.round(trialBossAtk(seed.id) * (seed.atkPercent ?? 100) / 100),
     stance: seed.stance,
     combat: seed.combat,
   },
@@ -1430,15 +1448,18 @@ const PATROL_FOES: readonly (readonly [minion: string, elite: string, portrait: 
 /** 巡历对手：按本关首领的气血、攻击折算，精英更强；只用于画面，胜负与收益无关 */
 export const PATROL_FOE_SCALE = { minion: { hp: 0.8, atk: 0.3 }, elite: { hp: 1.6, atk: 0.4 } } as const
 
-/** tune：画面按侠客强弱再调的倍数，让一场打得不太短也不太长、且一定能赢 */
+/**
+ * tune：画面按侠客强弱再调的倍数，让一场打得不太短也不太长、且一定能赢。
+ * 小怪按关卡等级的基准首领折算，不跟着本关首领的强度走（首领为首战演出另调过，docs/27 第四期）。
+ */
 export function patrolFoe(stage: TrialStageConfig, battle: number, tune: { hp?: number; atk?: number } = {}): BattleOpponent & { elite: boolean } {
   const elite = isPatrolElite(battle)
   const [minion, leader, portrait] = PATROL_FOES[stage.id - 1] ?? PATROL_FOES[0]
   const scale = PATROL_FOE_SCALE[elite ? 'elite' : 'minion']
-  const hp = Math.max(1, Math.round(stage.boss.hp * scale.hp * (tune.hp ?? 1)))
+  const hp = Math.max(1, Math.round(trialBossHp(stage.id) * scale.hp * (tune.hp ?? 1)))
   return {
     name: elite ? leader : minion, title: elite ? '巡历精英' : '巡历小怪', portrait, elite,
-    hp, atk: Math.max(1, Math.round(stage.boss.atk * scale.atk * (tune.atk ?? 1))), mp: Math.round(hp * 0.45), stance: stage.boss.stance,
+    hp, atk: Math.max(1, Math.round(trialBossAtk(stage.id) * scale.atk * (tune.atk ?? 1))), mp: Math.round(hp * 0.45), stance: stage.boss.stance,
   }
 }
 

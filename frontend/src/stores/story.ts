@@ -20,12 +20,14 @@ import { gaibangSilverGain } from '../../../shared/gaibang.ts'
 import { addAdventureObjective, adventureEncounter } from '../../../shared/storyData.ts'
 import { battleEnvironmentAt } from '../../../shared/combatMeta.ts'
 import { openToOrigin } from '../../../shared/origins.ts'
+import { wieldStoryWeapon } from '../../../shared/player.ts'
 import { STORY_SNAKE_ADVENTURE, storyEncounter } from '../../../shared/storySnake.ts'
+import { storyGateBlock, storyGateText } from '../../../shared/stageScripts.ts'
 import { usePlayerStore } from './playerStore'
 import { storeToRefs } from 'pinia'
 import type { useCultivation } from './cultivation'
 import { useGameUiStore } from './gameUiStore'
-import type { useBattlePlayback } from './battlePlayback'
+import type { BattleStaging, useBattlePlayback } from './battlePlayback'
 import type { GameActions } from '@/network/gameActions'
 
 export function useStory({ cultivation, battle, actions }: {
@@ -44,6 +46,7 @@ export function useStory({ cultivation, battle, actions }: {
     learnedSkills,
     companionAffinity,
     claimedNodeIds,
+    presets,
     resolvedAdventureIds,
     adventureQueue,
     currentLoadout,
@@ -182,6 +185,10 @@ export function useStory({ cultivation, battle, actions }: {
     if (!node) return
     claimedNodeIds.value.push(nodeId)
     applyReward(node.firstClear, 'JIANGHU')
+    if (wieldStoryWeapon(Object.values(presets.value), node.code, ownedItemIds.value)) {
+      const weapon = ITEMS[currentLoadout.value.weaponId ?? '']
+      if (weapon) appendLog('JIANGHU', [{ type: 'text', text: '你把' }, { type: 'item', id: weapon.id, name: `【${weapon.name}】`, tier: weapon.tier }, { type: 'text', text: '握在了手里。' }])
+    }
     queueAdventuresAfter(nodeId)
   }
 
@@ -247,7 +254,9 @@ export function useStory({ cultivation, battle, actions }: {
       if (resolvedAdventureIds.value.includes(tpl.id)) return
       if (c.costSilver) player.value.silver -= c.costSilver
       resolvedAdventureIds.value.push(tpl.id)
+      // 与联机一样记下选了哪一项，后面的剧情台词按它变化（docs/27）
       if (snake) player.value.storySnakeChoice = choice
+      else (player.value.storyAdventureChoices ??= {})[tpl.id] = choice
       if (pendingAdventureId.value === tpl.id) pendingAdventureId.value = null
       const queued = adventureQueue.value.indexOf(tpl.id)
       if (queued >= 0) adventureQueue.value.splice(queued, 1)
@@ -284,12 +293,18 @@ export function useStory({ cultivation, battle, actions }: {
     }, () => { resolveAdventureChoice(choice, STORY_SNAKE_ADVENTURE.id) })
   }
 
-  function challengeChapter(chapterId: number, retreat = false) {
+  function challengeChapter(chapterId: number, retreat = false, staging?: BattleStaging) {
     if (isBattlePlaying.value) return
     const ch = (IS_MOCK_MODE ? STORY_CHAPTERS : ONLINE_STORY_CHAPTERS).find((c) => c.id === chapterId)
     if (!ch) return
     if (chapterId > player.value.maxChapterId) {
       showToast('先打过上一关，就能挑战这里。', 'danger')
+      return
+    }
+    // 新角色按剧情时间线走：主线节点先过时间线上紧挨着的那关历练（与服务端一致）
+    const gate = storyGateBlock(ch, player.value)
+    if (gate) {
+      showToast(storyGateText(gate), 'info')
       return
     }
     const intro: RichSegment[] = [
@@ -298,7 +313,7 @@ export function useStory({ cultivation, battle, actions }: {
     ]
     return actions.run('story', { code: ch.code, retreat }, ({ report }) => {
       appendLog('JIANGHU', intro)
-      startBattlePlayback(report)
+      startBattlePlayback(report, staging)
     }, () => {
       const drops = getChapterDrops(ch)
         .filter((drop) => drop.kind === 'item' ? !ownedItemIds.value.includes(drop.id) : !learnedSkills.value[drop.id])
@@ -325,7 +340,7 @@ export function useStory({ cultivation, battle, actions }: {
         },
       })
       // 主线进度与首通剧情在战斗演绎结束后统一结算（见 finishBattleSettlement）
-      startLocalBattle(report, chapterId)
+      startLocalBattle(report, chapterId, null, staging)
     })
   }
 
