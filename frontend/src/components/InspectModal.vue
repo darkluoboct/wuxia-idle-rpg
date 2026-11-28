@@ -25,6 +25,26 @@ const store = useGameUiStore()
           <button autofocus class="btn btn-sm shrink-0" @click="store.inspectModal = null">关闭</button>
         </div>
         <p class="border-t border-line pt-3 text-[0.9375rem] leading-relaxed">{{ store.inspectModal.desc }}</p>
+        <div v-if="store.inspectModal.tags?.length" class="flex flex-wrap gap-1.5" aria-label="武学特质标签">
+          <span v-for="tag in store.inspectModal.tags" :key="tag.text" class="chip max-w-full whitespace-normal" :class="tag.chipClass">{{ tag.text }}</span>
+        </div>
+        <div v-if="store.inspectModal.notes?.length" class="space-y-1 border border-line bg-bg0/60 p-2.5 text-xs leading-relaxed text-ink2">
+          <p v-for="note in store.inspectModal.notes" :key="note">{{ note }}</p>
+        </div>
+        <section v-if="store.inspectModal.masteryStages?.length" class="space-y-1.5 border border-line bg-bg0/60 p-2.5" aria-label="阶段质变">
+          <div class="text-xs font-bold text-ink2">破境质变阶段</div>
+          <ul class="space-y-1 text-xs leading-relaxed">
+            <li v-for="stage in store.inspectModal.masteryStages" :key="stage.minMastery" class="flex flex-wrap items-baseline justify-between gap-x-2">
+              <span :class="stage.state === 'current' ? 'font-bold text-gold' : stage.state === 'reached' ? 'text-jade' : 'text-ink2'">
+                第 {{ stage.minMastery }} 重 · {{ stage.label }}：{{ stage.summary }}
+              </span>
+              <span v-if="stage.state !== 'preview'" class="chip"
+                :class="stage.state === 'current' ? 'chip-gold' : stage.state === 'reached' ? 'chip-jade' : ''">
+                {{ stage.state === 'current' ? '当前阶段' : stage.state === 'reached' ? '已破境' : '待破境' }}
+              </span>
+            </li>
+          </ul>
+        </section>
         <p v-if="store.inspectModal.extra" class="border-l-2 border-[var(--tc)] pl-3 text-sm italic leading-relaxed text-ink2">
           {{ store.inspectModal.extra }}
         </p>

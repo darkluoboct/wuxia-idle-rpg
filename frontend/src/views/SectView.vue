@@ -3,7 +3,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { Check, X } from 'lucide-vue-next'
 import { useGameStore } from '@/stores/gameStore'
 import { ITEMS, SECTS, SKILLS, type SectConfig } from '@/config/gameData'
-import { ALIGNMENT_META, BASE_STAT_LABELS, STANCE_META, TIER_META } from '@/config/uiMeta'
+import { ALIGNMENT_META, BASE_STAT_LABELS, skillGrowthInfo, skillTempoInfo, STANCE_META, TIER_META } from '@/config/uiMeta'
 import type { PortraitStyle } from '@/config/typesHelper'
 import { IS_MOCK_MODE } from '@/network/apiClient'
 import { battleObjectiveText } from '../../../shared/combatMeta.ts'
@@ -13,6 +13,7 @@ import { equippedMartialSkills, martialOrigin, WANDERER_MASTERY } from '../../..
 import { karmaAfterEvent } from '../../../shared/player.ts'
 import { SECT_EQUIPMENT_SETS, sectEquipmentPartId, WANDERER_EQUIPMENT } from '../../../shared/sectEquipment.ts'
 import { SECT_LORE } from '../../../shared/sectLore.ts'
+import { wandererNoteLine, wandererNoteWait } from '../../../shared/sectDaily.ts'
 import { sectPromotion } from '../../../shared/sectProgress.ts'
 import ItemIcon from '@/components/ItemIcon.vue'
 import PortraitCard from '@/components/PortraitCard.vue'
@@ -66,6 +67,17 @@ const representatives: Record<string, { name: string; style: PortraitStyle; id?:
 const representative = computed(() => focusedSect.value && representatives[focusedSect.value.id])
 /** 山门、引路人、江湖传言与门规（shared/sectLore.ts） */
 const lore = computed(() => focusedSect.value && SECT_LORE[focusedSect.value.id])
+const wandererJournal = computed(() => [...store.player.wandererNotes?.recent ?? []].reverse().flatMap((entry) => {
+  const line = wandererNoteLine(entry)
+  return line ? [{ ...line, silver: entry.silver, loot: entry.loot, key: `${entry.id}@${entry.at}` }] : []
+}))
+const wandererWaitText = computed(() => {
+  const state = wandererNoteWait(store.player, store.worldTime)
+  if (!state) return '开始挂机后，每满一个时辰（两小时）记下一则江湖散记。'
+  if (state.ready) return `已攒下 ${state.ready} 则散记，收功时入账。`
+  const minutes = Math.ceil(state.waitMs / 60_000)
+  return `再挂 ${minutes >= 60 ? `${Math.floor(minutes / 60)} 小时 ` : ''}${minutes % 60 ? `${minutes % 60} 分` : ''}，记下下一则散记。`
+})
 const glyphs: Record<string, string> = { gaibang: '丐', quanzhen: '全', taohua: '桃', baituo: '驼', jiangnan_wuguan: '武', tiezhang: '铁', yideng: '灯' }
 const glyphOf = (sect: SectConfig) => glyphs[sect.id] ?? sect.name.slice(0, 1)
 
@@ -152,8 +164,9 @@ function confirmBetray() {
             </button>
             <button v-if="store.mayReceiveSnakeRecipe" class="btn btn-sm btn-gold" :disabled="busy"
               title="炼制蝮蛇见血膏少用 1 株蛇涎草" @click="store.claimSnakeRecipe()">领取蛇药饲喂方</button>
-            <button v-if="store.unclaimedSectEquipment.length" class="btn btn-sm btn-gold" :disabled="busy"
-              :title="store.unclaimedSectEquipment.map((id) => ITEMS[id].name).join('、')" @click="store.claimSectEquipment()">领取宗门装</button>
+            <button v-if="store.hasUnclaimedSectRewards" class="btn btn-sm btn-gold" :disabled="busy"
+              :title="[...store.unclaimedSectSkills.map((id) => SKILLS[id]?.name).filter(Boolean), ...store.unclaimedSectEquipment.map((id) => ITEMS[id].name)].join('、')"
+              @click="store.claimSectEquipment()">领取宗门传承</button>
             <button v-if="IS_MOCK_MODE" class="btn btn-sm" role="switch" :aria-checked="store.player.isGuardingLibrary"
               @click="store.player.isGuardingLibrary = !store.player.isGuardingLibrary">
               <span class="switch" :aria-checked="store.player.isGuardingLibrary" /> 看守藏经阁
@@ -249,9 +262,11 @@ function confirmBetray() {
                     :aria-pressed="previewRank === index + 1" @click="selectedRank = index + 1">{{ index + 1 }} 阶 · {{ title }}</button>
                 </div>
                 <div v-if="rankSkills.length || rankItems.length" class="flex flex-wrap gap-2">
-                  <button v-for="skill in rankSkills" :key="skill.id" class="btn btn-sm tier-text" :class="TIER_META[skill.tier].cls"
+                  <button v-for="skill in rankSkills" :key="skill.id" class="btn btn-sm max-w-full flex-wrap tier-text" :class="TIER_META[skill.tier].cls"
                     @click="store.inspectById('skill', skill.id)">
                     <i class="art h-6 w-6" :class="'art-' + skill.slot.toLowerCase()" aria-hidden="true" />{{ skill.name }}
+                    <span v-if="skillGrowthInfo(skill)" class="chip" :class="skillGrowthInfo(skill)!.chipClass">{{ skillGrowthInfo(skill)!.shortLabel }}</span>
+                    <span v-if="skillTempoInfo(skill)" class="chip" :class="skillTempoInfo(skill)!.chipClass">{{ skillTempoInfo(skill)!.shortLabel }}</span>
                   </button>
                   <button v-for="item in rankItems" :key="item.id" class="btn btn-sm tier-text" :class="TIER_META[ITEMS[item.id].tier].cls"
                     @click="store.inspectById('item', item.id)">
@@ -350,6 +365,20 @@ function confirmBetray() {
                 <p v-if="!store.player.trial.rewardedStageIds.includes(WANDERER_EQUIPMENT.stage)" class="hint">
                   战胜历练第 {{ WANDERER_EQUIPMENT.stage }} 关后可到嘉兴领取。
                 </p>
+              </section>
+              <section class="space-y-2" aria-label="江湖散记">
+                <h4 class="sec-title">江湖散记</h4>
+                <p class="hint">{{ wandererWaitText }}</p>
+                <ol v-if="wandererJournal.length" class="divide-y divide-line">
+                  <li v-for="entry in wandererJournal" :key="entry.key" class="space-y-0.5 py-2 text-sm leading-relaxed">
+                    <p class="flex items-baseline justify-between gap-2 text-xs">
+                      <b class="text-gold">{{ entry.heading }}</b>
+                      <span class="shrink-0 tabular-nums text-jade">纹银 +{{ entry.silver }}</span>
+                    </p>
+                    <p class="text-ink2">{{ entry.text }}</p>
+                  </li>
+                </ol>
+                <p v-else class="hint">散人挂机每满一个时辰，收功时可领 400～600 两纹银，并有几分机缘拾得草药或残页。</p>
               </section>
             </div>
             <footer v-if="store.unclaimedWandererEquipment" class="workbench-actions">

@@ -2,7 +2,16 @@ import { defineStore, storeToRefs } from 'pinia'
 import { ref, watch } from 'vue'
 import type { GameLogEntry, RichSegment, TierColor } from '@/network/protocol'
 import { ITEMS, SKILLS } from '@/config/gameData'
-import { EQUIP_SLOT_META, itemBonusLabels, shichenIdxFromDate, SKILL_SLOT_META } from '@/config/uiMeta'
+import {
+  EQUIP_SLOT_META,
+  itemBonusLabels,
+  shichenIdxFromDate,
+  SKILL_SLOT_META,
+  skillGrowthInfo,
+  skillMasteryTimeline,
+  skillTempoInfo,
+  type SkillMasteryTimelineItem,
+} from '@/config/uiMeta'
 import { IS_MOCK_MODE } from '@/network/apiClient'
 import { formatBattleStatBonuses } from '../../../shared/combatMeta.ts'
 import { temperedItem } from '../../../shared/equipmentForge.ts'
@@ -19,7 +28,19 @@ export type ToastTone = 'info' | 'gold' | 'danger'
 
 export const SHICHEN_LABELS = ['子时·夜半', '寅时·平旦', '辰时·烟雨', '午时·日正', '申时·斜阳', '戌时·黄昏']
 
-type InspectDetails = { title: string; subtitle: string; tier: TierColor; desc: string; extra?: string; itemId?: string }
+export type InspectTag = { text: string; chipClass: string }
+
+type InspectDetails = {
+  title: string
+  subtitle: string
+  tier: TierColor
+  desc: string
+  extra?: string
+  itemId?: string
+  tags?: InspectTag[]
+  notes?: string[]
+  masteryStages?: SkillMasteryTimelineItem[]
+}
 
 export const useGameUiStore = defineStore('wuxiaUi', () => {
 
@@ -128,13 +149,29 @@ export const useGameUiStore = defineStore('wuxiaUi', () => {
   function inspectById(kind: 'skill' | 'item', id: string) {
     if (kind === 'skill' && SKILLS[id]) {
       const s = SKILLS[id]
-      const lv = learnedSkills.value[id] ?? 1
+      const lv = learnedSkills.value[id] ?? 0
+      const growth = skillGrowthInfo(s)
+      const tempo = skillTempoInfo(s)
+      const tags: InspectTag[] = []
+      if (growth) {
+        tags.push({ text: growth.label, chipClass: growth.chipClass })
+        tags.push({ text: growth.costLabel, chipClass: growth.costChipClass })
+      }
+      if (tempo) tags.push({ text: tempo.label, chipClass: tempo.chipClass })
+      const notes: string[] = []
+      if (growth) notes.push(`成长路线：${growth.desc}`)
+      if (s.earlyFlatStats) notes.push(`初成固定属性：${formatBattleStatBonuses(s.earlyFlatStats)}`)
+      if (tempo?.summary) notes.push(`战局节奏：${tempo.summary}`)
+      const masteryStages = skillMasteryTimeline(s, lv)
       openInspect({
         title: `《${s.name}》`,
-        subtitle: `${SKILL_SLOT_META[s.slot].label} · 第 ${lv} 重 · ${s.source}`,
+        subtitle: `${SKILL_SLOT_META[s.slot].label} · ${lv > 0 ? `第 ${lv} 重` : '未习得'} · ${s.source}`,
         tier: s.tier,
         desc: s.desc,
         extra: s.castNarrative,
+        ...(tags.length ? { tags } : {}),
+        ...(notes.length ? { notes } : {}),
+        ...(masteryStages.length ? { masteryStages } : {}),
       })
     } else if (kind === 'item' && ITEMS[id]) {
       const it = ITEMS[id]

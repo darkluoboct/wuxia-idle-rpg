@@ -3,9 +3,11 @@ import { computed, onDeactivated, ref } from 'vue'
 import { LockKeyhole, Sparkles, Wind } from 'lucide-vue-next'
 import { useGameStore } from '@/stores/gameStore'
 import { SKILLS } from '@/config/gameData'
+import { skillGrowthInfo, skillTempoInfo } from '@/config/uiMeta'
 import { IS_MOCK_MODE } from '@/network/apiClient'
 import { boostPctOver, realmBreakChance } from '../../../shared/player.ts'
 import { boostLabel } from '../../../shared/admin.ts'
+import { activeMasteryStage } from '../../../shared/skillMastery.ts'
 import type { RateBoostKind } from '@/network/protocol'
 import ItemIcon from './ItemIcon.vue'
 import InfoTip from './ui/InfoTip.vue'
@@ -52,8 +54,34 @@ const skills = computed(() => {
     { label: '外功', art: 'outer', id: l.outerSkillId },
     { label: '轻功', art: 'light', id: l.lightSkillId },
     { label: '绝技', art: 'ult', id: l.ultSkillId },
-  ]
+  ].map((entry) => {
+    const config = entry.id ? SKILLS[entry.id] : undefined
+    const mastery = entry.id ? store.learnedSkills[entry.id] ?? 1 : 0
+    const growth = config ? skillGrowthInfo(config) : undefined
+    const tempo = config ? skillTempoInfo(config) : undefined
+    const stage = config ? activeMasteryStage(config, mastery) : undefined
+    const titleParts = config
+      ? [
+          `${config.name}（第 ${mastery} 重）`,
+          growth ? `${growth.shortLabel} · ${growth.costShort}` : undefined,
+          stage ? `${stage.label}：${stage.summary}` : undefined,
+          tempo ? `${tempo.label}${tempo.summary ? `：${tempo.summary}` : ''}` : undefined,
+        ].filter(Boolean)
+      : []
+    return {
+      ...entry,
+      config,
+      mastery,
+      growth,
+      tempo,
+      stage,
+      title: config ? titleParts.join(' | ') : `去武库选${entry.label}`,
+    }
+  })
 })
+
+const featuredTraits = computed(() => skills.value.filter((entry) =>
+  entry.config && (entry.growth || entry.tempo || entry.stage)))
 
 function openSkill(id: string | null) {
   if (id) store.inspectById('skill', id)
@@ -117,11 +145,12 @@ function openSkill(id: string | null) {
       <div class="hotbar-skills">
         <button
           v-for="skill in skills" :key="skill.art" class="hotbar-skill"
-          :title="skill.id ? SKILLS[skill.id]?.name : `去武库选${skill.label}`"
-          :aria-label="skill.id ? `查看${SKILLS[skill.id]?.name}` : `去武库选${skill.label}`" @click="openSkill(skill.id)"
+          :title="skill.title"
+          :aria-label="skill.config ? `查看${skill.config.name}` : `去武库选${skill.label}`" @click="openSkill(skill.id)"
         >
           <i v-if="skill.id" class="art" :class="`art-${skill.art}`" aria-hidden="true" />
           <LockKeyhole v-else :size="20" aria-hidden="true" />
+          <em v-if="skill.growth" class="hotbar-skill-tag" :class="skill.growth.profile === 'EARLY' ? 'is-early' : 'is-late'">{{ skill.growth.shortLabel }}</em>
           <span>{{ skill.label }}</span>
         </button>
       </div>
@@ -148,6 +177,17 @@ function openSkill(id: string | null) {
         </button>
       </div>
       <span v-if="deviationMinutes" class="chip text-cinnabar">气血微沸 · 出战气血 −10% · {{ deviationMinutes }} 分钟</span>
+    </div>
+    <div v-if="featuredTraits.length" class="cultivate-skill-traits" aria-label="运功特质">
+      <button
+        v-for="skill in featuredTraits" :key="skill.art" type="button" class="trait-pill"
+        :title="skill.title" @click="openSkill(skill.id)"
+      >
+        <b>{{ skill.config!.name }}</b>
+        <span v-if="skill.growth" class="trait-badge" :class="skill.growth.profile === 'EARLY' ? 'is-gold' : 'is-purple'">{{ skill.growth.costBadge }}</span>
+        <span v-if="skill.stage" class="trait-badge is-gold">第 {{ skill.mastery }} 重 · {{ skill.stage.label }}</span>
+        <span v-if="skill.tempo" class="trait-badge" :class="skill.tempo.tag === 'SURGE' ? 'is-red' : 'is-jade'">{{ skill.tempo.shortLabel }}</span>
+      </button>
     </div>
   </div>
 </template>

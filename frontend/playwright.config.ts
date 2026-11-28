@@ -1,6 +1,7 @@
 import { defineConfig } from '@playwright/test'
 
-const baseURL = 'http://127.0.0.1:5181'
+const externalBaseURL = process.env.WUXIA_E2E_BASE_URL
+const baseURL = externalBaseURL ?? 'http://127.0.0.1:5181'
 const database = process.env.WUXIA_E2E_DATABASE_URL
 const gameServer = 'http://127.0.0.1:8181'
 
@@ -20,10 +21,14 @@ export default defineConfig({
           },
         ]
       : []),
-    {
-      command: 'pnpm preview --host 127.0.0.1 --port 5181 --strictPort',
-      url: baseURL,
-      env: { WUXIA_GAME_SERVER: gameServer },
-    },
+    ...(externalBaseURL
+      ? []
+      : [
+          {
+            command: 'pnpm preview --host 127.0.0.1 --port 5181 --strictPort',
+            url: baseURL,
+            env: { WUXIA_GAME_SERVER: gameServer },
+          },
+        ]),
   ],
 })

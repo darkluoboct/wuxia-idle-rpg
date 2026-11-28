@@ -356,6 +356,51 @@
   .hotbar-skill:hover,
   .hotbar-pill:not(:disabled):hover,
   .hotbar-command:not(:disabled):hover { border-color: var(--frame-light); filter: brightness(1.2); }
+  .hotbar-skill-tag {
+    position: absolute;
+    top: -.22rem;
+    right: -.22rem;
+    padding: 0 .24rem;
+    border: 1px solid #997448c7;
+    border-radius: .2rem;
+    background: #1a1b20ee;
+    font-style: normal;
+    font-size: .62rem;
+    line-height: 1.3;
+    z-index: 1;
+  }
+  .hotbar-skill-tag.is-early { color: #ecc983; border-color: rgba(236, 201, 131, 0.72); }
+  .hotbar-skill-tag.is-late { color: #d1b5ff; border-color: rgba(196, 159, 255, 0.72); }
+  .cultivate-skill-traits {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: .28rem .4rem;
+  }
+  .trait-pill {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .25rem;
+    padding: .12rem .48rem;
+    border: 1px solid rgba(213, 178, 124, 0.36);
+    border-radius: .2rem;
+    background: rgba(22, 20, 18, 0.76);
+    color: var(--stage-ink);
+    font-size: .74rem;
+    line-height: 1.35;
+  }
+  .trait-pill:hover { border-color: var(--frame-light); }
+  .trait-badge {
+    padding: 0 .26rem;
+    border: 1px solid rgba(240, 222, 180, 0.25);
+    border-radius: .15rem;
+    font-size: .68rem;
+  }
+  .trait-badge.is-gold { color: #ecc983; border-color: rgba(236, 201, 131, 0.55); }
+  .trait-badge.is-purple { color: #d1b5ff; border-color: rgba(196, 159, 255, 0.55); }
+  .trait-badge.is-red { color: #f49180; border-color: rgba(244, 145, 128, 0.6); }
+  .trait-badge.is-jade { color: #92d8c4; border-color: rgba(146, 216, 196, 0.55); }
   .hotbar-pill:disabled,
   .hotbar-command:disabled { opacity: .52; }
 

@@ -2,10 +2,33 @@
 import { computed, nextTick, onActivated, ref } from 'vue'
 import { ArrowLeft, ChevronRight } from 'lucide-vue-next'
 import { SKILLS, type SkillConfig } from '@/config/gameData'
-import { formatSkillPower, SKILL_SLOT_META, STANCE_META, TIER_META } from '@/config/uiMeta'
+import {
+  formatSkillPower,
+  SKILL_SLOT_META,
+  skillGrowthInfo,
+  skillMasteryTimeline,
+  skillTempoInfo,
+  STANCE_META,
+  TIER_META,
+} from '@/config/uiMeta'
 import type { LoadoutPresetDTO, SkillSlotType, StanceType } from '@/network/protocol'
 import { useGameStore } from '@/stores/gameStore'
-import { getSkillMasteryCap, MAX_SKILL_MASTERY, skillFragmentDiscount, skillPowerAtMastery } from '../../../shared/skillMastery.ts'
+import {
+  activeMasteryStage,
+  getSkillMasteryCap,
+  jiuyinZonggangHpMultiplier,
+  masteryPassiveScale,
+  MAX_SKILL_MASTERY,
+  nextMasteryStage,
+  skillArmorPenetrationAtMastery,
+  skillCritBonusAtMastery,
+  skillFragmentDiscount,
+  skillIdleQiBonusAtMastery,
+  skillPowerAtMastery,
+  skillShieldRendAtMastery,
+  skillUltAreaMaxMpAtMastery,
+} from '../../../shared/skillMastery.ts'
+import { formatBattleStatBonuses } from '../../../shared/combatMeta.ts'
 import { hasMartialFreedom, martialEffectiveness, martialOrigin } from '../../../shared/martialSchools.ts'
 
 const props = defineProps<{ fromBag?: string }>()
@@ -25,26 +48,46 @@ const selectedId = ref<string>()
 
 const slots = computed(() => skillSlots.map((slot) => {
   const id = store.currentLoadout[slot.field]
-  return { ...slot, ...SKILL_SLOT_META[slot.type], equipped: id ? SKILLS[id] : undefined }
+  const equipped = id ? SKILLS[id] : undefined
+  return {
+    ...slot,
+    ...SKILL_SLOT_META[slot.type],
+    equipped,
+    growth: equipped ? skillGrowthInfo(equipped) : undefined,
+    tempo: equipped ? skillTempoInfo(equipped) : undefined,
+  }
 }))
 const selectedSlot = computed(() => slots.value.find(({ type }) => type === activeSlot.value)!)
 const candidates = computed(() => Object.entries(store.learnedSkills).flatMap(([id, level]) => {
   const skill = SKILLS[id]
-  return skill && skill.slot === activeSlot.value && level > 0 ? [{ skill, level }] : []
+  return skill && skill.slot === activeSlot.value && level > 0
+    ? [{ skill, level, growth: skillGrowthInfo(skill), tempo: skillTempoInfo(skill) }]
+    : []
 }).sort((a, b) => Number(b.skill.id === selectedSlot.value.equipped?.id) - Number(a.skill.id === selectedSlot.value.equipped?.id)))
 
 function effectsAt(skill: SkillConfig, level: number, freedom: boolean, efficiency: number) {
   const effects: string[] = []
-  const effective = (amount: number) => formatSkillPower(amount * efficiency / 100)
+  const passiveScale = masteryPassiveScale(skill.growthProfile, level)
+  const effective = (amount: number) => formatSkillPower(amount * efficiency / 100 * passiveScale)
   if (skill.slot === 'OUTER' || skill.slot === 'ULT') {
     effects.push(`招式威力 ×${formatSkillPower(skillPowerAtMastery(skill, level, store.player, freedom))}`)
   }
   if (skill.speedBonus) effects.push(`出手速度 +${effective(skill.speedBonus)}`)
   if (skill.dodgeBonus) effects.push(`闪避率 +${effective(skill.dodgeBonus)}%`)
-  if (skill.critBonus) effects.push(`暴击率 +${effective(skill.critBonus)}%`)
-  if (skill.idleQiBonus) effects.push(`修行真气 +${effective(skill.idleQiBonus)}%`)
-  const penetration = skill.battleEffects?.find((effect) => effect.kind === 'ARMOR_PENETRATION')
-  if (penetration) effects.push(`无视防御 ${penetration.percent}%`)
+  const critBonus = skillCritBonusAtMastery(skill, level)
+  if (critBonus) effects.push(`暴击率 +${formatSkillPower(critBonus * efficiency / 100)}%`)
+  if (skill.idleQiBonus) effects.push(`修行真气 +${formatSkillPower(skillIdleQiBonusAtMastery(skill, level, store.player, freedom))}%`)
+  if (skill.slot === 'INNER' && (skill.growthProfile === 'EARLY' || skill.growthProfile === 'LATE')) {
+    effects.push(`心法词条效力 ${Math.round(passiveScale * 100)}%`)
+  }
+  if (skill.id === 'jiuyin_zonggang') effects.push(`基础气血倍率 ×${jiuyinZonggangHpMultiplier(level)}`)
+  if (skill.earlyFlatStats) effects.push(`初成固增：${formatBattleStatBonuses(skill.earlyFlatStats)}`)
+  const penetration = skillArmorPenetrationAtMastery(skill, level)
+  if (penetration) effects.push(`无视防御 ${penetration}%`)
+  const shieldRend = skillShieldRendAtMastery(skill, level)
+  if (shieldRend) effects.push(`护盾损耗 ${shieldRend} 倍`)
+  const ultArea = skillUltAreaMaxMpAtMastery(skill, level)
+  if (ultArea) effects.push(`剑罡群伤 ${ultArea}% 最大内力`)
   return effects
 }
 
@@ -63,9 +106,16 @@ const detail = computed(() => {
   const efficiency = martialEffectiveness(skill, store.player, freedom)
   const currentEffects = effectsAt(skill, level, freedom, efficiency)
   const nextEffects = next ? [...effectsAt(skill, next, freedom, efficiency), '臂力 +1'] : []
+  const stage = activeMasteryStage(skill, level)
+  const nextStage = nextMasteryStage(skill, level)
+  const stages = skillMasteryTimeline(skill, level)
+  const growth = skillGrowthInfo(skill)
+  const tempo = skillTempoInfo(skill)
+  const earlyBonusText = skill.earlyFlatStats ? formatBattleStatBonuses(skill.earlyFlatStats) : undefined
   const qi = store.player.qiExp
   return {
     skill, slot, level, cap, next, cost, fragments, discount, efficiency, currentEffects, nextEffects,
+    stage, nextStage, stages, growth, tempo, earlyBonusText,
     origin: martialOrigin(skill),
     missingQi: Math.max(0, (discount.count ? discount.spentQi : cost) - qi),
   }
@@ -139,7 +189,7 @@ function onEscape(event: KeyboardEvent) {
               <span class="skill-icon" aria-hidden="true"><i class="art" :class="slot.art" /></span>
               <span class="min-w-0"><small>{{ slot.label }}</small>
                 <b :class="slot.equipped && TIER_META[slot.equipped.tier].cls">{{ slot.equipped?.name ?? '未装配' }}</b>
-                <small v-if="slot.equipped && store.learnedSkills[slot.equipped.id]" class="text-ink3">第 {{ store.learnedSkills[slot.equipped.id] }} 重</small>
+                <small v-if="slot.equipped && store.learnedSkills[slot.equipped.id]" class="text-ink3">第 {{ store.learnedSkills[slot.equipped.id] }} 重<template v-if="slot.growth"> · {{ slot.growth.shortLabel }} {{ slot.growth.costText }}</template><template v-if="slot.tempo"> · {{ slot.tempo.shortLabel }}</template></small>
               </span>
             </button>
           </div>
@@ -152,11 +202,16 @@ function onEscape(event: KeyboardEvent) {
         </div>
         <div class="martial-scroll">
           <ul v-if="candidates.length" class="skill-list">
-            <li v-for="{ skill, level } in candidates" :key="skill.id" class="skill-row">
+            <li v-for="{ skill, level, growth, tempo } in candidates" :key="skill.id" class="skill-row">
               <button type="button" class="skill-link" :data-skill-id="skill.id" :aria-label="`查看${skill.name}详情`" @click="openDetail(skill.id)">
                 <span class="skill-icon" :class="TIER_META[skill.tier].cls" aria-hidden="true"><i class="art" :class="selectedSlot.art" /></span>
                 <span class="min-w-0"><b class="tier-text" :class="TIER_META[skill.tier].cls">{{ skill.name }}</b>
                   <small>第 {{ level }} 重 · {{ TIER_META[skill.tier].label }} · {{ martialOrigin(skill).name }}</small>
+                  <span v-if="growth || tempo" class="skill-chips mt-1">
+                    <span v-if="growth" class="chip" :class="growth.chipClass">{{ growth.shortLabel }}</span>
+                    <span v-if="growth" class="chip" :class="growth.costChipClass">{{ growth.costShort }}</span>
+                    <span v-if="tempo" class="chip" :class="tempo.chipClass">{{ tempo.shortLabel }}</span>
+                  </span>
                 </span>
                 <ChevronRight class="skill-chevron" aria-hidden="true" />
               </button>
@@ -184,9 +239,22 @@ function onEscape(event: KeyboardEvent) {
             </div>
           </div>
           <p>{{ detail.skill.desc }}</p>
+          <section v-if="detail.growth || detail.tempo || detail.earlyBonusText" class="growth-card" aria-label="双轨成长与战局节奏">
+            <div v-if="detail.growth || detail.tempo" class="skill-chips">
+              <span v-if="detail.growth" class="chip" :class="detail.growth.chipClass">{{ detail.growth.label }}</span>
+              <span v-if="detail.growth" class="chip" :class="detail.growth.costChipClass">{{ detail.growth.costLabel }}</span>
+              <span v-if="detail.tempo" class="chip" :class="detail.tempo.chipClass">{{ detail.tempo.label }}</span>
+            </div>
+            <p v-if="detail.growth" class="text-xs leading-relaxed text-ink2">{{ detail.growth.desc }}</p>
+            <p v-if="detail.earlyBonusText" class="text-xs leading-relaxed text-gold">初成固定属性（前期强、高境界自然稀释）：{{ detail.earlyBonusText }}</p>
+            <p v-if="detail.tempo?.summary" class="text-xs leading-relaxed text-ink2">战局节奏：{{ detail.tempo.summary }}</p>
+          </section>
           <p class="hint">来源 · {{ detail.skill.source }}</p>
-          <p v-if="detail.efficiency < 100" class="text-cinnabar">
-            {{ detail.efficiency === 80 ? '出师辅修' : '真气冲突' }} · 效力 {{ detail.efficiency }}%
+          <p v-if="detail.efficiency > 100" class="text-jade">
+            本门契合 · 效力 {{ detail.efficiency }}%
+          </p>
+          <p v-else-if="detail.efficiency < 100" class="text-cinnabar">
+            {{ detail.efficiency === 85 ? '跨派辅修' : detail.efficiency === 80 ? '出师辅修' : '真气冲突' }} · 效力 {{ detail.efficiency }}%
           </p>
         </div>
         <footer class="martial-footer">
@@ -202,6 +270,7 @@ function onEscape(event: KeyboardEvent) {
             <section class="rank-column" aria-label="当前效果">
               <span>当前效果</span>
               <h3>第 {{ detail.level }} 重</h3>
+              <p v-if="detail.stage" class="text-xs text-gold">{{ detail.stage.label }} · {{ detail.stage.summary }}</p>
               <ul v-if="detail.currentEffects.length"><li v-for="effect in detail.currentEffects" :key="effect">{{ effect }}</li></ul>
               <p v-else class="hint">已习得本招效果。</p>
             </section>
@@ -209,6 +278,9 @@ function onEscape(event: KeyboardEvent) {
               <template v-if="detail.next">
                 <span>下一重效果</span>
                 <h3 class="text-jade">第 {{ detail.next }} 重</h3>
+                <p v-if="detail.nextStage && detail.nextStage.minMastery === detail.next" class="text-xs font-bold text-gold">
+                  破境质变 · {{ detail.nextStage.label }}：{{ detail.nextStage.summary }}
+                </p>
                 <ul class="text-jade"><li v-for="effect in detail.nextEffects" :key="effect">{{ effect }}</li></ul>
               </template>
               <template v-else>
@@ -218,11 +290,27 @@ function onEscape(event: KeyboardEvent) {
               </template>
             </section>
           </div>
+          <section v-if="detail.stages.length" class="stage-roadmap mt-3" aria-label="阶段质变">
+            <h4>阶段质变路线</h4>
+            <ul>
+              <li v-for="milestone in detail.stages" :key="milestone.minMastery" :class="`is-${milestone.state}`">
+                <div class="stage-row-head">
+                  <b>第 {{ milestone.minMastery }} 重 · {{ milestone.label }}</b>
+                  <span class="chip" :class="milestone.state === 'current' ? 'chip-gold' : milestone.state === 'reached' ? 'chip-jade' : detail.nextStage?.minMastery === milestone.minMastery ? 'chip-purple' : ''">
+                    {{ milestone.state === 'current' ? '当前阶段' : milestone.state === 'reached' ? '已破境' : detail.nextStage?.minMastery === milestone.minMastery ? '下重破境' : '待破境' }}
+                  </span>
+                </div>
+                <p>{{ milestone.summary }}</p>
+              </li>
+            </ul>
+          </section>
           <p v-if="detail.fragments" class="text-sm text-ink2 mt-3">持有同名残页 {{ detail.fragments.toLocaleString() }} 张</p>
         </div>
         <footer v-if="detail.next" class="martial-footer">
           <div class="cost-readout">
-            <span>需要真气 <b class="text-gold">{{ detail.cost.toLocaleString() }}</b></span>
+            <span class="cost-line">需要真气 <b class="text-gold">{{ detail.cost.toLocaleString() }}</b>
+              <span v-if="detail.growth" class="chip" :class="detail.growth.costChipClass">{{ detail.growth.costBadge }}</span>
+            </span>
             <span v-if="detail.missingQi" class="text-cinnabar">还差 {{ detail.missingQi.toLocaleString() }} 真气</span>
           </div>
           <div class="martial-actions">
@@ -297,11 +385,37 @@ function onEscape(event: KeyboardEvent) {
 .rank-column > span { color: var(--ink-3); font-size: .8rem; }
 .rank-column h3 { font-size: 1.1rem; font-weight: 700; font-variant-numeric: tabular-nums; }
 .rank-column ul { display: grid; gap: .24rem; font-size: .86rem; }
-.cost-readout { display: grid; gap: .1rem; font-variant-numeric: tabular-nums; }
+.skill-chips { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem; }
+.skill-chips .chip, .stage-roadmap .chip, .cost-line .chip { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+.growth-card, .stage-roadmap {
+  display: grid; min-width: 0; gap: .38rem; padding: .6rem .72rem; border: 1px solid var(--line-strong); background: var(--bg-0);
+}
+.growth-card p, .stage-roadmap p { overflow-wrap: anywhere; }
+.stage-roadmap h4 { margin: 0; font-size: .82rem; font-weight: 700; color: var(--ink-2); }
+.stage-roadmap ul { display: grid; gap: .42rem; }
+.stage-roadmap li {
+  display: grid; gap: .18rem; padding-left: .55rem; border-left: 2px solid var(--line-strong); font-size: .8rem; color: var(--ink-2);
+}
+.stage-roadmap li.is-current { border-left-color: var(--gold); color: var(--ink); }
+.stage-roadmap li.is-reached { border-left-color: var(--jade); }
+.stage-row-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .35rem; }
+.cost-readout { display: grid; min-width: 0; gap: .18rem; font-variant-numeric: tabular-nums; }
+.cost-line { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .35rem; }
 @media (max-width: 767px) {
   .martial-layout { gap: .35rem; }
   .slot-grid, .stance-grid, .rank-grid { gap: .24rem; }
   .martial-choice, .rank-column { padding: .35rem; }
   .slot-choice { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 640px) {
+  .martial-layout, .martial-detail {
+    grid-template-columns: minmax(0, 1fr);
+    grid-auto-rows: max-content;
+    align-content: start;
+    overflow-y: auto;
+  }
+  .martial-pane { min-height: auto; }
+  .martial-scroll { overflow: visible; }
+  .rank-grid { grid-template-columns: minmax(0, 1fr); }
 }
 </style>
