@@ -678,9 +678,9 @@ describe('空明追击、大漠穿透与九阴吸血', () => {
     expect(withSet.segments).toContainEqual(damoTag(60, 3))
 
     const [strongerSkill] = mainCasts(fight({ ...damoGear, outerSkillId: 'xianglong_18' }, options))
-    expect(strongerSkill).toMatchObject({ hpDelta: -146, shieldAbsorbed: 100 })
+    expect(strongerSkill).toMatchObject({ hpDelta: -156, shieldAbsorbed: 100 })
     expect(strongerSkill.segments.filter((segment) => segment.type === 'tag' && segment.text.includes('穿透'))).toEqual([
-      { type: 'tag', text: '降龙十八掌 · 穿透 140 点防御 · 增伤 +39', tone: 'gold' },
+      { type: 'tag', text: '降龙十八掌 · 穿透 140 点防御 · 增伤 +40', tone: 'gold' },
     ])
     const [noDefense] = mainCasts(fight(damoGear, { surviveRounds: 1 }))
     expect(noDefense.hpDelta).toBe(-174)
@@ -1680,9 +1680,10 @@ describe('醉仙短打与荒山煞风的流血、中毒联动', () => {
     const [first, ult] = casts(report)
     expect(first.hpDelta).toBe(casts(baseline)[0].hpDelta)
     expect(hasBonus(first)).toBe(false)
-    expect(casts(baseline)[1]).toMatchObject({ skillId: 'yiyang_zhi', hpDelta: -783 })
-    expect(ult).toMatchObject({ skillId: 'yiyang_zhi', hpDelta: -979 })
-    expect(ult.segments).toContainEqual(bonusTag(196))
+    const hasClaw = 'outerSkillId' in patch
+    expect(casts(baseline)[1]).toMatchObject({ skillId: 'yiyang_zhi', hpDelta: hasClaw ? -933 : -783 })
+    expect(ult).toMatchObject({ skillId: 'yiyang_zhi', hpDelta: hasClaw ? -1166 : -979 })
+    expect(ult.segments).toContainEqual(bonusTag(hasClaw ? 233 : 196))
     expect(ult.segments.filter((segment) => segment.type === 'tag' && segment.text.includes('异常增伤'))).toHaveLength(1)
 
     const ticks = report.events.filter((event) => event.type === 'DOT_TICK')
@@ -1767,7 +1768,7 @@ describe('醉仙短打与荒山煞风的流血、中毒联动', () => {
     expect(attached).toMatchObject({ actorSlot: 'ALLY_LEFT', hpDelta: -31 })
     expect(attached.segments).toContainEqual(bonusTag(6))
     expect(firstRound.filter(hasBonus)).toEqual([wearer, attached])
-    expect(firstRound.find((event) => event.type === 'DOT_TICK')).toMatchObject({ actorSlot: 'ALLY_MAIN', hpDelta: -236, statusRounds: 2 })
+    expect(firstRound.find((event) => event.type === 'DOT_TICK')).toMatchObject({ actorSlot: 'ALLY_MAIN', hpDelta: -250, statusRounds: 2 })
   })
 
   it('历练正常配装显示荒山档位和回放中的实际增伤', () => {
@@ -1787,8 +1788,8 @@ describe('醉仙短打与荒山煞风的流血、中毒联动', () => {
       store.challengeTrialStage(16)
       store.skipBattleToEnd()
       const logs = store.logs.filter((entry) => entry.channel === 'BATTLE').flatMap((entry) => entry.segments)
-      expect(logs).toContainEqual(bonusTag(267))
-      expect(logs).toContainEqual(bonusTag(18))
+      expect(logs).toContainEqual(bonusTag(363))
+      expect(logs).toContainEqual(bonusTag(21))
     } finally {
       store.closeBattleStage()
     }

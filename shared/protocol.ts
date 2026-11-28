@@ -72,6 +72,8 @@ export interface PlayerDTO {
   gaibangBeggingDay?: number
   /** 师门差事（shared/sectDaily.ts）：攒下还没记功的挂机时长，和最近办过的几件 */
   sectChores?: { ms: number; recent: SectChoreEntryDTO[] }
+  /** 江湖散记（shared/sectDaily.ts）：散人挂机攒下的时长和最近见闻 */
+  wandererNotes?: { ms: number; recent: WandererNoteEntryDTO[] }
   /** 师门宝库（shared/sectExchange.ts）：本周各样东西已兑换的份数 */
   sectExchange?: { week: number; bought: Record<string, number> }
   isGuardingLibrary: boolean // 是否在藏经阁值守
@@ -164,13 +166,27 @@ export interface SectChoreEntryDTO {
   contrib: number
 }
 
+export interface WandererNoteLootDTO {
+  kind: 'HERB' | 'FRAGMENT'
+  id: string
+  count: number
+}
+
+/** 逍遥散人的一件江湖散记 */
+export interface WandererNoteEntryDTO {
+  id: string
+  at: number
+  silver: number
+  loot?: WandererNoteLootDTO
+}
+
 export type SectResult =
   | { action: 'join'; name: string; items?: string[] }
-  | { action: 'graduate'; name: string }
+  | { action: 'graduate'; name: string; gift?: { pillId: string; pillQty: number; str: number; con: number } }
   | { action: 'betray'; name: string; karmaDelta: number }
   | { action: 'salute'; qiExp: number; sectContrib: number; chief?: SectChiefDTO & { qiExp: number } }
   | { action: 'beg'; silver: number }
-  | { action: 'claim-gear'; items: string[] }
+  | { action: 'claim-gear'; items: string[]; skills?: string[] }
   | { action: 'wanderer-gear'; items: string[] }
   | { action: 'snake-recipe' }
   | { action: 'prepare'; name: string; silver: number }
@@ -302,6 +318,8 @@ export interface IdleGain {
   contestIngot?: number
   /** 挂机期间替师门办的差事 */
   sectChores?: { count: number; contrib: number; entries: SectChoreEntryDTO[] }
+  /** 散人挂机记下的江湖散记 */
+  wandererNotes?: { count: number; silver: number; loot: WandererNoteLootDTO[]; entries: WandererNoteEntryDTO[] }
   /** 下线期间镜像替你应战的劫镖与追捕，告知后清空 */
   defenseNotices?: DefenseNoticeDTO[]
   /** 江湖邸报：上次收功以来、你不在场时发生的事 */

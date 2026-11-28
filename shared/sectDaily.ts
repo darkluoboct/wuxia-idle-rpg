@@ -1,5 +1,5 @@
 import { jianghuHour } from './combatMeta.ts'
-import type { LoadoutPresetDTO, PlayerDTO, SectChoreEntryDTO } from './protocol.ts'
+import type { LoadoutPresetDTO, PlayerDTO, SectChoreEntryDTO, WandererNoteEntryDTO, WandererNoteLootDTO } from './protocol.ts'
 import { sectContributionGain } from './sectProgress.ts'
 import { IDLE_CAP_MS } from './trialStages.ts'
 
@@ -198,4 +198,124 @@ export function drawSectChores(player: ChorePlayer, loadout: LoadoutPresetDTO, n
 export function sectChoreLine(entry: SectChoreEntryDTO) {
   const chore = sectChoreOf(entry.id)
   return chore && { heading: `${shichenAt(entry.at)}时·${chore.place}`, text: chore.text }
+}
+
+// ==================== 逍遥散人 · 江湖散记 ====================
+
+export interface WandererNote {
+  id: string
+  place: string
+  text: string
+  when?: readonly Shichen[]
+}
+
+export const WANDERER_NOTE_MS = SECT_CHORE_MS
+export const WANDERER_NOTE_MAX = SECT_CHORE_MAX
+export const WANDERER_NOTE_RECENT = SECT_CHORE_RECENT
+export const WANDERER_NOTE_HERBS = ['sanqi', 'cheqian_cao', 'honghua', 'jinyinhua', 'fuling'] as const
+export const WANDERER_NOTE_FALLBACK_FRAGMENTS = ['yuenv_jian', 'kaishan_fu', 'pikong_zhang', 'niqiu_gong'] as const
+
+export const WANDERER_NOTES: readonly WandererNote[] = [
+  { id: 'tea_stall', place: '官道茶棚', when: ['辰', '巳', '午', '未', '申'], text: '官道茶棚歇脚，替走脚的镖师顺手搭了把手，掌柜执意塞来一包散碎银钱。' },
+  { id: 'ferry_boat', place: '南湖渡口', when: ['卯', '辰', '巳', '午'], text: '清晨帮老艄公拉了一把搁浅的乌篷船，船头晒着几束刚采的野草药。' },
+  { id: 'wine_inn', place: '醉仙楼下', when: ['午', '未', '申', '酉', '戌'], text: '邻桌两个行脚客聊起华山剑招，你听进耳里，随手记在袖角。' },
+  { id: 'old_temple', place: '城外古庙', when: ['戌', '亥', '子', '丑'], text: '夜宿荒庙烤火，拾到一个醉倒游侠落下的旧包裹，天亮寻他还了过去，他留下一串铜钱。' },
+  { id: 'book_stall', place: '旧书摊', when: ['巳', '午', '未', '申', '酉'], text: '市井旧书摊翻出几页发黄的拳谱残纸，摊主只当废纸秤着卖。' },
+  { id: 'night_watch', place: '镇口更楼', when: ['亥', '子', '丑', '寅'], text: '子夜帮更夫赶跑两个翻墙的毛贼，镇口药铺掌柜第二天一早送来两帖跌打散药。' },
+  { id: 'mountain_path', place: '青石山道', when: ['寅', '卯', '辰', '巳'], text: '晨雾未散时独自在山道行拳，路边石缝里长着一丛露水未干的草药。' },
+  { id: 'escort_bridge', place: '石桥驿站', text: '桥头遇上两拨押镖的汉子起争执，你站出来说了几句公道话，两边各敬了一杯茶银。' },
+  { id: 'riverside_reed', place: '芦苇沙洲', when: ['未', '申', '酉', '戌'], text: '傍晚在芦苇滩边练完一套散手，拾到一只顺水漂来的竹筒，里面夹着半张武学心得。' },
+  { id: 'market_lantern', place: '夜市灯棚', when: ['酉', '戌', '亥', '子'], text: '夜市里替卖艺的老汉解围喝退地痞，围观的客商扔来一捧碎银喝彩。' },
+  { id: 'morning_well', place: '古井旁', when: ['丑', '寅', '卯'], text: '五更天在古井边打水吐纳，井沿青苔里夹着前人留下的几行剑理。' },
+  { id: 'wandering_smith', place: '铁匠铺前', text: '帮打铁的老匠人拉了一下午风箱，他顺手把废铁边角料折成零钱塞给你。' },
+]
+
+const noteIndex = new Map<string, WandererNote>(WANDERER_NOTES.map((note) => [note.id, note]))
+export const wandererNoteOf = (id: string) => noteIndex.get(id)
+
+export function eligibleWandererNotes(shichen: Shichen) {
+  return WANDERER_NOTES.filter((note) => !note.when || note.when.includes(shichen))
+}
+
+/** 散人挂机时攒散记时长；拜入师门或暂停挂机时不攒 */
+export function accrueWandererNotes(player: Pick<PlayerDTO, 'currentSectId' | 'idleOff' | 'wandererNotes'>, elapsedMs: number) {
+  if (player.currentSectId || player.idleOff || !(elapsedMs > 0)) return
+  const state = player.wandererNotes ??= { ms: 0, recent: [] }
+  state.ms = Math.min(IDLE_CAP_MS, state.ms + elapsedMs)
+}
+
+/** 散人下一条散记还要挂多久；在师门或没在挂机返回 undefined */
+export function wandererNoteWait(player: Pick<PlayerDTO, 'currentSectId' | 'idleOff' | 'wandererNotes' | 'lastSettleAt'>, now: number) {
+  if (player.currentSectId || player.idleOff) return
+  const pending = Math.min(IDLE_CAP_MS, (player.wandererNotes?.ms ?? 0) + Math.max(0, now - player.lastSettleAt))
+  const ready = Math.min(WANDERER_NOTE_MAX, Math.floor(pending / WANDERER_NOTE_MS))
+  return { ready, waitMs: ready >= WANDERER_NOTE_MAX ? 0 : WANDERER_NOTE_MS - pending % WANDERER_NOTE_MS }
+}
+
+/** 拜入师门时清空未结算的散记 */
+export function resetWandererNotes(player: Pick<PlayerDTO, 'wandererNotes'>) {
+  delete player.wandererNotes
+}
+
+type WandererNotePlayer = Pick<PlayerDTO, 'currentSectId' | 'idleOff' | 'silver' | 'wandererNotes'>
+type WandererNoteStock = { herbs: Record<string, number>; fragments: Record<string, number> }
+
+/**
+ * 散人收功：每满一个时辰记一件散记，给 400～600 纹银，有 15% 几率顺带拾到草药或武学残页。
+ */
+export function drawWandererNotes(
+  player: WandererNotePlayer,
+  stock: WandererNoteStock,
+  learnedSkills: Readonly<Record<string, number>>,
+  now: number,
+  rng = Math.random,
+) {
+  const state = player.wandererNotes
+  if (!state || player.currentSectId) return
+  const count = Math.min(WANDERER_NOTE_MAX, Math.floor(state.ms / WANDERER_NOTE_MS))
+  if (!count) return
+  state.ms -= count * WANDERER_NOTE_MS
+  const avoid = state.recent.map(({ id }) => id)
+  const learnedIds = Object.keys(learnedSkills).filter((id) => learnedSkills[id] > 0)
+  const fragmentPool = learnedIds.length ? learnedIds : WANDERER_NOTE_FALLBACK_FRAGMENTS
+  const entries: WandererNoteEntryDTO[] = []
+  const lootSummary = new Map<string, WandererNoteLootDTO>()
+  let totalSilver = 0
+  for (let i = 0; i < count; i++) {
+    const at = now - (count - 1 - i) * WANDERER_NOTE_MS
+    const candidates = eligibleWandererNotes(shichenAt(at))
+    const fresh = candidates.filter((note) => !avoid.includes(note.id))
+    const prev = avoid.at(-1)
+    const pool = fresh.length ? fresh : candidates.filter((note) => note.id !== prev)
+    const list = pool.length ? pool : candidates
+    const note = list[Math.min(list.length - 1, Math.floor(rng() * list.length))]
+    avoid.push(note.id)
+    const silver = 400 + Math.floor(rng() * 201)
+    totalSilver += silver
+    let loot: WandererNoteLootDTO | undefined
+    if (rng() < 0.15) {
+      if (rng() < 0.5) {
+        const herbId = WANDERER_NOTE_HERBS[Math.min(WANDERER_NOTE_HERBS.length - 1, Math.floor(rng() * WANDERER_NOTE_HERBS.length))]
+        stock.herbs[herbId] = (stock.herbs[herbId] ?? 0) + 1
+        loot = { kind: 'HERB', id: herbId, count: 1 }
+      } else {
+        const skillId = fragmentPool[Math.min(fragmentPool.length - 1, Math.floor(rng() * fragmentPool.length))]
+        stock.fragments[skillId] = (stock.fragments[skillId] ?? 0) + 1
+        loot = { kind: 'FRAGMENT', id: skillId, count: 1 }
+      }
+      const key = `${loot.kind}:${loot.id}`
+      const existing = lootSummary.get(key)
+      if (existing) existing.count += loot.count
+      else lootSummary.set(key, { ...loot })
+    }
+    entries.push({ id: note.id, at, silver, ...(loot ? { loot } : {}) })
+  }
+  player.silver += totalSilver
+  state.recent = [...state.recent, ...entries].slice(-WANDERER_NOTE_RECENT)
+  return { count, silver: totalSilver, loot: [...lootSummary.values()], entries }
+}
+
+export function wandererNoteLine(entry: WandererNoteEntryDTO) {
+  const note = wandererNoteOf(entry.id)
+  return note && { heading: `${shichenAt(entry.at)}时·${note.place}`, text: note.text }
 }

@@ -8,15 +8,17 @@ import { DAGOU_STAFF } from '../../../shared/artifacts.ts'
 import { huashanDay } from '../../../shared/huashan.ts'
 import {
   SECT_SALUTE_QI,
+  grantJiangnanGraduationGift,
   sectContributionGain,
   sectExamBlockReason,
   sectPromotion,
   sectPromotionRewards,
+  sectSkillRewardIds,
   simulateSectTrial,
 } from '../../../shared/sectProgress.ts'
 import { eligibleWandererEquipment, gaibangBeggingSilver, sectEquipmentRewardIds, WANDERER_EQUIPMENT } from '../../../shared/sectEquipment.ts'
 import { canReceiveSnakeRecipe } from '../../../shared/player.ts'
-import { resetSectChores } from '../../../shared/sectDaily.ts'
+import { resetSectChores, resetWandererNotes } from '../../../shared/sectDaily.ts'
 import { buySectGood, SECT_TREASURIES, sectGoods, type SectGood } from '../../../shared/sectExchange.ts'
 import { GAIBANG_FINAL_DISHES } from '@/config/questData'
 import { usePlayerStore } from './playerStore'
@@ -76,6 +78,9 @@ export function useSect({ actions, cultivation, battle, story, chat, companions,
   const canBegToday = computed(() => player.value.gaibangBeggingDay !== huashanDay(IS_MOCK_MODE ? nowTick.value : onlineTime.value))
   const unclaimedSectEquipment = computed(() => currentSect.value
     ? sectEquipmentRewardIds(currentSect.value.id, player.value.sectRank).filter((id) => !ownedItemIds.value.includes(id)) : [])
+  const unclaimedSectSkills = computed(() => currentSect.value
+    ? sectSkillRewardIds(currentSect.value, player.value.sectRank).filter((id) => !learnedSkills.value[id]) : [])
+  const hasUnclaimedSectRewards = computed(() => unclaimedSectEquipment.value.length > 0 || unclaimedSectSkills.value.length > 0)
   const unclaimedWandererEquipment = computed(() => eligibleWandererEquipment(player.value)
     && WANDERER_EQUIPMENT.items.some(({ id }) => !ownedItemIds.value.includes(id)))
   const wandererTeamDamage = computed(() => resolveBattleLoadout(currentLoadout.value, player.value).effects
@@ -117,6 +122,7 @@ export function useSect({ actions, cultivation, battle, story, chat, companions,
       player.value.sectRank = 1
       delete player.value.gaibangBranch
       resetSectChores(player.value)
+      resetWandererNotes(player.value)
       player.value.sectContribution = 100 + (hasIntro ? (sect.introBonus ?? 0) : 0)
       for (const id of sect.signatureSkills[0] ?? []) learnSkill(id)
       claimSectEquipment()
@@ -161,6 +167,14 @@ export function useSect({ actions, cultivation, battle, story, chat, companions,
     })])
   }
 
+  function recordSectSkills(ids: readonly string[]) {
+    if (!ids.length) return
+    appendLog('JIANGHU', [{ type: 'tag', text: '师门授武', tone: 'gold' }, ...ids.flatMap((id): RichSegment[] => {
+      const sk = SKILLS[id]
+      return sk ? [{ type: 'text', text: ' ' }, { type: 'skill', id, name: `《${sk.name}》`, tier: sk.tier }] : []
+    })])
+  }
+
   const mayReceiveSnakeRecipe = computed(() => !player.value.snakeFeedingRecipe && canReceiveSnakeRecipe(player.value, currentLoadout.value))
 
   function claimSnakeRecipe() {
@@ -179,13 +193,19 @@ export function useSect({ actions, cultivation, battle, story, chat, companions,
   function claimSectEquipment() {
     const sect = currentSect.value
     const ids = unclaimedSectEquipment.value
-    if (!sect || !ids.length) return
+    const skillIds = unclaimedSectSkills.value
+    if (!sect || (!ids.length && !skillIds.length)) return
     return actions.run('sect', { action: 'claim-gear', sectId: sect.id }, (result) => {
-      if (result.action === 'claim-gear') recordSectEquipment(result.items)
+      if (result.action === 'claim-gear') {
+        recordSectEquipment(result.items)
+        recordSectSkills(result.skills ?? [])
+      }
     }, () => {
       const now = Date.now()
       if (limitsEnabled.value && now > player.value.lastSettleAt) settleMockIdle(now)
+      for (const id of skillIds) learnSkill(id)
       for (const id of ids) gainItem(id)
+      recordSectSkills(skillIds)
       recordSectEquipment(ids)
     })
   }
@@ -220,7 +240,7 @@ export function useSect({ actions, cultivation, battle, story, chat, companions,
     const advanced = newRank > player.value.sectRank
     player.value.sectRank = newRank
     const grants: RichSegment[] = []
-    for (const skillId of sect.signatureSkills[newRank - 1] ?? []) {
+    for (const skillId of sectSkillRewardIds(sect, newRank)) {
       const sk = SKILLS[skillId]
       const had = (learnedSkills.value[skillId] ?? 0) > 0
       learnSkill(skillId)
@@ -341,9 +361,15 @@ export function useSect({ actions, cultivation, battle, story, chat, companions,
   function leaveSect(mode: 'GRADUATE' | 'BETRAY') {
     if (!currentSect.value || (isBattlePlaying.value && activeBattle.value?.mode === 'SECT_TRIAL')) return
     const oldSect = currentSect.value
+    const announceGift = (gift: NonNullable<Extract<import('@/network/protocol').SectResult, { action: 'graduate' }>['gift']>) => {
+      appendLog('JIANGHU', [{ type: 'tag', text: '武馆出师礼', tone: 'gold' },
+        { type: 'text', text: ` 总教头铁拳张赠你【玄门·聚气通脉丹】×${gift.pillQty}，臂力 +${gift.str}，根骨 +${gift.con}。` }])
+    }
     return actions.run('sect', { action: mode === 'GRADUATE' ? 'graduate' : 'betray', sectId: oldSect.id }, (result) => {
-      if (result.action === 'graduate') showToast(`已从「${result.name}」出师，学过的武功都还在。`, 'gold')
-      else if (result.action === 'betray') showToast(`已叛出「${result.name}」，侠义减少 ${Math.abs(result.karmaDelta ?? 120)} 点，追杀令持续 48 小时。`, 'danger')
+      if (result.action === 'graduate') {
+        if (result.gift) announceGift(result.gift)
+        showToast(`已从「${result.name}」出师，学过的武功都还在。`, 'gold')
+      } else if (result.action === 'betray') showToast(`已叛出「${result.name}」，侠义减少 ${Math.abs(result.karmaDelta ?? 120)} 点，追杀令持续 48 小时。`, 'danger')
     }, () => {
       if (mode === 'GRADUATE') {
         if (player.value.sectRank < 4 && oldSect.id !== 'jiangnan_wuguan') {
@@ -351,6 +377,7 @@ export function useSect({ actions, cultivation, battle, story, chat, companions,
           return
         }
         settleMockIdle(Date.now())
+        const previousRank = player.value.sectRank
         const graduated = player.value.graduatedSectIds ??= []
         if (!graduated.includes(oldSect.id)) graduated.push(oldSect.id)
         player.value.currentSectId = null
@@ -359,10 +386,12 @@ export function useSect({ actions, cultivation, battle, story, chat, companions,
         player.value.isGuardingLibrary = false
         delete player.value.gaibangBranch
         resetSectChores(player.value)
+        const gift = grantJiangnanGraduationGift(player.value, pillInventory.value, oldSect.id, previousRank, storyFlags.value)
         appendLog('JIANGHU', [
           { type: 'tag', text: '圆满出师', tone: 'gold' },
           { type: 'text', text: ` 你拜别「${oldSect.name}」，保留了学过的武功，也可以再拜别的门派。` },
         ])
+        if (gift) announceGift(gift)
         showToast(`已从「${oldSect.name}」出师，学过的武功都还在。`, 'gold')
         return
       }
@@ -435,6 +464,8 @@ export function useSect({ actions, cultivation, battle, story, chat, companions,
     canSaluteSect,
     canBegToday,
     unclaimedSectEquipment,
+    unclaimedSectSkills,
+    hasUnclaimedSectRewards,
     unclaimedWandererEquipment,
     wandererTeamDamage,
     gaibangFinalPending,

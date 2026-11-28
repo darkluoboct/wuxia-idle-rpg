@@ -32,7 +32,7 @@ export function useNavBadges(store: ReturnType<typeof useGameStore>) {
         : store.pendingAdventure || store.adventureQueue.length ? '有待处理的奇遇' : undefined,
       ARSENAL: unreadGear.value ? '有新装备' : readyPoint ? '可以冲穴' : undefined,
       SECT: store.canPromoteSect && !store.sectPromotionBlockReason ? '可以参加晋升考核'
-        : store.unclaimedSectEquipment.length || store.mayReceiveSnakeRecipe ? '有待领取的门派奖励'
+        : store.hasUnclaimedSectRewards || store.mayReceiveSnakeRecipe ? '有待领取的门派奖励'
           : store.canSaluteSect ? '今日可向首席请安' : undefined,
       MARKET: auction?.wins.length ? '有待领取的拍品' : outbid ? '竞拍出价已被超过' : undefined,
     }

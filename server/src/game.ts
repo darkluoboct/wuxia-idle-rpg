@@ -16,9 +16,9 @@ import {
 import { appraiseGhostCurio, autoEquipItem, autoSeatCompanions, recruitedCompanionIds, wieldStoryWeapon, averageBoostPct, autoEquipSkill, canEnterMap, canReceiveSnakeRecipe, cityInspectionDue, coCultivationRate, createNewGameCharacter, createStarterCharacter, cultivatePlayer, cultivationRate, cultivationRates, GHOST_APPRAISAL_SWORD, idleQiNumerator, innAffinityGain, startIdle, innGiftsRemaining, innVisitDay, karmaAfterEvent, legacyAcupoints, planMapJourney, recipeForPlayer, resolveSeaVoyage, settlePatrolCaches, trialFirstClearSilver } from '../../shared/player.ts'
 import { HUASHAN_HONORS, HUASHAN_RESPECT_QI, huashanDay, huashanRankReward, huashanRatingSwing, huashanSeason, huashanSeasonEndsAt } from '../../shared/huashan.ts'
 import { GAIBANG_DEBATE, GAIBANG_FINAL_DISHES, gaibangDishFlag, gaibangDishPrepared, gaibangSilverGain } from '../../shared/gaibang.ts'
-import { BETRAYAL_BOUNTY, SECT_CHIEF_SALUTE_QI, SECT_CONTEST_MIN_RANK, SECT_SALUTE_QI, sectContestEndsAt, sectContestWeek, sectContributionGain, sectExamBlockReason, sectPromotion, sectPromotionRewards, simulateSectTrial } from '../../shared/sectProgress.ts'
+import { BETRAYAL_BOUNTY, grantJiangnanGraduationGift, SECT_CHIEF_SALUTE_QI, SECT_CONTEST_MIN_RANK, SECT_SALUTE_QI, sectContestEndsAt, sectContestWeek, sectContributionGain, sectExamBlockReason, sectPromotion, sectPromotionRewards, sectSkillRewardIds, simulateSectTrial } from '../../shared/sectProgress.ts'
 import { eligibleWandererEquipment, gaibangBeggingSilver, sectEquipmentRewardIds, WANDERER_EQUIPMENT } from '../../shared/sectEquipment.ts'
-import { accrueSectChores, drawSectChores, resetSectChores } from '../../shared/sectDaily.ts'
+import { accrueSectChores, accrueWandererNotes, drawSectChores, drawWandererNotes, resetSectChores, resetWandererNotes } from '../../shared/sectDaily.ts'
 import { buySectGood } from '../../shared/sectExchange.ts'
 import { MAX_SKILL_MASTERY, QUSAN_CACHE_KEY, searchQusanCache, skillFragmentDiscount, skillPowerAtMastery, skillUpgradeCost } from '../../shared/skillMastery.ts'
 import { effectiveMartialStats, hasMartialFreedom } from '../../shared/martialSchools.ts'
@@ -285,8 +285,8 @@ function mirrorRankEntry(row: MirrorRankRow & { rank: number }): MirrorRankEntry
 }
 
 function huashanEntry(row: HuashanRanked, honor?: string): HuashanEntryDTO {
-  const { player, loadout, bonus, companionOf } = mirrorFighter(row.mirror)
-  const { combatPower } = computeDerivedStats(player, loadout, bonus, companionOf)
+  const { player, loadout, bonus, companionOf, learnedSkills } = mirrorFighter(row.mirror)
+  const { combatPower } = computeDerivedStats(player, loadout, bonus, companionOf, learnedSkills)
   return { ...mirrorRankEntry(row), combatPower, honor, suffix: row.suffix, inscription: row.inscription }
 }
 
@@ -368,12 +368,13 @@ function idleRewards(character: Character, now: number, rate: ReturnType<typeof 
 
 function creditIdle(character: Character, now: number): IdleGain {
   const { player } = character
-  const rate = cultivationRates(player, activeLoadout(character), collectionBonus(character).idleQiPct)
+  const rate = cultivationRates(player, activeLoadout(character), collectionBonus(character).idleQiPct, character.learnedSkills)
   const { gainedQi, gainedSilver, qiRemainder, silverRemainder } = idleRewards(character, now, rate)
   player.qiExp += gainedQi
   player.silver += gainedSilver
-  // 师门差事按这段挂机时长攒，收功时记功（shared/sectDaily.ts）
+  // 师门差事按这段挂机时长攒，收功时记功；散人则攒江湖散记（shared/sectDaily.ts）
   accrueSectChores(player, now - player.lastSettleAt)
+  accrueWandererNotes(player, now - player.lastSettleAt)
   player.lastSettleAt = Math.max(now, player.lastSettleAt)
   character.qiRemainder = qiRemainder
   character.silverRemainder = silverRemainder
@@ -395,7 +396,8 @@ function changeKarma(character: Character, delta: number, now: number) {
   const prior = player.stats.karma
   const karma = karmaAfterEvent(prior, delta, loadout.headId)
   const bonus = collectionBonus(character).idleQiPct
-  if (cultivationRate({ ...player, stats: { ...player.stats, karma } }, loadout, bonus) !== cultivationRate(player, loadout, bonus)) settle(character, now)
+  if (cultivationRate({ ...player, stats: { ...player.stats, karma } }, loadout, bonus, character.learnedSkills) !==
+    cultivationRate(player, loadout, bonus, character.learnedSkills)) settle(character, now)
   player.stats.karma = karma
   return karma - prior
 }
@@ -475,7 +477,7 @@ function snapshot(character: Character, now: number): PlayerSnapshot {
   const { player, revision, loadouts, ownedItemIds, learnedSkills, companionAffinity } = character
   const loadout = activeLoadout(character)
   const bonus = collectionBonus(character)
-  const rate = cultivationRates(player, loadout, bonus.idleQiPct)
+  const rate = cultivationRates(player, loadout, bonus.idleQiPct, learnedSkills)
   const pair = activePair(character, now)
   const { gainedQi, gainedSilver } = idleRewards(character, now, rate)
   return {
@@ -490,7 +492,7 @@ function snapshot(character: Character, now: number): PlayerSnapshot {
     pillInventory: player.acupointPills,
     learnedSkills,
     companionAffinity,
-    derivedStats: computeDerivedStats(player, loadout, bonus, (id) => equippedCompanion(character, id)),
+    derivedStats: computeDerivedStats(player, loadout, bonus, (id) => equippedCompanion(character, id), learnedSkills),
     soloQiPerHour: rate.qi,
     soloSilverBasis: gaibangSilverGain(player, rate.silverBasis),
     coCultivation: character.coCultivation,
@@ -1655,12 +1657,23 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
     const gain = settle(character, now)
     const sectChores = drawSectChores(character.player, activeLoadout(character), now)
     if (sectChores) changed = true
+    const wandererNotes = drawWandererNotes(
+      character.player,
+      {
+        herbs: (character.player.alchemy ??= { herbs: {}, pity: {}, residue: 0 }).herbs,
+        fragments: character.player.skillFragments ??= {},
+      },
+      character.learnedSkills,
+      now,
+    )
+    if (wandererNotes) changed = true
     return {
       result: {
         ...gain, drops: character.patrolDrops, patrolBattles: character.patrolBattles, forgeMaterials: character.patrolForgeMaterials,
         patrolCache: character.patrolCache, reunionClues,
         ...(feastIngredient ? { feastIngredient } : {}), ...(contestIngot ? { contestIngot } : {}), ...(xiangyang.length ? { xiangyang } : {}),
         ...(sectChores ? { sectChores } : {}),
+        ...(wandererNotes ? { wandererNotes } : {}),
         ...(defenseNotices?.length ? { defenseNotices } : {}),
         away,
       } satisfies IdleGain,
@@ -1997,7 +2010,7 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
 
   async function grantSectPromotion(client: PoolClient, character: Character, sect: (typeof SECTS)[number], rank: number, now: number) {
     const items: NonNullable<NonNullable<BattleReportDTO['rewards']>['items']> = []
-    for (const id of sect.signatureSkills[rank - 1] ?? []) {
+    for (const id of sectSkillRewardIds(sect, rank)) {
       const grant = await grantSkill(client, character, id)
       if (grant) items.push(grant)
     }
@@ -2139,6 +2152,7 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
       player.sectRank = 1
       delete player.gaibangBranch
       resetSectChores(player)
+      resetWandererNotes(player)
       player.sectContribution = 100 + (sect.introFlag && flags.includes(sect.introFlag) ? sect.introBonus ?? 0 : 0)
       const items = await grantSectPromotion(client, character, sect, 1, now)
       return { result: { action, name: sect.name, items: items.filter(({ id }) => !!ITEMS[id]).map(({ id }) => id) }, changed: true }
@@ -2178,8 +2192,13 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
         chief: chief && recipient ? { ...chief, qiExp: SECT_CHIEF_SALUTE_QI } : undefined }, changed: true, related: recipient ? [recipient] : [] }
     }
     if (action === 'claim-gear') {
+      const skills: string[] = []
+      for (const id of sectSkillRewardIds(sect, player.sectRank)) {
+        const grant = await grantSkill(client, character, id)
+        if (grant) skills.push(grant.id)
+      }
       const items = await grantItems(client, character, sectEquipmentRewardIds(sect.id, player.sectRank))
-      return { result: { action, items }, changed: items.length > 0 }
+      return { result: { action, items, ...(skills.length ? { skills } : {}) }, changed: items.length > 0 || skills.length > 0 }
     }
     if (action === 'beg') {
       if (sect.id !== 'gaibang') throw new GameError(409, 'GAIBANG_REQUIRED', '拜入丐帮才可接化缘差事')
@@ -2265,6 +2284,7 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
     await client.query(`UPDATE sect_contest_results SET chief_id = NULL
       WHERE sect_id = $1 AND week_id = $2 AND chief_id = $3`, [sect.id, weekId - 1, player.id])
     settle(character, now)
+    const previousRank = player.sectRank
     player.currentSectId = null
     player.sectRank = 1
     player.sectContribution = 0
@@ -2274,7 +2294,8 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
     if (action === 'graduate') {
       const graduated = player.graduatedSectIds ??= []
       if (!graduated.includes(sect.id)) graduated.push(sect.id)
-      return { result: { action, name: sect.name }, changed: true }
+      const gift = grantJiangnanGraduationGift(player, player.acupointPills ??= {}, sect.id, previousRank, player.sectProgressFlags ??= [])
+      return { result: { action, name: sect.name, ...(gift ? { gift } : {}) }, changed: true }
     }
     const betrayed = player.betrayedSectIds ??= []
     betrayed.push(sect.id)
@@ -3222,8 +3243,8 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
     const nextIdx = activate ? idx : player.activePresetIdx
     const nextActive = nextIdx === idx ? checked : activeLoadout(character)
     const idleBonus = collectionBonus(character).idleQiPct
-    const oldRate = cultivationRates(player, activeLoadout(character), idleBonus)
-    const newRate = cultivationRates(player, nextActive, idleBonus)
+    const oldRate = cultivationRates(player, activeLoadout(character), idleBonus, character.learnedSkills)
+    const newRate = cultivationRates(player, nextActive, idleBonus, character.learnedSkills)
     const rateChanged = oldRate.qi !== newRate.qi || oldRate.silverBasis !== newRate.silverBasis
     const result = rateChanged || character.patrolIdleGain ? settle(character, now) : NO_IDLE_GAIN
     character.loadouts[idx - 1] = checked
@@ -3232,7 +3253,7 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
     return { result, changed: true }
   }))
 
-  app.post('/api/v1/skill/upgrade', (request) => respond<SkillUpgradeResult>(request, async (character, _now, client) => {
+  app.post('/api/v1/skill/upgrade', (request) => respond<SkillUpgradeResult>(request, async (character, now, client) => {
     const { skillId, expectedMastery, useFragments = false } = objectBody(request.body)
     if (typeof skillId !== 'string' || !Object.hasOwn(SKILLS, skillId) || !Number.isInteger(expectedMastery) || typeof useFragments !== 'boolean') {
       throw new GameError(400, 'INVALID_SKILL_UPGRADE', '请选择一门武功升重')
@@ -3250,6 +3271,10 @@ export function registerGame(app: FastifyInstance, rooms: ReturnType<typeof regi
     if (player.qiExp < spentQi) throw new GameError(409, 'SKILL_QI_REQUIRED', `还差 ${(spentQi - player.qiExp).toLocaleString('zh-CN')} 真气`)
 
     const nextMastery = mastery + 1
+    const idleBonus = collectionBonus(character).idleQiPct
+    const oldRate = cultivationRates(player, loadout, idleBonus, character.learnedSkills)
+    const newRate = cultivationRates(player, loadout, idleBonus, { ...character.learnedSkills, [skillId]: nextMastery })
+    if (oldRate.qi !== newRate.qi || oldRate.silverBasis !== newRate.silverBasis) settle(character, now)
     await client.query('UPDATE player_skills SET mastery = $3 WHERE player_id = $1 AND skill_id = $2', [player.id, skillId, nextMastery])
     character.learnedSkills[skillId] = nextMastery
     player.qiExp -= spentQi

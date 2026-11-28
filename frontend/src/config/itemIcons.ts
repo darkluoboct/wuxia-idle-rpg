@@ -150,8 +150,30 @@ for (const [sheet, cells] of Object.entries(sheets)) {
   })
 }
 
+const fallbackIcons: Record<string, string> = {
+  sect_tiezhang_tiaoshui_armor: 'tiezhang_kaishan_armor',
+  sect_tiezhang_tiaoshui_wrist: 'tiezhang_kaishan_wrist',
+  sect_tiezhang_xingtang_armor: 'tiezhang_kaishan_armor',
+  sect_tiezhang_xingtang_weapon: 'tiezhang_kaishan_weapon',
+  sect_tiezhang_xingtang_belt: 'tiezhang_kaishan_belt',
+  sect_tiezhang_wuzhi_armor: 'tiezhang_kaishan_armor',
+  sect_tiezhang_wuzhi_wrist: 'tiezhang_kaishan_wrist',
+  sect_tiezhang_wuzhi_belt: 'tiezhang_kaishan_belt',
+  sect_tiezhang_wuzhi_head: 'tiezhang_kaishan_head',
+  sect_yideng_sasao_armor: 'fahua_zuyi_armor',
+  sect_yideng_sasao_head: 'fahua_zuyi_head',
+  sect_yideng_yuqiao_armor: 'fahua_zuyi_armor',
+  sect_yideng_yuqiao_acc: 'fahua_zuyi_acc',
+  sect_yideng_yuqiao_boots: 'fahua_zuyi_boots',
+  sect_yideng_cibei_armor: 'quanzhen_beidou_armor',
+  sect_yideng_cibei_wrist: 'quanzhen_beidou_wrist',
+  sect_yideng_cibei_acc: 'quanzhen_beidou_acc',
+  sect_yideng_cibei_head: 'quanzhen_beidou_head',
+}
+
 export function itemIcon(id: string) {
-  return icons.get(ITEMS[id]?.baseItemId ?? id)
+  const key = ITEMS[id]?.baseItemId ?? id
+  return icons.get(key) ?? (fallbackIcons[key] ? icons.get(fallbackIcons[key]) : undefined)
 }
 
 export function itemIllustration(id: string, size: 'thumb' | 'full' = 'thumb'): string | undefined {

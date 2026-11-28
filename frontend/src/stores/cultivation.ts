@@ -1,9 +1,9 @@
 import type { CultivationResult, IdleGain, LoadoutPresetDTO, RateBoostKind, TrialDropDTO } from '@/network/protocol'
-import { ACUPOINTS, MEDICINES, getMapHerbs, COMPANIONS } from '@/config/gameData'
+import { ACUPOINTS, MEDICINES, getMapHerbs, COMPANIONS, HERBS, SKILLS } from '@/config/gameData'
 import { gaibangSilverGain } from '../../../shared/gaibang.ts'
 import { cultivatePlayer, cultivationRate, cultivationRates, idleQiNumerator, karmaAfterEvent, startIdle } from '../../../shared/player.ts'
 import { IDLE_CAP_MS } from '../../../shared/trialStages.ts'
-import { accrueSectChores, drawSectChores, sectChoreLine } from '../../../shared/sectDaily.ts'
+import { accrueSectChores, accrueWandererNotes, drawSectChores, drawWandererNotes, sectChoreLine, wandererNoteLine } from '../../../shared/sectDaily.ts'
 
 /** 离开超过一个时辰（两小时）才弹江湖邸报；不在场时有事发生则随时弹 */
 const AWAY_REPORT_MS = 2 * 3_600_000
@@ -40,6 +40,7 @@ export function useCultivation({
     currentLoadout,
     currentRealm,
     pillInventory,
+    learnedSkills,
     worldTime,
   } = storeToRefs(playerStore)
   const uiStore = useGameUiStore()
@@ -138,6 +139,7 @@ export function useCultivation({
     }
     if (result.feastIngredient) logFeastIngredient(result.feastIngredient)
     if (result.sectChores) logSectChores(result.sectChores)
+    if (result.wandererNotes) logWandererNotes(result.wandererNotes)
     if (result.contestIngot) {
       appendLog('JIANGHU', [{ type: 'tag', text: '门派演武', tone: 'gold' }, { type: 'text', text: ` 上周演武论功，领得 ${result.contestIngot} 元宝。` }])
     }
@@ -160,9 +162,17 @@ export function useCultivation({
     const { awards, xiangyang } = claimLocalXiangyang(now, since)
     const sectChores = drawSectChores(player.value, currentLoadout.value, now)
     if (sectChores) logSectChores(sectChores)
+    const wandererNotes = drawWandererNotes(
+      player.value,
+      { herbs: herbInventory.value, fragments: player.value.skillFragments ??= {} },
+      learnedSkills.value,
+      now,
+    )
+    if (wandererNotes) logWandererNotes(wandererNotes)
     markDaily('settle')
     openAwayReport({
-      ...idle, ...patrol, ...(awards.length ? { xiangyang: awards } : {}), ...(sectChores ? { sectChores } : {}),
+      ...idle, ...patrol, ...(awards.length ? { xiangyang: awards } : {}),
+      ...(sectChores ? { sectChores } : {}), ...(wandererNotes ? { wandererNotes } : {}),
       away: { since, ...(xiangyang ? { xiangyang } : {}) },
     }, now)
   }
@@ -181,6 +191,7 @@ export function useCultivation({
     player.value.qiExp += gainedQi
     player.value.silver += gainedSilver
     accrueSectChores(player.value, now - player.value.lastSettleAt)
+    accrueWandererNotes(player.value, now - player.value.lastSettleAt)
     player.value.lastSettleAt = now
     onOfflineSettled(elapsedSec)
 
@@ -200,7 +211,7 @@ export function useCultivation({
   }
 
   function settleMockBeforeLoadoutChange(next: LoadoutPresetDTO) {
-    const rate = cultivationRates(player.value, next, collectionBonus.value.idleQiPct)
+    const rate = cultivationRates(player.value, next, collectionBonus.value.idleQiPct, learnedSkills.value)
     if (rate.qi !== mockIdleRates.value.qi || rate.silverBasis !== mockIdleRates.value.silverBasis) {
       const now = Date.now()
       if (now > player.value.lastSettleAt) settleMockIdle(now)
@@ -212,7 +223,7 @@ export function useCultivation({
     const prior = p.stats.karma
     const preset = currentLoadout.value
     const karma = karmaAfterEvent(prior, delta, preset.headId)
-    if (now > p.lastSettleAt && cultivationRate({ ...p, stats: { ...p.stats, karma } }, preset, collectionBonus.value.idleQiPct) !== mockIdleRates.value.qi) {
+    if (now > p.lastSettleAt && cultivationRate({ ...p, stats: { ...p.stats, karma } }, preset, collectionBonus.value.idleQiPct, learnedSkills.value) !== mockIdleRates.value.qi) {
       settleMockIdle(now)
     }
     p.stats.karma = karma
@@ -227,6 +238,18 @@ export function useCultivation({
     }
     appendLog('JIANGHU', [{ type: 'tag', text: '师门差事', tone: 'jade' },
       { type: 'text', text: ` 挂机这些时辰，你替师门办了 ${count} 件差事，门派贡献 +${contrib}。` }])
+  }
+
+  /** 散人挂机记下的江湖散记：最近几则写进日志 */
+  function logWandererNotes({ count, silver, loot, entries }: NonNullable<IdleGain['wandererNotes']>) {
+    for (const entry of entries.slice(-3)) {
+      const line = wandererNoteLine(entry)
+      if (line) appendLog('JIANGHU', [{ type: 'text', text: `【${line.heading}】${line.text}` }])
+    }
+    const lootText = loot.map(({ kind, id, count: qty }) =>
+      `${kind === 'HERB' ? (HERBS[id]?.name ?? id) : `《${SKILLS[id]?.name ?? id}》残页`} ×${qty}`).join('、')
+    appendLog('JIANGHU', [{ type: 'tag', text: '江湖散记', tone: 'jade' },
+      { type: 'text', text: ` 游历这些时辰记下 ${count} 则散记，得纹银 +${silver.toLocaleString()}${lootText ? `，另拾得${lootText}` : ''}。` }])
   }
 
   function showIdleGain({ gainedQi, gainedSilver }: IdleGain, herbs: string[] = []) {

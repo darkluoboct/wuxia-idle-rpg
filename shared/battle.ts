@@ -8,7 +8,7 @@ import {
   resolveAttackLifesteal, resolveParryEffects, resolveHitReflection, resolveTrueDamage, resolveCastArea, resolvePoisonBurst, resolveKillRewards, restoreHp, restorePartyRound, rollAbsoluteDefense, storedDamageEffect, teamStatBonuses, teamCombatEffects, teamTrueStrike, isSharedCombatEffect,
   resolveActionEndDarts, resolveCompanionEquipment, resolveReceivePeriodic, resolveStrikeSplash,
   applyBattleStatus, applyDirectedDamage, applyEnemyReaction, applyEnemyStatusPulse, applyIncomingStatuses, applyPeriodicOnHit, cleanseControlStatus, cleansePoison,
-  battleDefense, battleDodge, breakCharge, canInterruptEnemyUltimate, effectsDuringAction, endStatusRound, hasStatus, hiddenWeaponChance, hiddenWeaponDamage, poisonStacks,
+  battleDefense, battleDodge, breakCharge, canInterruptEnemyUltimate, combatRampStacks, effectsDuringAction, endStatusRound, hasStatus, hiddenWeaponChance, hiddenWeaponDamage, poisonStacks,
   enemyInnerMp, enemyPhaseAttackPercent, enemyRageAction, enemyPreferredTarget, prepareEnemyRound, reactToEnemyDamage, readyEnemyRagePower, reflectCriticalPoison, resolveCritRage, splitFormationDamage,
   recordLethalSave, reflectLethalPoison, remainingBattleStatuses, spreadHitStatus, startControlledAction, startStatusRound, statusPercent, strikeAvoidance, transferLethalStatuses, useCriticalHitPill, useLowMpPill, useRoundStartPill,
   type ActiveEffect, type CritAction, type DamageShareFormation, type DodgeEffectState, type EnemyBattleState, type StatusTarget, type TrueStrike,
@@ -17,7 +17,9 @@ import {
   BASE_ACTION_SPEED, BASE_PARRY_ABSORB, BASE_PARRY_CHANCE, battleEnvironmentAt, battleObjectiveText, damageAfterDefense, DEFAULT_DODGE_CAP, MAX_CRIT_PERCENT, STANCE_META,
   isWeaponForm, matchesStrike, NIGHT_HIT_PENALTY, stanceRelation, STANDARD_HIT_RAGE, ULT_MP_COST_PERCENT, type AttackForm, type BattleEnemyGuard, type BattleEnvironment, type BattleEscortAlly, type BattleObjective, type BattleOpponent, type BattleStatBonuses, type BattleStatusRule, type EnemyCombatConfig, type PeriodicRule,
 } from './combatMeta.ts'
-import { skillPowerAtMastery } from './skillMastery.ts'
+import {
+  jiuyinZonggangHpMultiplier, masteryPassiveScale, resolveSkillForMastery, skillCritBonusAtMastery, skillMasteryFrom, skillPowerAtMastery,
+} from './skillMastery.ts'
 import { gaibangSilverGain } from './gaibang.ts'
 import { effectiveMartialStats, martialEffectiveness, type MartialSchoolMember } from './martialSchools.ts'
 import { CHAPTER_ONE_TITLE, equippedGearSkill, type trialPuzzleOutcome } from './trialStages.ts'
@@ -57,9 +59,12 @@ interface CollectionBonus {
 }
 
 /** 计算玩家二级战斗面板（严格对应第06册公式） */
-export function computeDerivedStats(player: PlayerDTO, loadout: LoadoutPresetDTO, bonus: CollectionBonus = {}, companionOf = defaultCompanionOf) {
-  const { main, teamStats, harmony, friction } = resolvePartyEquipment(player, loadout, companionOf)
-  return withPartySpeed(deriveStats(player, loadout, main, bonus, teamStats).stats, harmony?.speedPercent ?? (friction ? ALIGNMENT_FRICTION_PERCENT : 0))
+export function computeDerivedStats(
+  player: PlayerDTO, loadout: LoadoutPresetDTO, bonus: CollectionBonus = {}, companionOf = defaultCompanionOf,
+  learnedSkills?: Readonly<Record<string, number>>,
+) {
+  const { main, teamStats, harmony, friction } = resolvePartyEquipment(player, loadout, companionOf, true, learnedSkills)
+  return withPartySpeed(deriveStats(player, loadout, main, bonus, teamStats, undefined, learnedSkills).stats, harmony?.speedPercent ?? (friction ? ALIGNMENT_FRICTION_PERCENT : 0))
 }
 
 function defaultCompanionOf(id: string) {
@@ -67,8 +72,11 @@ function defaultCompanionOf(id: string) {
   return config ? companionView(config, { form: 'awakened' }) : undefined
 }
 
-function resolvePartyEquipment(player: PlayerDTO, loadout: LoadoutPresetDTO, companionOf: typeof defaultCompanionOf, includeCompanions = true) {
-  const main = resolveBattleLoadout(loadout, player)
+function resolvePartyEquipment(
+  player: PlayerDTO, loadout: LoadoutPresetDTO, companionOf: typeof defaultCompanionOf, includeCompanions = true,
+  learnedSkills?: Readonly<Record<string, number>>,
+) {
+  const main = resolveBattleLoadout(loadout, player, learnedSkills)
   const allocated = new Set(main.items.map((item) => item.id))
   function member(id: string | null) {
     const view = includeCompanions && id ? companionOf(id) : undefined
@@ -113,7 +121,7 @@ function deriveCompanionStats(
   const atk = Math.round((Math.round(view.baseAtk * (1 + level * 0.04)) + equipmentAtk + own('atk') + shared('atk') + str * 8.5 + agi * 2.5) *
     (100 + shared('atkPercent')) / 100 * (100 + own('atkPercent')) / 100)
   const def = Math.round((equipmentDef + own('def') + shared('def') + con * 5.5 + str * 2) *
-    (100 + shared('defPercent')) / 100 * (100 + own('defPercent')) / 100)
+    Math.max(0, 100 + shared('defPercent')) / 100 * Math.max(0, 100 + own('defPercent')) / 100)
   const baseSpeed = Math.round((BASE_ACTION_SPEED + agi * 3.2 + own('speed') + shared('speed')) * (100 + own('speedPercent') + shared('speedPercent')) / 100)
   const weather = environment.rain || environment.night ? effects.find((effect) => effect.kind === 'RAIN_NIGHT_SPEED') : undefined
   const speed = baseSpeed + (weather ? Math.round(baseSpeed * weather.percent / 100) : 0)
@@ -138,8 +146,10 @@ function deriveCompanionStats(
     parryAbsorb: Math.min(100, BASE_PARRY_ABSORB + absorbPoints), combatPower: combatPowerOf(maxHp, maxMp, atk, def, speed, displayedCrit) }
 }
 
-export function computeCompanionDerivedStats(player: PlayerDTO, loadout: LoadoutPresetDTO, id: string, companionOf = defaultCompanionOf) {
-  const { left, right, teamStats, harmony, friction } = resolvePartyEquipment(player, loadout, companionOf)
+export function computeCompanionDerivedStats(
+  player: PlayerDTO, loadout: LoadoutPresetDTO, id: string, companionOf = defaultCompanionOf, learnedSkills?: Readonly<Record<string, number>>,
+) {
+  const { left, right, teamStats, harmony, friction } = resolvePartyEquipment(player, loadout, companionOf, true, learnedSkills)
   const isLeft = left?.view.id === id
   const member = isLeft ? left : right?.view.id === id ? right : undefined
   if (!member) return
@@ -154,6 +164,7 @@ function deriveStats(
   bonus: CollectionBonus = {},
   sharedStats = teamStatBonuses(effects),
   environment?: BattleEnvironment,
+  learnedSkills?: Readonly<Record<string, number>>,
 ) {
   const realm = REALMS.find((r) => r.tier === player.realmTier) ?? REALMS[0]
   const m = realm.multiplier
@@ -163,6 +174,11 @@ function deriveStats(
   const light = loadout.lightSkillId ? SKILLS[loadout.lightSkillId] : undefined
   const outer = loadout.outerSkillId ? SKILLS[loadout.outerSkillId] : undefined
   const lightEfficiency = light?.slot === 'LIGHT' ? martialEffectiveness(light, player, freedom) / 100 : 0
+  const lightScale = light?.slot === 'LIGHT' ? masteryPassiveScale(light.growthProfile, skillMasteryFrom(light, learnedSkills)) : 1
+  const outerCritBonus = outer ? skillCritBonusAtMastery(outer, skillMasteryFrom(outer, learnedSkills)) : 0
+  const innerHpMultiplier = inner?.id === 'jiuyin_zonggang'
+    ? jiuyinZonggangHpMultiplier(skillMasteryFrom(inner, learnedSkills))
+    : 1.08
 
   const gear = { hp: 0, atk: 0, def: 0, crit: 0, dodge: 0 }
   for (const item of items) {
@@ -211,26 +227,26 @@ function deriveStats(
 
   const hpBonusMult = (1 + (player.bonusHpPct ?? 0) / 100) * (1 + (bonus.hpPct ?? 0) / 100)
   const atkBonusMult = (1 + (bonus.atkPct ?? 0) / 100) * (1 + attackPercent / 100)
-  const baseHp = Math.round((320 + player.level * 85 + s.con * 46) * m * (inner?.id === 'jiuyin_zonggang' ? 1.25 : 1.08) * hpBonusMult + gear.hp) + flatHp
+  const baseHp = Math.round((320 + player.level * 85 + s.con * 46) * m * innerHpMultiplier * hpBonusMult + gear.hp) + flatHp
   const baseMp = Math.round((120 + player.level * 32 + s.con * 26 + s.intStat * 12) * m) + flatMp + (player.bonusMp ?? 0)
   const isDeviating = (player.qiDeviationUntil ?? 0) > (environment?.at ?? Date.now())
   const fullHp = Math.round(baseHp * (100 + hpPercent) / 100)
   const maxHp = isDeviating ? Math.round(fullHp * 0.9) : fullHp
   const maxMp = Math.round(baseMp * (100 + mpPercent) / 100)
   const atk = Math.round(((45 + player.level * 13 + s.str * 8.5 + s.agi * 2.5) * m + gear.atk) * atkBonusMult)
-  const def = Math.round(((22 + player.level * 6 + s.con * 5.5 + s.str * 2.0) * m + gear.def) * (100 + defensePercent) / 100)
-  const lightSpeed = (light?.speedBonus ?? 0) * lightEfficiency
+  const def = Math.round(((22 + player.level * 6 + s.con * 5.5 + s.str * 2.0) * m + gear.def) * Math.max(0, 100 + defensePercent) / 100)
+  const lightSpeed = (light?.speedBonus ?? 0) * lightEfficiency * lightScale
   const baseSpeed = Math.round((BASE_ACTION_SPEED + s.agi * 3.2 + lightSpeed + flatSpeed) * (100 + speedPercent) / 100)
   const weather = environment?.rain || environment?.night ? effects.find((effect) => effect.kind === 'RAIN_NIGHT_SPEED') : undefined
   const weatherSpeed = weather ? Math.round(baseSpeed * weather.percent / 100) : 0
   const speed = baseSpeed + weatherSpeed
   const swampDodge = environment?.swamp ? effects.find((effect) => effect.kind === 'SWAMP_DODGE') : undefined
   flatDodge += swampDodge?.points ?? 0
-  const baseDodge = Math.round((s.agi / (s.agi + 180 + player.level * 4)) * 45 + (light?.dodgeBonus ?? 0) * lightEfficiency + gear.dodge)
+  const baseDodge = Math.round((s.agi / (s.agi + 180 + player.level * 4)) * 45 + (light?.dodgeBonus ?? 0) * lightEfficiency * lightScale + gear.dodge)
   const dodge = Math.min(dodgeCap, baseDodge + flatDodge)
   const baseCrit = Math.round(
     8 + ((s.agi * 0.6 + s.intStat * 0.4) / (s.agi + s.intStat + 220)) * 40 +
-       gear.crit + (outer ? (outer.critBonus ?? 0) * martialEffectiveness(outer, player, freedom) / 100 : 0) + (inner?.critBonus ?? 0),
+       gear.crit + (outer ? outerCritBonus * martialEffectiveness(outer, player, freedom) / 100 : 0) + (inner?.critBonus ?? 0),
   )
   const crit = Math.min(MAX_CRIT_PERCENT, baseCrit + flatCrit)
   const canParry = flatParry > 0 || flatParryAbsorb > 0 || effects.some((effect) => effect.kind === 'PARRY_REFLECT' || effect.kind === 'PARRY_HEAL')
@@ -296,9 +312,11 @@ function actionTime(speed: number, advance = 0) {
   return (1000 - advance * 10) / (50 + speed * 1.2)
 }
 
-function battleSpeed(target: StatusTarget, base: number, round: number) {
+function battleSpeed(target: StatusTarget, base: number, round: number, effects?: readonly ActiveEffect[]) {
   const partyPercent = target.partySpeed?.round === round ? target.partySpeed.percent : 0
-  const boosted = base * (100 + statusPercent(target, 'SPEED_UP', round)) / 100
+  const surgeSpeed = effects?.reduce((sum, effect) =>
+    sum + (effect.kind === 'OPENING_SURGE' && round <= effect.surgeUntilRound && effect.speedPercent ? effect.speedPercent : 0), 0) ?? 0
+  const boosted = base * (100 + statusPercent(target, 'SPEED_UP', round) + surgeSpeed) / 100
   return boosted * (100 - statusPercent(target, 'SLOW', round)) / 100 * (100 + partyPercent) / 100
 }
 
@@ -743,11 +761,12 @@ function conditionalDefense(effects: readonly ActiveEffect[], attacker: StatusTa
 
 function dodgeAgainst(
   target: StatusTarget, dodge: number, cap: number, round: number, effect: ReturnType<typeof conditionalDefense>,
+  effects?: readonly ActiveEffect[],
 ) {
-  const base = battleDodge(target, dodge, round)
+  const base = battleDodge(target, dodge, round, effects)
   if (!effect) return { chance: base }
   const bonus = Math.max(0, Math.min(effect.dodgePoints, cap - dodge - statusPercent(target, 'DODGE_UP', round)))
-  const chance = battleDodge(target, dodge + bonus, round)
+  const chance = battleDodge(target, dodge + bonus, round, effects)
   const gained = Number((chance - base).toFixed(2))
   return { chance, segment: gained > 0 ? {
     type: 'tag', text: `${effect.sourceName} · 闪避率 +${gained} 个百分点`, tone: 'jade',
@@ -927,9 +946,9 @@ function performStrike(
   const dodgeDisabled = (guard && enraged) || onHit.some((effect) => effect.unavoidable)
   const escape = guard && !enraged && !trueAttack ? escapeFromAttack(target, round) : undefined
   const targetEvasion = dodgeDisabled ? { chance: 0 } :
-    dodgeAgainst(target, guard?.dodge ?? target.combat?.dodge ?? 0, guard?.dodgeCap ?? DEFAULT_DODGE_CAP, round, opponentDefense)
+    dodgeAgainst(target, guard?.dodge ?? target.combat?.dodge ?? 0, guard?.dodgeCap ?? DEFAULT_DODGE_CAP, round, opponentDefense, guard ? protection : undefined)
   const fullDodge = targetEvasion.chance
-  const lightDodge = Math.min(fullDodge, battleDodge(target, guard?.lightDodge ?? target.combat?.lightDodge ?? 0, round))
+  const lightDodge = Math.min(fullDodge, battleDodge(target, guard?.lightDodge ?? target.combat?.lightDodge ?? 0, round, guard ? protection : undefined))
   const dodgePenetration = effects.find((effect) => effect.kind === 'LIGHT_DODGE_PENETRATION')
   const ignoredDodge = dodgePenetration ? lightDodge * dodgePenetration.percent / 100 : 0
   const targetDodge = fullDodge - ignoredDodge
@@ -1030,9 +1049,28 @@ function performStrike(
   const ultCritPercent = Math.min(MAX_CRIT_PERCENT, woundedCritPercent + ultCritBonus)
   const poisonCount = poisonCrit?.perStack ? poisonStacks(target) : 1
   const poisonCritPercent = Math.min(MAX_CRIT_PERCENT, ultCritPercent + (poisonCrit?.points ?? 0) * poisonCount)
+  let tempoCritPoints = 0
+  const tempoCritLogs: string[] = []
+  if (!trueAttack && !guaranteedCrit) {
+    for (const effect of effects) {
+      if (effect.kind === 'OPENING_SURGE' && round <= effect.surgeUntilRound && effect.critPoints &&
+        (!effect.skillOnly || skill?.id === effect.sourceId) && (!effect.outerOnly || outer)) {
+        tempoCritPoints += effect.critPoints
+        tempoCritLogs.push(`${effect.sourceName} · ${effect.surgeLabel ?? '抢攻'} · 暴击率 +${effect.critPoints} 个百分点`)
+      } else if (effect.kind === 'COMBAT_RAMP' && effect.critPerRound && (!effect.skillOnly || skill?.id === effect.sourceId)) {
+        const stacks = combatRampStacks(effect, round)
+        const gained = stacks * effect.critPerRound
+        if (gained > 0) {
+          tempoCritPoints += gained
+          tempoCritLogs.push(`${effect.sourceName} · ${effect.rampLabel} ${stacks} 层 · 暴击率 +${gained} 个百分点`)
+        }
+      }
+    }
+  }
+  const tempoCritPercent = Math.min(MAX_CRIT_PERCENT, poisonCritPercent + tempoCritPoints)
   const weakness = target.combat?.hitStreakWeakness
   const vulnerable = !trueAttack && !guaranteedCrit && weakness && (target.hitStreak?.count ?? 0) >= weakness.rounds ? weakness : undefined
-  const critPercent = Math.min(MAX_CRIT_PERCENT, poisonCritPercent + (vulnerable?.critPoints ?? 0))
+  const critPercent = Math.min(MAX_CRIT_PERCENT, tempoCritPercent + (vulnerable?.critPoints ?? 0))
   const parryBypass = guardBypasses.find((effect) => effect.guard === 'PARRY')
   const targetParry = Math.min(100, (guard?.parry ?? target.combat?.parry ?? 0) + (target.formationParry ?? 0))
   const canParry = !trueAttack && !trueStrike && !extra?.noParry
@@ -1125,6 +1163,38 @@ function performStrike(
     } else if (effect.kind === 'OUTER_COMBO_DAMAGE' && outer && extra?.comboIndex) {
       const percent = effect.percent * (effect.perHit ? extra.comboIndex : 1)
       recordBonus(effect, `第 ${extra.comboIndex} 次连击 · 连击伤害 +${percent}%`, () => { comboDamagePercent += percent })
+    } else if (effect.kind === 'OPENING_SURGE' && (!effect.skillOnly || skill?.id === effect.sourceId) && (!effect.outerOnly || outer)) {
+      if (round <= effect.surgeUntilRound && effect.damagePercent) {
+        recordBonus(effect, `${effect.surgeLabel ?? '抢攻'} +${effect.damagePercent}%`, () => {
+          situationalDamagePercent += effect.damagePercent!
+        })
+      } else if (round >= effect.fadeFromRound && effect.fadeDamagePercent) {
+        const before = projectedDamage()
+        situationalDamagePercent = Math.max(20, situationalDamagePercent + effect.fadeDamagePercent)
+        const after = projectedDamage()
+        damageBonuses.push({
+          type: 'tag',
+          tone: 'purple',
+          text: `${effect.sourceName} · ${effect.fadeLabel ?? '力竭'} ${effect.fadeDamagePercent}%（−${Math.max(0, before - after).toLocaleString()}）`,
+        })
+      }
+    } else if (effect.kind === 'COMBAT_RAMP' && (!effect.skillOnly || skill?.id === effect.sourceId)) {
+      const stacks = combatRampStacks(effect, round)
+      const delta = (effect.startDamagePercent ?? 0) + stacks * (effect.damagePerRound ?? 0)
+      if (delta > 0) {
+        recordBonus(effect, `${effect.rampLabel} ${stacks} 层 +${delta}%`, () => {
+          situationalDamagePercent += delta
+        })
+      } else if (delta < 0) {
+        const before = projectedDamage()
+        situationalDamagePercent = Math.max(20, situationalDamagePercent + delta)
+        const after = projectedDamage()
+        damageBonuses.push({
+          type: 'tag',
+          tone: 'purple',
+          text: `${effect.sourceName} · ${effect.rampLabel}初蓄 ${delta}%（−${Math.max(0, before - after).toLocaleString()}）`,
+        })
+      }
     }
   }
   if (guardedCrit) {
@@ -1185,7 +1255,10 @@ function performStrike(
       tone: 'gold',
     })
   }
-  if (vulnerable) segments.push({ type: 'tag', text: `${vulnerable.name} · 暴击率 +${critPercent - poisonCritPercent} 个百分点（本次 ${critPercent}%）`, tone: 'gold' })
+  for (const log of tempoCritLogs) {
+    segments.push({ type: 'tag', text: `${log}（本次 ${critPercent}%）`, tone: 'gold' })
+  }
+  if (vulnerable) segments.push({ type: 'tag', text: `${vulnerable.name} · 暴击率 +${critPercent - tempoCritPercent} 个百分点（本次 ${critPercent}%）`, tone: 'gold' })
   if (!trueAttack && strike.showPressure && effectivePressure >= 1.15) {
     segments.push({ type: 'tag', text: `内力优势 +${Math.round((effectivePressure - 1) * 100)}% 伤害`, tone: 'gold' })
   }
@@ -1350,14 +1423,15 @@ function counterBeforeDeath(
   const first = living.find((opponent) => opponent.enemy === attacker) ?? living[0]
   if (!first) return
   fighter.lethalCounterUsed = true
-  const skill = owner.skill ?? DYING_STRIKE
+  const rawSkill = owner.skill ?? DYING_STRIKE
+  const skill = resolveSkillForMastery(rawSkill, skillMasteryFrom(rawSkill, owner.learnedSkills))
   const targets = skill.area === 'ENEMIES' ? [first, ...living.filter((opponent) => opponent !== first)] : [first]
   let damage = 0
   for (const opponent of targets) {
     const relation = stanceRelation(stance, opponent.enemy.stance ?? stance)
     const hit = performStrike(fighter.unit, opponent.enemy, {
       round, targetHp: opponent.hp, attackerHp: hp, attackerLevel: level, attackerAtk: owner.atk, attackerDef: owner.def,
-      power: skillPowerAtMastery(skill, owner.learnedSkills?.[skill.id]), stance,
+      power: skillPowerAtMastery(skill, skillMasteryFrom(skill, owner.learnedSkills)), stance,
       stanceMultiplier: relation === 'WIN' ? 1.25 : relation === 'LOSE' ? 0.88 : 1,
       pressure: innerPressure(fighter.unit.maxMp, enemyInnerMp(opponent.enemy)), skill,
       critPercent: 0, critRoll: (round * 37 + agi) % 100, isUlt: true, enraged: false,
@@ -1427,12 +1501,12 @@ export function simulateServerBattle(params: {
   } : undefined
   const rng = params.rng ?? Math.random
   const { main: resolvedLoadout, left, right, companionEffects, teamStats, harmony, friction } =
-    resolvePartyEquipment(player, loadout, params.companionOf ?? defaultCompanionOf, !coopPlayers && !meridians)
+    resolvePartyEquipment(player, loadout, params.companionOf ?? defaultCompanionOf, !coopPlayers && !meridians, learnedSkills)
   const playerWeapon = resolvedLoadout.items.find((item) => item.slot === 'WEAPON')
   const leftCompanion = left?.view
   const rightCompanion = right?.view
   const environment = { ...battleEnvironmentAt(player.currentMapId), ...params.environment }
-  const { stats: pDerived, addedCrit, addedDodge, dodgeCap: playerDodgeCap, agi, intStat, environmentBonuses } = deriveStats(player, loadout, resolvedLoadout, bonus, teamStats, environment)
+  const { stats: pDerived, addedCrit, addedDodge, dodgeCap: playerDodgeCap, agi, intStat, environmentBonuses } = deriveStats(player, loadout, resolvedLoadout, bonus, teamStats, environment, learnedSkills)
   const leftStats = left && deriveCompanionStats(left, player.level, 'ALLY_LEFT', teamStats, environment)
   const rightStats = right && deriveCompanionStats(right, player.level, 'ALLY_RIGHT', teamStats, environment)
   const teamHp = teamStats.reduce((hp, effect) => hp + (effect.stats.hp ?? 0), 0)
@@ -1442,7 +1516,7 @@ export function simulateServerBattle(params: {
   const teamDefensePercent = teamStats.reduce((percent, effect) => percent + (effect.stats.defPercent ?? 0), 100)
   const partnerDefense = Math.round(teamDefense * teamDefensePercent / 100)
   const partnerAttack = (attack: number) => (attack + teamAttack) * teamAttackPercent / 100
-  const assistBase = teamStats.length ? deriveStats(player, loadout, resolvedLoadout, bonus, []).stats.atk : pDerived.atk
+  const assistBase = teamStats.length ? deriveStats(player, loadout, resolvedLoadout, bonus, [], undefined, learnedSkills).stats.atk : pDerived.atk
   let mp = pDerived.maxMp
   let actionAdvance = 0
   const stanceBannerFor = (enemyStance: StanceType) => ({
@@ -1878,22 +1952,24 @@ export function simulateServerBattle(params: {
   ) {
     const targetSlot = target.unit.slot
     const critRoll = (round * 37 + player.stats.agi + (extra?.periodic || extra?.status ? 17 : 0)) % 100
-    const power = skillPowerAtMastery(castSkill, learnedSkills?.[castSkill.id])
+    const mastery = skillMasteryFrom(castSkill, learnedSkills)
+    const resolvedSkill = resolveSkillForMastery(castSkill, mastery)
+    const power = skillPowerAtMastery(resolvedSkill, mastery)
     const primary = !extra && !areaHit
     const mpDelta = primary && isUlt ? -ultCost : undefined
-    const relation = castSkill.area || castSkill.id === CHARGED_ULT_ID || target.combat?.reverseMeridians
+    const relation = resolvedSkill.area || resolvedSkill.id === CHARGED_ULT_ID || target.combat?.reverseMeridians
       ? stanceRelation(loadout.stance, target.stance ?? enemyMain.stance) : undefined
     const stanceMultiplier = relation === 'WIN' ? 1.25 : relation === 'LOSE' ? 0.88 : relation ? 1 : stanceMultAlly()
     const disarmed = hasStatus(mainShield, 'DISARM', round)
     const active = weaponEffects(effectsDuringAction([...effects, ...innateTeamOuter()], mainShield, round), loadout.weaponId, disarmed)
     const guardedPosition = hpState.ALLY_LEFT > 0 || (!!rightFighter && hpState.ALLY_RIGHT > 0 && round % 2 === 0 && !blockingActionStatus(rightFighter, round))
-    const rageDelta = primary ? (isUlt ? -ultRageCost(castSkill, active).cost : gainRage(rageState.ALLY_MAIN, 35, active)) : undefined
+    const rageDelta = primary ? (isUlt ? -ultRageCost(resolvedSkill, active).cost : gainRage(rageState.ALLY_MAIN, 35, active)) : undefined
     const hit = performStrike(mainUnit, target, {
       round, targetHp: hpState[targetSlot], attackerHp: hpState.ALLY_MAIN, attackerLevel: player.level,
       attackerAtk: disarmed ? Math.round(pDerived.atk * 0.7) : pDerived.atk, attackerDef: allyDefense(mainShield, round),
       power, stance: loadout.stance, stanceMultiplier,
-      pressure: innerPressure(pDerived.maxMp, castSkill.area || target.combat?.innerEndurance ? enemyInnerMp(target) : enemyMain.mp),
-      showPressure: true, skill: castSkill, critPercent: pDerived.crit, critRoll, isUlt,
+      pressure: innerPressure(pDerived.maxMp, resolvedSkill.area || target.combat?.innerEndurance ? enemyInnerMp(target) : enemyMain.mp),
+      showPressure: true, skill: resolvedSkill, critPercent: pDerived.crit, critRoll, isUlt,
       rageDelta,
       mpDelta, enraged: isEnraged, extra, areaHit, weaponId: disarmed ? null : playerWeapon?.id, dodgeState,
       actor: mainShield, rng, trueStrike, guardedPosition, hasLightSkill: equippedLight?.slot === 'LIGHT', schoolMember: player,
@@ -2182,7 +2258,7 @@ export function simulateServerBattle(params: {
       if (first?.landed) spreadHitStatus(ultimate ?? SKILLS[attack.skillId ?? ''], unit, actionTarget, enemies.values(),
         (enemy) => hpState[enemy.unit.slot], round, rng, events)
       if (first && equipped) {
-        const area = resolveCastArea(unit, { isUlt: !!ultimate, attack: first.attackerAtk, level: player.level }, active,
+        const area = resolveCastArea(unit, { isUlt: !!ultimate, skillId: ultimate?.id, attack: first.attackerAtk, level: player.level }, active,
           enemies.values(), (enemy) => hpState[enemy.unit.slot], round, rng, events)
         for (const hit of area) hpState[hit.target.unit.slot] = hit.hp
         hpState[unit.slot] = resolveHealing(fighter, hpState[unit.slot], active, { trigger: 'ACTION_END', round }, events)
@@ -2280,7 +2356,8 @@ export function simulateServerBattle(params: {
     }
     const target = castUlt?.id === CHARGED_ULT_ID && hpState.ENEMY_MAIN > 0 ? enemies.get('ENEMY_MAIN')! :
       !castUlt && !gearCast && targetsRearWithWeapon(active) ? rearOuterTarget(round) ?? firstTarget : firstTarget
-    const castSkill = castUlt ?? equippedOuter
+    const rawCastSkill = castUlt ?? equippedOuter
+    const castSkill = resolveSkillForMastery(rawCastSkill, skillMasteryFrom(rawCastSkill, learnedSkills))
     const trueStrike = gearCast ? undefined : trueStrikeForAction(active, rng)
     const doubleStrike: ExtraAttackSource | undefined = gearCast ? {
       sourceId: gearSkill.weapon.id, sourceName: gearSkill.weapon.name, moveName: gearSkill.name,
@@ -2300,7 +2377,7 @@ export function simulateServerBattle(params: {
         if (!canContinue()) return
       }
     }
-    const hits = gearCast ? [] : resolveCastArea(mainUnit, { isUlt: !!castUlt, attack: attackerAtk, level: player.level },
+    const hits = gearCast ? [] : resolveCastArea(mainUnit, { isUlt: !!castUlt, skillId: castUlt ? castSkill.id : undefined, attack: attackerAtk, level: player.level },
       active, enemies.values(), (recipient) => hpState[recipient.unit.slot], round, rng, events)
     for (const hit of hits) hpState[hit.target.unit.slot] = hit.hp
     rewardKills(round)
@@ -2599,7 +2676,7 @@ export function simulateServerBattle(params: {
       const dodgeEffects = sideTarget ? effectsDuringAction(allyEffects(sideTarget), sideTarget, round) : active
       const opponentDefense = !isWipeoutRound && !enduringHits ? conditionalDefense(dodgeEffects, attacker) : undefined
       const evasion = isEnraged || enduringHits ? { chance: 0 } :
-        dodgeAgainst(target, baseDodge, member?.stats.dodgeCap ?? playerDodgeCap, round, opponentDefense)
+        dodgeAgainst(target, baseDodge, member?.stats.dodgeCap ?? playerDodgeCap, round, opponentDefense, dodgeEffects)
       const avoidance = escape ? 'DODGE' : strikeAvoidance(rollDodge, evasion.chance, penalty)
       const absoluteDodge = !enduringHits && !isEnraged && (!sideTarget || equipped) && !avoidance ? rollAbsoluteDefense(dodgeEffects, 'ABSOLUTE_DODGE', rng) : undefined
       if (avoidance === 'MISS') {
@@ -3023,7 +3100,7 @@ export function simulateServerBattle(params: {
       const source = { sourceId: plan.sourceId, sourceName: plan.sourceId === fighter.unit.id ? plan.moveName : `${plan.sourceName} · ${plan.moveName}` }
       applyBattleStatus(source, plan.rule, fighter.unit.slot, strongest.enemy, { hp: hpState[strongest.enemy.unit.slot] }, round, rng, events)
     }
-    const playerSpeed = battleSpeed(mainShield, pDerived.speed, round)
+    const playerSpeed = battleSpeed(mainShield, pDerived.speed, round, effectsDuringAction(effects, mainShield, round))
     enemyFormation?.advance(round, hpState.ALLY_MAIN > 0 ? [{ fighter: mainShield, speed: playerSpeed }] : [])
     const turns = [
       ...(enduringHits || meridians ? [] : [{ enemy: undefined, time: round === 1 && opening ? -Infinity : actionTime(playerSpeed, actionAdvance) }]),
@@ -3218,7 +3295,8 @@ export function simulatePlayerDuel(params: {
     const playerGuard: NonNullable<EnemyBattleState['playerGuard']> = {
       effects: options.effects, dodge: stats.dodge, dodgeCap: options.dodgeCap,
       lightDodge: options.light ? (options.light.dodgeBonus ?? 0) * martialEffectiveness(options.light, options.schoolMember,
-        options.effects.some((effect) => effect.kind === 'MARTIAL_FREEDOM')) / 100 : 0,
+        options.effects.some((effect) => effect.kind === 'MARTIAL_FREEDOM')) / 100 *
+        masteryPassiveScale(options.light.growthProfile, skillMasteryFrom(options.light, options.learnedSkills)) : 0,
       parry, parryAbsorb: stats.parryAbsorb, saves: lethalSavesFrom(options.effects),
     }
     return {
@@ -3235,7 +3313,7 @@ export function simulatePlayerDuel(params: {
   function makeTeam(snapshot: DuelSnapshot, side: 'ALLY' | 'ENEMY') {
     const { player, loadout, bonus } = snapshot
     const party = resolvePartyEquipment(mode === 'PVP_HUASHAN' ? { ...player, battleMedicines: undefined } : player,
-      loadout, snapshot.companionOf ?? defaultCompanionOf)
+      loadout, snapshot.companionOf ?? defaultCompanionOf, true, snapshot.learnedSkills)
     const { main: resolved, left, right, teamStats: team } = party
     const bond = left && right ? findTrioSynergy(left.view.id, right.view.id) : undefined
     const bondEffects = bond ? effectsFrom(bond) : []
@@ -3243,7 +3321,7 @@ export function simulatePlayerDuel(params: {
     const escortEffect = params.escort && accessory?.escortAttackPercent ? [{
       kind: 'STAT_BONUS' as const, stats: { atkPercent: accessory.escortAttackPercent }, sourceId: accessory.id, sourceName: accessory.name,
     }] : []
-    const derived = deriveStats(player, loadout, resolved, bonus, [...team, ...escortEffect], environment)
+    const derived = deriveStats(player, loadout, resolved, bonus, [...team, ...escortEffect], environment, snapshot.learnedSkills)
     const { stats } = derived
     const sharedCombat = teamCombatEffects([...resolved.effects, ...party.companionEffects])
     const personal = resolved.effects.filter((effect) => !isSharedCombatEffect(effect))
@@ -3596,7 +3674,8 @@ export function simulatePlayerDuel(params: {
     if (!canContinue() || actor.hp <= 0) return
     const cast = chooseUltimate(actor, ultimate, active, ready(), round, events)
     const outer = weaponLimited && isWeaponForm(actor.outer?.combatForm ?? actor.weapon?.combatForm) ? BARE_HANDS : actor.outer ?? BARE_HANDS
-    const skill = cast ?? outer
+    const rawSkill = cast ?? outer
+    const skill = resolveSkillForMastery(rawSkill, skillMasteryFrom(rawSkill, actor.learnedSkills))
     const form = disarmed ? undefined : actor.attack?.form
     const attackingEffects = [...weaponEffects(active, actor.weapon?.id, disarmed)]
     const bondOuter = bondIsActive(team) ? team.bondEffects.filter((effect) => effect.kind === 'OUTER_DAMAGE') : []
@@ -3622,13 +3701,14 @@ export function simulatePlayerDuel(params: {
     const currentAttack = Math.round(actor.atk * attackScale)
     const fire = (move: SkillConfig, target: DuelUnit, options: Pick<Parameters<typeof battleStrike>[2], 'areaHit' | 'extra' | 'trueStrike' |
       'rageDelta' | 'mpDelta' | 'tag' | 'sourceId' | 'pressure'> & { power?: number } = {}) => {
-      const effects = [...attackingEffects, ...effectsFrom(move).filter((effect) => !attackingEffects.some((entry) => entry.sourceId === effect.sourceId))]
-      const isUlt = !!cast && move === cast && !options.extra
+      const resolvedMove = resolveSkillForMastery(move, skillMasteryFrom(move, actor.learnedSkills))
+      const effects = [...attackingEffects, ...effectsFrom(resolvedMove).filter((effect) => !attackingEffects.some((entry) => entry.sourceId === effect.sourceId))]
+      const isUlt = !!cast && move.id === cast.id && !options.extra
       if (!isUlt && !options.extra && attack?.finisher && target.hp * 100 < target.unit.maxHp * attack.finisher.belowHpPercent) {
         effects.push({ kind: 'OUTER_DAMAGE', percent: attack.finisher.damagePercent, sourceId: actor.unit.id, sourceName: `${actor.unit.name} · 残血点杀` })
       }
-      return battleStrike(actor, target, { skill: move, round, attackMultiplier: attackScale, effects, isUlt,
-        form: move === outer ? form : undefined, ...options, power: options.power ?? skillPowerAtMastery(move, actor.learnedSkills?.[move.id]),
+      return battleStrike(actor, target, { skill: resolvedMove, round, attackMultiplier: attackScale, effects, isUlt,
+        form: move === outer ? form : undefined, ...options, power: options.power ?? skillPowerAtMastery(resolvedMove, skillMasteryFrom(resolvedMove, actor.learnedSkills)),
       })
     }
     let dealtWith: ReturnType<typeof performStrike> | undefined
@@ -3654,7 +3734,7 @@ export function simulatePlayerDuel(params: {
         if (poison) attackingEffects.push({ ...poison, kind: 'POISON_TARGET_CRIT', points: poison.pointsPerStack, perStack: true })
       }
       const burst = !cast && attack?.burst && actor.regularActions % (attack.burst.charges + 1) === attack.burst.charges ? attack.burst : undefined
-      const power = cast ? undefined : (guoCombo ? guoCombo.attackPercent / 100 : attack?.powerRatio ?? skillPowerAtMastery(skill, actor.learnedSkills?.[skill.id])) *
+      const power = cast ? undefined : (guoCombo ? guoCombo.attackPercent / 100 : attack?.powerRatio ?? skillPowerAtMastery(skill, skillMasteryFrom(skill, actor.learnedSkills))) *
         (burst?.powerMultiplier ?? 1)
       dealtWith = fire(skill, initial, { rageDelta, mpDelta, trueStrike, tag: guoCombo ? `${guoCombo.sourceName} · 降龙合击` : assist?.sourceName,
         sourceId: guoCombo?.sourceId ?? assist?.sourceId, pressure: primaryPressure, power })
@@ -3677,7 +3757,7 @@ export function simulatePlayerDuel(params: {
         if (actor.hp <= 0) break
         if (target !== initial && target.hp > 0) fire(skill, target, { areaHit: true, trueStrike })
       }
-      if (actor.hp > 0) for (const area of resolveCastArea(actor.unit, { isUlt: !!cast, attack: dealtWith.attackerAtk,
+      if (actor.hp > 0) for (const area of resolveCastArea(actor.unit, { isUlt: !!cast, skillId: cast ? skill.id : undefined, attack: dealtWith.attackerAtk,
         level: actor.level, stance: actor.stance, combat: actor.combat }, attackingEffects, opposition.members, hpOf, round, rng, events)) area.target.hp = area.hp
       if (canContinue() && actor.hp > 0) {
         const shot = dealtWith.critical && criticalShot(actor.critAction, rng)
@@ -3792,13 +3872,13 @@ export function simulatePlayerDuel(params: {
     roundStart(ally, enemy, round)
     roundStart(enemy, ally, round)
     const openingSpeed = (member: DuelUnit) => huashan && round === 1 && member.stance === 'AGILE'
-      ? Math.round(battleSpeed(member, member.stats.speed, round) * HUASHAN_AGILE.openingSpeedPercent / 100) : 0
+      ? Math.round(battleSpeed(member, member.stats.speed, round, activeEffects(member, round)) * HUASHAN_AGILE.openingSpeedPercent / 100) : 0
     if (huashan && round === 1) for (const member of members) {
       const added = openingSpeed(member)
       if (added > 0) events.push({ round, type: 'EFFECT', actorSlot: member.unit.slot, targetSlot: member.unit.slot, effectSourceId: HUASHAN_AGILE.sourceId,
         segments: [{ type: 'tag', text: `奇门极速 · 首回合出手速度 +${added}`, tone: 'jade' }] })
     }
-    const timing = (member: DuelUnit) => actionTime(battleSpeed(member, member.stats.speed, round) + openingSpeed(member), member.actionAdvance)
+    const timing = (member: DuelUnit) => actionTime(battleSpeed(member, member.stats.speed, round, activeEffects(member, round)) + openingSpeed(member), member.actionAdvance)
     const compareOrder = (left: DuelUnit, right: DuelUnit) =>
       (round === 1 ? Number(!!right.opening) - Number(!!left.opening) : 0) || timing(left) - timing(right)
     const order = compareOrder(ally.leader, enemy.leader)
@@ -3872,7 +3952,7 @@ export function simulateCoopRaid(
   const survival = raid.survival
   const allySlots = ['ALLY_MAIN', 'ALLY_LEFT', 'ALLY_RIGHT'] as const
   const guardSlots = ['ENEMY_LEFT', 'ENEMY_RIGHT', 'ENEMY_REAR'] as const
-  const loadouts = lineup.map((fighter) => resolveBattleLoadout(fighter.loadout, fighter.player))
+  const loadouts = lineup.map((fighter) => resolveBattleLoadout(fighter.loadout, fighter.player, fighter.learnedSkills))
   const karmas = lineup.map(({ player, loadout }) => effectiveMartialStats(player, loadout).karma)
   const harmonyOwners = loadouts.flatMap(({ effects }, index) =>
     effects.filter((effect) => effect.kind === 'MIXED_KARMA_HARMONY').map((effect) => ({ effect, index })))
@@ -3880,7 +3960,7 @@ export function simulateCoopRaid(
   const sharedCombat = teamCombatEffects(loadouts.flatMap(({ effects }) => effects))
   const allies = lineup.map((fighter, index) => {
     const resolvedLoadout = loadouts[index]
-    const { stats, addedCrit, addedDodge, dodgeCap, agi, environmentBonuses } = deriveStats(fighter.player, fighter.loadout, resolvedLoadout, fighter.bonus ?? {}, teamStats, environment)
+    const { stats, addedCrit, addedDodge, dodgeCap, agi, environmentBonuses } = deriveStats(fighter.player, fighter.loadout, resolvedLoadout, fighter.bonus ?? {}, teamStats, environment, fighter.learnedSkills)
     const weapon = resolvedLoadout.items.find((item) => item.slot === 'WEAPON')
     const unit = playerUnit(allySlots[index], fighter.player, fighter.loadout, stats, weapon?.name)
     const personal = resolvedLoadout.effects.filter((effect) => !isSharedCombatEffect(effect))
@@ -4038,7 +4118,9 @@ export function simulateCoopRaid(
       if (harmony) fighter.rage = startHarmony(fighter, fighter.stats.speed, fighter.rage, harmony, round, events)
       else applyAlignmentFriction(fighter, fighter.stats.speed, round, events)
     }
-    enemyFormation?.advance(round, livingAllies.map((fighter) => ({ fighter, speed: battleSpeed(fighter, fighter.stats.speed, round) })))
+    enemyFormation?.advance(round, livingAllies.map((fighter) => ({
+      fighter, speed: battleSpeed(fighter, fighter.stats.speed, round, effectsDuringAction(fighter.effects, fighter, round)),
+    })))
     if (round === 1 || round === 3) {
       for (const fighter of livingAllies) {
         const target = livingTarget(round)
@@ -4048,8 +4130,8 @@ export function simulateCoopRaid(
     }
     const turnOrder = allies.map((fighter, index) => ({ fighter, index, opening: round === 1 ? fighter.opening : undefined }))
     turnOrder.sort((a, b) => Number(!!b.opening) - Number(!!a.opening) ||
-      actionTime(battleSpeed(a.fighter, a.fighter.stats.speed, round), a.fighter.actionAdvance) -
-      actionTime(battleSpeed(b.fighter, b.fighter.stats.speed, round), b.fighter.actionAdvance))
+      actionTime(battleSpeed(a.fighter, a.fighter.stats.speed, round, effectsDuringAction(a.fighter.effects, a.fighter, round)), a.fighter.actionAdvance) -
+      actionTime(battleSpeed(b.fighter, b.fighter.stats.speed, round, effectsDuringAction(b.fighter.effects, b.fighter, round)), b.fighter.actionAdvance))
     for (const { fighter, index, opening } of turnOrder) {
       if (fighter.hp <= 0) continue
       if (enemies.every((enemy) => enemy.hp <= 0)) break
@@ -4087,7 +4169,8 @@ export function simulateCoopRaid(
       }
       const isUlt = !!castUlt
       const outer = weaponUsableSkill(loadout.outerSkillId ? SKILLS[loadout.outerSkillId] : undefined, weaponLimited)
-      const skill = castUlt ?? outer
+      const rawSkill = castUlt ?? outer
+      const skill = rawSkill ? resolveSkillForMastery(rawSkill, skillMasteryFrom(rawSkill, fighter.learnedSkills)) : undefined
       const crownCanInterrupt = !isUlt && !raidEnraged && active.some((effect) => effect.kind === 'OUTER_CHARGE_BREAK' && effect.stance === loadout.stance)
       const charging = enemies.find((enemy) => enemy.hp > 0 &&
         (interruptibleEnemyCharge(enemy, skill, raidEnraged) || (crownCanInterrupt && enemy.chargeState === 'CHARGING')))
@@ -4101,11 +4184,12 @@ export function simulateCoopRaid(
         const relation = stanceRelation(loadout.stance, recipient.stance)
         const stanceMultiplier = relation === 'WIN' ? 1.25 : relation === 'LOSE' ? 0.88 : 1
         const pressure = innerPressure(stats.maxMp, enemyInnerMp(recipient))
-        const power = castSkill ? skillPowerAtMastery(castSkill, fighter.learnedSkills[castSkill.id]) : 1
+        const resolvedCast = castSkill ? resolveSkillForMastery(castSkill, skillMasteryFrom(castSkill, fighter.learnedSkills)) : undefined
+        const power = resolvedCast ? skillPowerAtMastery(resolvedCast, skillMasteryFrom(resolvedCast, fighter.learnedSkills)) : 1
         const hit = performStrike(unit, recipient, {
           round, targetHp: recipient.hp, attackerHp: fighter.hp, attackerLevel: player.level,
           attackerAtk: disarmed ? Math.round(stats.atk * 0.7) : stats.atk, attackerDef: battleDefense(fighter, stats.def, round, { hp: fighter.hp, effects: active }),
-          power, stance: loadout.stance, stanceMultiplier, pressure, skill: castSkill, critPercent: stats.crit, critRoll,
+          power, stance: loadout.stance, stanceMultiplier, pressure, skill: resolvedCast, critPercent: stats.crit, critRoll,
           isUlt: !extra && isUlt, rageDelta: areaHit ? undefined : rageDelta, mpDelta: areaHit ? undefined : mpDelta, enraged: raidEnraged,
           extra, areaHit, weaponId: disarmed ? null : fighter.weapon?.id, dodgeState: fighter.dodgeState, actor: fighter, rng,
           trueStrike: extra ? undefined : trueStrike, guardedPosition, schoolMember: player,
@@ -4130,7 +4214,7 @@ export function simulateCoopRaid(
       if (skill?.area === 'ENEMIES') {
         for (const recipient of enemies) if (recipient !== target && recipient.hp > 0) strike(recipient, undefined, true)
       }
-      const hits = resolveCastArea(unit, { isUlt, attack: attackerAtk, level: player.level },
+      const hits = resolveCastArea(unit, { isUlt, skillId: isUlt ? skill?.id : undefined, attack: attackerAtk, level: player.level },
         active, enemies, (recipient) => recipient.hp, round, rng, events)
       for (const hit of hits) hit.target.hp = hit.hp
       rewardKills(round)
@@ -4202,7 +4286,7 @@ export function simulateCoopRaid(
         const penalty = isWipeoutRound ? 0 : Math.min(100, enemyHitPenalty(enemy, round) + lightCounterPenalty(enemy, enemySkill, light))
         const escape = raidEnraged ? undefined : escapeFromAttack(target, round)
         const opponentDefense = !isWipeoutRound ? conditionalDefense(active, enemy) : undefined
-        const evasion = raidEnraged ? { chance: 0 } : dodgeAgainst(target, target.stats.dodge, target.dodgeCap, round, opponentDefense)
+        const evasion = raidEnraged ? { chance: 0 } : dodgeAgainst(target, target.stats.dodge, target.dodgeCap, round, opponentDefense, active)
         const avoidance = escape ? 'DODGE' : strikeAvoidance(roll, evasion.chance, penalty)
         const absoluteDodge = !raidEnraged && !avoidance ? rollAbsoluteDefense(active, 'ABSOLUTE_DODGE', rng) : undefined
         if (avoidance === 'MISS') {

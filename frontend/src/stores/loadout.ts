@@ -93,6 +93,10 @@ export function useLoadout({ actions, revision, trial, cultivation }: {
         showToast(`还差 ${(cost - player.value.qiExp).toLocaleString()} 真气才能升级这门武功。`, 'danger')
         return
       }
+      if (sk.slot === 'INNER' && currentLoadout.value.innerSkillId === skillId && sk.idleQiBonus &&
+        (sk.growthProfile === 'EARLY' || sk.growthProfile === 'LATE') && !player.value.idleOff && Date.now() > player.value.lastSettleAt) {
+        settleMockIdle(Date.now())
+      }
       player.value.qiExp -= cost
       if (count) player.value.skillFragments![skillId] -= count
       learnedSkills.value[skillId] = lv + 1

@@ -1171,14 +1171,14 @@ describe('疯魔欧阳锋的逆乱换势与心魔', () => {
   })
 
   it('黄蓉按实际站位破心防，主角绝技命中后郭靖合击并扣除剩余气血', () => {
-    const enemyMain = { ...boss, hp: 10_300 }
+    const enemyMain = { ...boss, hp: 10_200 }
     const report = fight({ ...jingRong, stance: 'TAICHI', outerSkillId: 'xianglong_18', ultSkillId: 'yiyang_zhi' }, {
       player: strong, enemyMain, surviveRounds: undefined, companionOf: (id) => companionView(COMPANIONS[id], { form: 'base' }),
     })
     const [distraction, palm, finish] = effectEvents(report, 'jing_rong')
     expect(distraction).toMatchObject({ actorSlot: 'ALLY_LEFT', targetSlot: 'ENEMY_MAIN', statusRemoved: '心魔', statusApplied: '心防动摇' })
-    expect(palm).toMatchObject({ round: distraction.round, actorSlot: 'ALLY_RIGHT', targetSlot: 'ENEMY_MAIN', skillId: 'xianglong_18', hpDelta: -1597 })
-    expect(finish).toMatchObject({ round: palm.round, actorSlot: 'ALLY_RIGHT', targetSlot: 'ENEMY_MAIN', hpDelta: -49 })
+    expect(palm).toMatchObject({ round: distraction.round, actorSlot: 'ALLY_RIGHT', targetSlot: 'ENEMY_MAIN', skillId: 'xianglong_18', hpDelta: -978 })
+    expect(finish).toMatchObject({ round: palm.round, actorSlot: 'ALLY_RIGHT', targetSlot: 'ENEMY_MAIN', hpDelta: -710 })
     const ultimate = report.events.find((event) => event.round === palm.round && event.actorSlot === 'ALLY_MAIN' && event.isUlt)!
     expect(ultimate).toMatchObject({ targetSlot: 'ENEMY_MAIN', skillId: 'yiyang_zhi', hpDelta: -1105 })
     expect(report.events.indexOf(ultimate)).toBeLessThan(report.events.indexOf(palm))
@@ -1204,11 +1204,11 @@ describe('射雕三绝、重阳遗泽与东邪西毒', () => {
     const extra = effectEvents(report, 'she_diao_san_jue')
     expect(extra).toMatchObject([
       { round: 1, actorSlot: 'ALLY_MAIN', targetSlot: 'ENEMY_MAIN', hpDelta: -142 },
-      { round: 1, actorSlot: 'ALLY_LEFT', targetSlot: 'ENEMY_MAIN', hpDelta: -2016 },
+      { round: 1, actorSlot: 'ALLY_LEFT', targetSlot: 'ENEMY_MAIN', hpDelta: -1913 },
       { round: 1, actorSlot: 'ALLY_RIGHT', targetSlot: 'ENEMY_MAIN', hpDelta: -1884 },
       { round: 2, actorSlot: 'ALLY_MAIN', targetSlot: 'ENEMY_MAIN', hpDelta: -147 },
-      { round: 2, actorSlot: 'ALLY_LEFT', targetSlot: 'ENEMY_MAIN', hpDelta: -2078 },
-      { round: 2, actorSlot: 'ALLY_RIGHT', targetSlot: 'ENEMY_MAIN', hpDelta: -632 },
+      { round: 2, actorSlot: 'ALLY_LEFT', targetSlot: 'ENEMY_MAIN', hpDelta: -1972 },
+      { round: 2, actorSlot: 'ALLY_RIGHT', targetSlot: 'ENEMY_MAIN', hpDelta: -1050 },
     ])
     expect(extra.every((event) => event.rageDelta === undefined)).toBe(true)
     const atThreshold = fight(sheDiao, { rng: () => 0.35 })
@@ -1233,7 +1233,7 @@ describe('射雕三绝、重阳遗泽与东邪西毒', () => {
     const retargeted = fight(sheDiao, { rng: () => 0, surviveRounds: 1, enemyGuards: [guard] })
     expect(effectEvents(retargeted, 'she_diao_san_jue')).toMatchObject([
       { actorSlot: 'ALLY_MAIN', targetSlot: 'ENEMY_MAIN', hpDelta: -142 },
-      { actorSlot: 'ALLY_LEFT', targetSlot: 'ENEMY_MAIN', hpDelta: -2016 },
+      { actorSlot: 'ALLY_LEFT', targetSlot: 'ENEMY_MAIN', hpDelta: -1913 },
     ])
 
     const ultimate = fight({ ...sheDiao, ultSkillId: 'yiyang_zhi' }, { rng: vi.fn().mockReturnValueOnce(1).mockReturnValue(0) })

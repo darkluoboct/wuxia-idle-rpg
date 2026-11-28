@@ -384,6 +384,48 @@ describe('联机战斗', { skip: connection ? false : '请设置 GAME_TEST_DATAB
     assert.equal((await hero.post('/sect', exchange('tongmai_dan', 1))).json().code, 'SECT_CHANGED')
   })
 
+  it('散人收功结算江湖散记、江南武馆 3 阶出师礼及旧档 claim-gear 补领武学', async () => {
+    const rogue = await createPlayer('wanderer_notes')
+    await db.query('UPDATE players SET last_settle_at = last_settle_at - $2 WHERE id = $1', [rogue.id, 5 * 3_600_000])
+    const beforeSettle = await rogue.read()
+    const settled = await rogue.act<IdleGain>('/cultivate/settle')
+    const notes = settled.result.wandererNotes!
+    assert.equal(notes.count, 2)
+    assert.equal(notes.entries.length, 2)
+    assert.ok(notes.silver >= 800 && notes.silver <= 1200)
+    assert.ok(settled.snapshot.player.silver >= beforeSettle.player.silver + notes.silver)
+    assert.equal(settled.snapshot.player.wandererNotes?.recent.length, 2)
+
+    await rogue.act('/sect', { action: 'join', sectId: 'jiangnan_wuguan' })
+    const joined = await rogue.read()
+    assert.equal(joined.player.wandererNotes, undefined)
+
+    await profile(rogue.id, { sectRank: 3, stats: { ...joined.player.stats, str: 30, con: 30 } })
+    const pillsBefore = joined.pillInventory?.tongmai_dan ?? 0
+    const grad = await rogue.act<SectResult>('/sect', { action: 'graduate', sectId: 'jiangnan_wuguan' })
+    assert.deepEqual(grad.result, { action: 'graduate', name: '江南武馆', gift: { pillId: 'tongmai_dan', pillQty: 2, str: 2, con: 2 } })
+    assert.equal(grad.snapshot.player.stats.str, 32)
+    assert.equal(grad.snapshot.player.stats.con, 32)
+    assert.equal(grad.snapshot.pillInventory?.tongmai_dan, pillsBefore + 2)
+
+    await rogue.act('/sect', { action: 'join', sectId: 'jiangnan_wuguan' })
+    await profile(rogue.id, { sectRank: 3 })
+    const secondGrad = await rogue.act<SectResult>('/sect', { action: 'graduate', sectId: 'jiangnan_wuguan' })
+    assert.deepEqual(secondGrad.result, { action: 'graduate', name: '江南武馆' })
+    assert.equal(secondGrad.snapshot.pillInventory?.tongmai_dan, pillsBefore + 2)
+
+    await rogue.act('/sect', { action: 'join', sectId: 'tiezhang' })
+    await profile(rogue.id, { sectRank: 5 })
+    const claimed = await rogue.act<SectResult>('/sect', { action: 'claim-gear', sectId: 'tiezhang' })
+    assert.equal(claimed.result.action, 'claim-gear')
+    if (claimed.result.action === 'claim-gear') {
+      assert.ok(claimed.result.items.length > 0)
+      assert.ok((claimed.result.skills ?? []).includes('tiezhang_cuibei'))
+    }
+    assert.ok((claimed.snapshot.learnedSkills.tiezhang_cuibei ?? 0) >= 1)
+    assert.ok((claimed.snapshot.learnedSkills.tiezhang_lianggu ?? 0) >= 1)
+  })
+
   type RaidEventData = { [E in Extract<WsServerEvent, { event: 'TEAM_ROOM_SYNC' | 'RAID_REPORT' }> as E['event']]: E['data'] }
 
   async function nextRaidEvent<K extends keyof RaidEventData>(

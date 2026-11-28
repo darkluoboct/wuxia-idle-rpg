@@ -5,8 +5,9 @@ import { battleEnvironmentAt, EQUIP_SLOT_META, jianghuHour } from './combatMeta.
 import { ACUPOINTS, ACUPOINT_PILLS, activeJianghuTitle, COMPANIONS, equipmentItem, GHOST_APPRAISE_COST, INN_GIFT_DAILY, INN_TEA_DAILY, isMapUnlocked, ITEMS, LINAN_CITY_MAP, MAPS, meetsItemStatRequirement, REALMS, SECTS, SKILLS, PILL_RECIPES, type AcupointConfig, type MapZoneConfig, type PillRecipeConfig } from './gameData.ts'
 import { gaibangAttributeBonus, gaibangSilverGain } from './gaibang.ts'
 import { huashanDay } from './huashan.ts'
-import { clampKarma, effectiveMartialStats, hasMartialFreedom, martialEffectiveness } from './martialSchools.ts'
+import { clampKarma, effectiveMartialStats, hasMartialFreedom } from './martialSchools.ts'
 import { ORIGINS, originPerk } from './origins.ts'
+import { skillIdleQiBonusAtMastery, skillMasteryFrom } from './skillMastery.ts'
 import { IDLE_CAP_MS, PATROL_ELITE_EVERY, trialPartId } from './trialStages.ts'
 import { activeSectEquipmentSets } from './sectEquipment.ts'
 
@@ -317,14 +318,26 @@ export function autoSeatCompanions(presets: Iterable<LoadoutPresetDTO>, newcomer
   return changed
 }
 
-export function cultivationRate(player: PlayerDTO, preset: LoadoutPresetDTO, collectionBonus = 0) {
-  return cultivationRates(player, preset, collectionBonus).qi
+export function cultivationRate(
+  player: PlayerDTO,
+  preset: LoadoutPresetDTO,
+  collectionBonus = 0,
+  learnedSkills?: Readonly<Record<string, number>>,
+) {
+  return cultivationRates(player, preset, collectionBonus, learnedSkills).qi
 }
 
-export function cultivationRates(player: PlayerDTO, preset: LoadoutPresetDTO, collectionBonus = 0) {
+export function cultivationRates(
+  player: PlayerDTO,
+  preset: LoadoutPresetDTO,
+  collectionBonus = 0,
+  learnedSkills?: Readonly<Record<string, number>>,
+) {
   const map = MAPS.find((zone) => zone.id === player.currentMapId) ?? MAPS[0]
   const innerSkill = SKILLS[preset.innerSkillId ?? '']
-  const inner = innerSkill?.slot === 'INNER' ? (innerSkill.idleQiBonus ?? 0) * martialEffectiveness(innerSkill, player, hasMartialFreedom(preset)) / 100 : 0
+  const inner = innerSkill?.slot === 'INNER'
+    ? skillIdleQiBonusAtMastery(innerSkill, skillMasteryFrom(innerSkill, learnedSkills), player, hasMartialFreedom(preset))
+    : 0
   const armor = preset.armorId ? ITEMS[preset.armorId]?.idleBonus ?? 0 : 0
   const head = equipmentItem(preset.headId, player)
   const accessory = equipmentItem(preset.accId, player)

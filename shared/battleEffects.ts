@@ -7,6 +7,7 @@ import { ACUPOINTS, activeJianghuTitle, canEquipCompanionItem, equippedBattleMed
 import { gaibangAttributeBonus, gaibangPerks, gaibangSilverGain } from './gaibang.ts'
 import { clampKarma, equippedMartialSkills, hasWandererMastery, martialEffectiveness, wandererStatBonuses, WANDERER_MASTERY } from './martialSchools.ts'
 import { enemySilverReward } from './player.ts'
+import { masteryPassiveScale, resolveSkillForMastery, skillMasteryFrom } from './skillMastery.ts'
 import type { BattleEventDTO, BattleReportDTO, CombatUnitDTO, LoadoutPresetDTO, PlayerDTO, RichSegment, StanceType } from './protocol.ts'
 import { STORY_SNAKE_ADVENTURE } from './storySnake.ts'
 import { sectEquipmentSetOf, WANDERER_EQUIPMENT, wandererEquipmentBonus } from './sectEquipment.ts'
@@ -135,7 +136,7 @@ export type BattleEffect =
   | ({ kind: 'ON_HIT_STATUS' } & OnHit &
       ({ rule: BattleStatusRule; area?: true } | { rules: readonly BattleStatusRule[]; chancePercent: number }))
   | { kind: 'ON_RECEIVE_STATUS'; rule: BattleStatusRule }
-  | { kind: 'ULT_AREA_TRUE_DAMAGE'; maxMpPercent: number; rule: BattleStatusRule }
+  | { kind: 'ULT_AREA_TRUE_DAMAGE'; maxMpPercent: number; rule: BattleStatusRule; label?: string }
   | { kind: 'OUTER_AREA_DAMAGE'; attackPercent: number; chancePercent: number; moveName: string; element?: DamageElement }
   | { kind: 'ON_DODGED_STRIKE'; attackPercent: number; moveName: string; hiddenWeapon?: true }
   | { kind: 'TRUE_STRIKE'; chancePercent: number; moveName: string; team?: true }
@@ -155,6 +156,32 @@ export type BattleEffect =
   | { kind: 'RAGE_GAIN_PERCENT'; percent: number }
   | { kind: 'HIT_MP_RECOVERY'; hpLossPercent: number }
   | { kind: 'SELF_ROUND_HEAL_BONUS'; percent: number }
+  | {
+      kind: 'OPENING_SURGE'
+      surgeUntilRound: number
+      fadeFromRound: number
+      damagePercent?: number
+      outerOnly?: true
+      skillOnly?: true
+      speedPercent?: number
+      critPoints?: number
+      fadeDamagePercent?: number
+      fadeDodgePoints?: number
+      surgeLabel?: string
+      fadeLabel?: string
+    }
+  | {
+      kind: 'COMBAT_RAMP'
+      skillOnly?: true
+      startDamagePercent?: number
+      damagePerRound?: number
+      critPerRound?: number
+      maxStacks?: number
+      activateRound?: number
+      physReductionPercent?: number
+      healBonusPercent?: number
+      rampLabel: string
+    }
   | { kind: 'DODGE_RAGE'; amount: number }
   | { kind: 'DODGE_CAP'; percent: number }
   | { kind: 'LIGHT_DODGE_PENETRATION'; percent: number }
@@ -525,8 +552,19 @@ export function battleDefense(target: StatusTarget, defense: number, round: numb
   return adjusted
 }
 
-export function battleDodge(target: StatusTarget, dodge: number, round: number) {
-  return (dodge + statusPercent(target, 'DODGE_UP', round)) * (100 - statusPercent(target, 'DODGE_DOWN', round)) / 100
+export function battleDodge(target: StatusTarget, dodge: number, round: number, effects?: readonly ActiveEffect[]) {
+  const fadeDodge = effects?.reduce((sum, effect) =>
+    sum + (effect.kind === 'OPENING_SURGE' && round >= effect.fadeFromRound && effect.fadeDodgePoints ? effect.fadeDodgePoints : 0), 0) ?? 0
+  return Math.max(0, (dodge - fadeDodge + statusPercent(target, 'DODGE_UP', round)) * (100 - statusPercent(target, 'DODGE_DOWN', round)) / 100)
+}
+
+export function combatRampStacks(effect: Extract<BattleEffect, { kind: 'COMBAT_RAMP' }>, round: number) {
+  return Math.min(effect.maxStacks ?? 0, Math.max(0, round - 1))
+}
+
+export function skillTempoTag(skill: Pick<SkillConfig, 'battleEffects'>): 'SURGE' | 'RAMP' | undefined {
+  if (skill.battleEffects?.some((effect) => effect.kind === 'OPENING_SURGE')) return 'SURGE'
+  if (skill.battleEffects?.some((effect) => effect.kind === 'COMBAT_RAMP')) return 'RAMP'
 }
 
 export function effectsDuringAction(effects: readonly ActiveEffect[], target: StatusTarget, round: number) {
@@ -876,12 +914,17 @@ export function effectsFrom(source: EffectSource, sourceType?: ActiveEffect['sou
   }))
 }
 
+function scalePositiveStats(stats: BattleStatBonuses, percent: number): BattleStatBonuses {
+  if (percent === 100) return stats
+  return Object.fromEntries(Object.entries(stats).map(([key, value]) => [key, value < 0 ? value : value * percent / 100]))
+}
+
 function scaledMartialPassive(effect: ActiveEffect, percent: number): ActiveEffect {
   if (percent === 100) return effect
   const scale = (amount: number) => amount * percent / 100
   switch (effect.kind) {
     case 'STAT_BONUS':
-      return { ...effect, stats: Object.fromEntries(Object.entries(effect.stats).map(([key, value]) => [key, scale(value)])) }
+      return { ...effect, stats: scalePositiveStats(effect.stats, percent) }
     case 'CONTROL_RESIST':
       return { ...effect, chancePercent: scale(effect.chancePercent) }
     case 'ATTACK_LIFESTEAL':
@@ -896,6 +939,12 @@ function scaledMartialPassive(effect: ActiveEffect, percent: number): ActiveEffe
       return { ...effect, rule: 'attackPercent' in effect.rule
         ? { ...effect.rule, attackPercent: scale(effect.rule.attackPercent) }
         : { ...effect.rule, maxHpPercent: scale(effect.rule.maxHpPercent) } }
+    case 'ROUND_END_MP_RECOVERY':
+      return { ...effect, percent: scale(effect.percent) }
+    case 'FLAT_ARMOR_PENETRATION':
+      return { ...effect, points: Math.round(scale(effect.points)) }
+    case 'ROUND_TEAM_RESTORE':
+      return { ...effect, hpPercent: scale(effect.hpPercent) }
     case 'HEAL':
       return { ...effect, amount: scale(effect.amount) }
     default:
@@ -903,7 +952,11 @@ function scaledMartialPassive(effect: ActiveEffect, percent: number): ActiveEffe
   }
 }
 
-export function resolveBattleLoadout(loadout: LoadoutPresetDTO, player?: Pick<PlayerDTO, 'currentSectId' | 'sectRank' | 'graduatedSectIds' | 'betrayedSectIds' | 'gaibangBranch' | 'stats' | 'storySnakeChoice' | 'battleMedicines' | 'equipmentAffixes' | 'equipmentForge' | 'openedAcupointIds'>) {
+export function resolveBattleLoadout(
+  loadout: LoadoutPresetDTO,
+  player?: Pick<PlayerDTO, 'currentSectId' | 'sectRank' | 'graduatedSectIds' | 'betrayedSectIds' | 'gaibangBranch' | 'stats' | 'storySnakeChoice' | 'battleMedicines' | 'equipmentAffixes' | 'equipmentForge' | 'openedAcupointIds'>,
+  learnedSkills?: Readonly<Record<string, number>>,
+) {
   const effects: ActiveEffect[] = []
   for (const point of ACUPOINTS) {
     if (!player?.openedAcupointIds?.includes(point.id)) continue
@@ -962,13 +1015,29 @@ export function resolveBattleLoadout(loadout: LoadoutPresetDTO, player?: Pick<Pl
     }
   }
   for (const skill of skills) {
+    const mastery = skillMasteryFrom(skill, learnedSkills)
+    const passiveScale = masteryPassiveScale(skill.growthProfile, mastery)
+    const resolvedSkill = resolveSkillForMastery(skill, mastery)
     const percent = martialEffectiveness(skill, player, freedom)
-    const passives = effectsFrom(skill, skill.slot === 'INNER' ? 'INNER' : undefined)
-    effects.push(...(skill.slot === 'INNER' ? passives.map((effect) => scaledMartialPassive(effect, percent)) : passives))
+    const passives = effectsFrom(resolvedSkill, skill.slot === 'INNER' ? 'INNER' : undefined)
+    effects.push(...(skill.slot === 'INNER' ? passives.map((effect) => scaledMartialPassive(effect, percent * passiveScale)) : passives))
+    if (skill.earlyFlatStats) {
+      effects.push({
+        kind: 'STAT_BONUS',
+        stats: scalePositiveStats(skill.earlyFlatStats, percent),
+        sourceId: `${skill.id}_early`,
+        sourceName: `${skill.name}（初成）`,
+      })
+    }
     if (skill.slot === 'OUTER' && (skill.dodgeBonus || skill.speedBonus)) {
       effects.push({
-        kind: 'STAT_BONUS', stats: { dodge: (skill.dodgeBonus ?? 0) * percent / 100, speed: (skill.speedBonus ?? 0) * percent / 100 },
-        sourceId: skill.id, sourceName: skill.name,
+        kind: 'STAT_BONUS',
+        stats: {
+          dodge: (skill.dodgeBonus ?? 0) * percent / 100 * passiveScale,
+          speed: (skill.speedBonus ?? 0) * percent / 100 * passiveScale,
+        },
+        sourceId: skill.id,
+        sourceName: skill.name,
       })
     }
   }
@@ -1315,6 +1384,10 @@ export function resolveHealing(
   const selfHealBonus = timing.trigger === 'ROUND_END'
     ? effects.find((effect) => effect.kind === 'SELF_ROUND_HEAL_BONUS')?.percent ?? 0
     : 0
+  const rampHealBonus = timing.trigger === 'ROUND_END'
+    ? effects.reduce((sum, effect) =>
+      sum + (effect.kind === 'COMBAT_RAMP' && effect.healBonusPercent && timing.round >= (effect.activateRound ?? 1) ? effect.healBonusPercent : 0), 0)
+    : 0
   let currentHp = hp
   for (const effect of effects) {
     if (effect.kind !== 'HEAL' || effect.trigger !== timing.trigger) continue
@@ -1324,7 +1397,7 @@ export function resolveHealing(
 
     const selfHeal = effect.target === 'SELF' && (effect.sourceType === 'EQUIPMENT' || effect.sourceType === 'INNER')
     const base = effect.unit === 'HP' ? effect.amount : unit.maxHp * effect.amount / 100
-    const amount = Math.round(base * (100 + (selfHeal ? selfHealBonus : 0)) / 100)
+    const amount = Math.round(base * (100 + (selfHeal ? selfHealBonus + rampHealBonus : 0)) / 100)
     currentHp = restoreHp(target, currentHp, amount, effect, timing.round, events, timing.sourceSlot)
   }
   return currentHp
@@ -1336,6 +1409,8 @@ export function restorePartyRound(
   const owner = members.find(({ hp, effects }) => hp > 0 && effects.some((effect) => effect.kind === 'ROUND_TEAM_RESTORE'))
   const effect = owner?.effects.find((candidate) => candidate.kind === 'ROUND_TEAM_RESTORE')
   if (!owner || !effect || round % effect.every !== 0) return
+  const rampHealBonus = owner.effects.reduce((sum, candidate) =>
+    sum + (candidate.kind === 'COMBAT_RAMP' && candidate.healBonusPercent && round >= (candidate.activateRound ?? 1) ? candidate.healBonusPercent : 0), 0)
   const slot = owner.fighter.unit.slot
   for (const member of members) {
     if (member.hp <= 0) continue
@@ -1343,7 +1418,7 @@ export function restorePartyRound(
       const { category } = PERIODIC_DAMAGE[kind]
       if (category === 'poison' || category === 'bleed') removePeriodicStatus(member.fighter, kind, { ...effect, slot }, round, events)
     }
-    member.hp = restoreHp(member.fighter, member.hp, Math.round(member.fighter.unit.maxHp * effect.hpPercent / 100), effect, round, events, slot)
+    member.hp = restoreHp(member.fighter, member.hp, Math.round(member.fighter.unit.maxHp * effect.hpPercent / 100 * (100 + rampHealBonus) / 100), effect, round, events, slot)
   }
 }
 
@@ -1537,6 +1612,14 @@ export function resolveIncomingPhysicalDamage(
       if (effect.attackerTraits && !matchesEnemyTrait(contact?.attackerCombat, effect.attackerTraits)) continue
       if (effect.criticalOnly && !contact?.critical) continue
       if (effect.belowHpPercent !== undefined && targetHp * 100 >= target.unit.maxHp * effect.belowHpPercent) continue
+    } else if (effect.kind === 'COMBAT_RAMP' && effect.physReductionPercent && contact && contact.round >= (effect.activateRound ?? 1)) {
+      const reduced = Math.round(damage * (100 - effect.physReductionPercent) / 100)
+      const prevented = damage - reduced
+      if (prevented > 0) {
+        segments.push({ type: 'tag', text: `${effect.sourceName} · ${effect.rampLabel} · 盾前减伤 ${prevented.toLocaleString()}`, tone: 'jade' })
+      }
+      damage = reduced
+      continue
     } else if (effect.kind === 'POISON_MP_RECOVERY') {
       if (element !== 'POISON') continue
     } else if (!resistsElement(effect, element)) continue
@@ -2292,11 +2375,13 @@ export function transferLethalStatuses<T extends EnemyBattleState>(
 }
 
 export function resolveCastArea<T extends EnemyBattleState>(
-  unit: CombatUnitDTO, cast: { isUlt: boolean; attack: number; level: number; stance?: StanceType; combat?: EnemyCombatConfig },
+  unit: CombatUnitDTO, cast: { isUlt: boolean; skillId?: string; attack: number; level: number; stance?: StanceType; combat?: EnemyCombatConfig },
   effects: readonly ActiveEffect[], enemies: Iterable<T>, hpOf: (enemy: T) => number,
   round: number, rng: () => number, events: BattleEventDTO[],
 ) {
-  const effect = cast.isUlt ? effects.find((candidate) => candidate.kind === 'ULT_AREA_TRUE_DAMAGE')
+  const effect = cast.isUlt
+    ? effects.find((candidate): candidate is Extract<ActiveEffect, { kind: 'ULT_AREA_TRUE_DAMAGE' }> =>
+      candidate.kind === 'ULT_AREA_TRUE_DAMAGE' && (!!candidate.sourceType || candidate.sourceId === cast.skillId))
     : effects.find((candidate) => candidate.kind === 'OUTER_AREA_DAMAGE')
   if (!effect) return []
   if (effect.kind === 'OUTER_AREA_DAMAGE' && rng() >= effect.chancePercent / 100) return []
@@ -2313,7 +2398,7 @@ export function resolveCastArea<T extends EnemyBattleState>(
       : resolveAttackDamage(amount, target, targetHp, cast.level, undefined, damageEffects, undefined, 0, round, effect.element,
         cast.stance ? { stance: cast.stance, combat: cast.combat, critical: false, outer: true, rng, events } : undefined)
     const hp = applyBonusDamage(conversion ?? effect, hit, target, {
-      actorSlot: unit.slot, targetHp, round, label: ultimate ? '音律海啸' : conversion ? `${conversion.moveName} · ${effect.moveName}` : effect.moveName,
+      actorSlot: unit.slot, targetHp, round, label: ultimate ? (effect.label ?? '音律海啸') : conversion ? `${conversion.moveName} · ${effect.moveName}` : effect.moveName,
       category: ultimate || conversion ? 'true' : 'phys',
     }, events)
     if (ultimate) applyBattleStatus(effect, effect.rule, unit.slot, target, { hp, effects: target.playerGuard?.effects }, round, rng, events)

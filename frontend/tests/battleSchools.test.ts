@@ -53,17 +53,17 @@ describe('武学出处与门派效力', () => {
       surviveRounds: 1, environment: calm, learnedSkills: { [claw.id]: 3 }, rng: () => 0.99,
     }
     const report = fight({ outerSkillId: claw.id }, options)
-    const power = claw.powerRatio * 1.1 * 0.7
+    const power = claw.powerRatio * 1.2 * 0.7
     expect(skillPowerAtMastery(claw, 3, quanzhen)).toBeCloseTo(power)
-    const { atk, maxMp } = computeDerivedStats(quanzhen, loadout)
+    const { atk, maxMp } = computeDerivedStats(quanzhen, { ...loadout, outerSkillId: claw.id })
     const ordinary = strikeDamage(atk, power, 1, innerPressure(maxMp, enemy.mp), false, 1)
     expect(mainCast(report)).toMatchObject({ hpDelta: -(ordinary - 10), shieldAbsorbed: 10, shieldDelta: -20 })
     expect(mainCast(report).segments).toContainEqual(conflict)
     const natural = fight({ outerSkillId: claw.id }, { ...options, player })
     const bleed = (battle: BattleReportDTO) => battle.events.find((event) => event.type === 'DOT_TICK' && event.effectSourceId === claw.id)?.hpDelta
-    expect(bleed(report)).toBeLessThan(0)
-    expect(bleed(report)).toBe(bleed(natural))
-    expect(martialEffectiveness(SKILLS.quanzhen_jianfa, quanzhen)).toBe(100)
+    expect(bleed(report)).toBe(-Math.round(atk * 0.2))
+    expect(bleed(natural)).toBeLessThan(bleed(report)!)
+    expect(martialEffectiveness(SKILLS.quanzhen_jianfa, quanzhen)).toBe(105)
     expect(martialEffectiveness(SKILLS.luoying_zhang, quanzhen)).toBe(100)
   })
 
@@ -75,12 +75,12 @@ describe('武学出处与门派效力', () => {
     expect(computeDerivedStats(disciple, build).def).toBe(Math.round(defense * 1.14))
     expect(computeDerivedStats(graduate, build).def).toBe(Math.round(defense * 1.16))
     const base = cultivationRate(disciple, loadout)
-    expect(cultivationRate(graduate, build)).toBe(Math.round(base * 1.28))
+    expect(cultivationRate(graduate, build)).toBe(Math.round(base * 1.32))
     expect(resolveBattleLoadout({ ...loadout, innerSkillId: 'jiuyin_taohua' }, graduate).effects).toContainEqual(expect.objectContaining({
-      kind: 'CONTROL_RESIST', chancePercent: 28, sourceId: 'jiuyin_taohua',
+      kind: 'CONTROL_RESIST', chancePercent: 24, sourceId: 'jiuyin_taohua',
     }))
     expect(resolveBattleLoadout({ ...loadout, innerSkillId: 'nijiuyin_hama_gong' }, { ...quanzhen, graduatedSectIds: ['baituo'] }).effects)
-      .toContainEqual(expect.objectContaining({ kind: 'ATTACK_LIFESTEAL', percent: 24, sourceId: 'nijiuyin_hama_gong' }))
+      .toContainEqual(expect.objectContaining({ kind: 'ATTACK_LIFESTEAL', percent: 16, sourceId: 'nijiuyin_hama_gong' }))
     expect(martialEffectiveness(SKILLS.xiantian_gong, { ...graduate, currentSectId: null })).toBe(100)
     expect(resolveBattleLoadout({ ...loadout, innerSkillId: 'jiuyin_cuixin_jue' }, quanzhen).effects)
       .toContainEqual(expect.objectContaining({ kind: 'PERIODIC_ON_HIT', rule: { status: 'heartPoison', attackPercent: 8.4, rounds: 2 } }))
@@ -376,12 +376,12 @@ describe('宗门装备', () => {
     const id = 'sect_quanzhen_hufa'
     const worn = gear(id)
     const solo = fight(worn, { environment: calm, rng: () => 0.99 })
-    expect(effectEvents(solo, id)).toMatchObject([{ round: 1, actorSlot: 'ALLY_MAIN', targetSlot: 'ALLY_MAIN', shieldDelta: Math.round(mainUnit(solo).maxMp * 0.3) }])
+    expect(effectEvents(solo, id)).toMatchObject([{ round: 1, actorSlot: 'ALLY_MAIN', targetSlot: 'ALLY_MAIN', shieldDelta: Math.round(Math.round(mainUnit(solo).maxMp * 0.3) * 1.15) }])
     expect(effectEvents(fight({ ...worn, headId: null }, { environment: calm, rng: () => 0.99 }), id)).toEqual([])
     const teammate = (id: string, loadout: LoadoutPresetDTO) => ({ player: { ...player, id, nickname: id }, loadout, learnedSkills: {} })
     const raid = simulateShaoshiRaid('sect-shields', [teammate('甲', loadout), teammate('乙', worn), teammate('丙', loadout)], () => 0.99, calm)
     expect(effectEvents(raid, id)).toMatchObject([{ round: 1, actorSlot: 'ALLY_LEFT', targetSlot: 'ALLY_LEFT',
-      shieldDelta: Math.round(raid.units.find(({ slot }) => slot === 'ALLY_LEFT')!.maxMp * 0.3) }])
+      shieldDelta: Math.round(Math.round(raid.units.find(({ slot }) => slot === 'ALLY_LEFT')!.maxMp * 0.3) * 1.15) }])
   })
 
   it('降龙之怒随已损气血逐档增伤，跌破一成时按扣盾后实伤记录翻倍', () => {
@@ -445,7 +445,11 @@ describe('宗门装备', () => {
     const burst = effectEvents(report, 'sect_baituo_shaozhuang')
     expect(poison).toMatchObject({ targetSlot: 'ENEMY_MAIN', statusStacks: 2, statusRounds: 2 })
     const attack = computeDerivedStats(owner, worn).atk
-    expect(burst).toMatchObject([{ statusRemoved: '灵蛇剧毒' }, { hpDelta: -Math.round(attack * 0.12) * 4 }])
+    expect(burst).toMatchObject([
+      { statusRemoved: '蛇奴毒雾' },
+      { statusRemoved: '灵蛇剧毒' },
+      { hpDelta: -(Math.round(attack * 0.06) * 2 + Math.round(attack * 0.12) * 4) },
+    ])
   })
 })
 
@@ -727,10 +731,10 @@ describe('桃花岛奇门困阵与传承', () => {
     const gear = { weaponId: 'biyu_xiao', outerSkillId: 'yuxiao_jianfa', innerSkillId: 'jiuyin_taohua' }
     const baseMp = computeDerivedStats(disciple, { ...loadout, ...gear, innerSkillId: null }).maxMp
     const report = fight(gear, {
-      player: disciple, rng: () => 0.34,
+      player: disciple, rng: () => 0.31,
       enemyMain: { ...enemy, mp: 100, combat: { openingShield: 10_000, statusOnHit: { status: 'STUN', rounds: 1 } } },
     })
-    expect(mainUnit(report).maxMp).toBe(Math.round(baseMp * 1.25))
+    expect(mainUnit(report).maxMp).toBe(Math.round(baseMp * 1.21))
     const cast = mainCast(report)
     expect(cast.hpDelta).toBeLessThan(0)
     expect(cast.segments.some((segment) => segment.type === 'tag' && segment.text.includes('内力优势强化 +25%'))).toBe(true)
@@ -851,7 +855,7 @@ describe('白驼五阶试练与逆九阴蛤蟆功', () => {
       const prior = report.events.slice(0, report.events.indexOf(heal))
       const cast = prior.filter((event) => event.type === 'SKILL_CAST' && event.actorSlot === 'ALLY_MAIN').at(-1)!
       const missing = prior.reduce((lost, event) => event.targetSlot === 'ALLY_MAIN' ? lost - (event.hpDelta ?? 0) : lost, 0)
-      expect(heal).toMatchObject({ targetSlot: 'ALLY_MAIN', hpDelta: Math.min(missing, Math.round(-cast.hpDelta! * 0.3)) })
+      expect(heal).toMatchObject({ targetSlot: 'ALLY_MAIN', hpDelta: Math.min(missing, Math.round(-cast.hpDelta! * 0.2)) })
       return cast
     })
     expect(casts.some((event) => event.isUlt)).toBe(true)
@@ -915,7 +919,7 @@ describe('九阴心法、逆转九阴与狂生剑', () => {
     expect(action(report, 4)?.skillId).toBe(status === 'STUN' ? undefined : 'bare_hands')
     const cast = action(report, 5)
     expect(cast).toMatchObject({ skillId: 'nizhuan_jiuyin', rageDelta: -85, mpDelta: -53 })
-    expect(tagged(cast, '穿透 180 点防御')).toBe(true)
+    expect(tagged(cast, '穿透 150 点防御')).toBe(true)
     expect(tagged(cast, '免疫本次点穴控制')).toBe(true)
     const ended = report.events.find((event) => event.statusRemoved === label)!
     expect(ended.round).toBe(5)

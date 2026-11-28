@@ -49,6 +49,40 @@ export function sectContributionGain(amount: number, loadout: LoadoutPresetDTO) 
   return Math.round(amount * (100 + bonus) / 100)
 }
 
+export function sectSkillRewardIds(sect: SectConfig, rank: number) {
+  return [...new Set(sect.signatureSkills.slice(0, rank).flat())]
+}
+
+export const JIANGNAN_GRADUATION_GIFT = {
+  sectId: 'jiangnan_wuguan',
+  minRank: 3,
+  flag: 'jiangnan_wuguan_graduated_gift',
+  pillId: 'tongmai_dan',
+  pillQty: 2,
+  stats: { str: 2, con: 2 },
+} as const
+
+/** 江南武馆第 3 阶以上圆满出师的一次性出师礼：通脉丹 ×2 + 臂力/根骨各 +2 */
+export function grantJiangnanGraduationGift(
+  player: Pick<PlayerDTO, 'stats'>,
+  pills: Record<string, number>,
+  sectId: string,
+  rank: number,
+  flags: string[],
+) {
+  if (sectId !== JIANGNAN_GRADUATION_GIFT.sectId || rank < JIANGNAN_GRADUATION_GIFT.minRank ||
+    flags.includes(JIANGNAN_GRADUATION_GIFT.flag)) return
+  flags.push(JIANGNAN_GRADUATION_GIFT.flag)
+  pills[JIANGNAN_GRADUATION_GIFT.pillId] = (pills[JIANGNAN_GRADUATION_GIFT.pillId] ?? 0) + JIANGNAN_GRADUATION_GIFT.pillQty
+  player.stats.str += JIANGNAN_GRADUATION_GIFT.stats.str
+  player.stats.con += JIANGNAN_GRADUATION_GIFT.stats.con
+  return {
+    pillId: JIANGNAN_GRADUATION_GIFT.pillId,
+    pillQty: JIANGNAN_GRADUATION_GIFT.pillQty,
+    ...JIANGNAN_GRADUATION_GIFT.stats,
+  }
+}
+
 export function sectPromotionRewards(rank: number, loadout: LoadoutPresetDTO) {
   return { qiExp: 4500 * rank, silver: 1500, sectContrib: sectContributionGain(200, loadout) }
 }

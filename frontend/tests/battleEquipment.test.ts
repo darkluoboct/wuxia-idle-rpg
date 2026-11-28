@@ -497,7 +497,7 @@ describe('两件折扇饰品与琴箫合奏', () => {
     })
     const ultimateIndex = report.events.findIndex((event) => event.actorSlot === 'ALLY_RIGHT' && event.isUlt)
     const ultimate = report.events[ultimateIndex]
-    expect(ultimate).toMatchObject({ round: 3, skillId: 'bihai_chaosheng', rageDelta: -55, mpDelta: expect.any(Number) })
+    expect(ultimate).toMatchObject({ round: 3, skillId: 'bihai_chaosheng', rageDelta: -65, mpDelta: expect.any(Number) })
     const rage = report.events.slice(0, ultimateIndex).filter((event) => (event.rageTargetSlot ?? event.actorSlot) === 'ALLY_RIGHT')
     expect(rage.filter((event) => event.effectSourceId === score).map((event) => event.rageDelta ?? 0)).toEqual([20, 20, 0])
     expect(rage.reduce((total, event) => total + (event.rageDelta ?? 0), 0)).toBe(100)
@@ -997,39 +997,40 @@ describe('描金折扇、灵蛇杖、碧玉箫与玄铁重剑', () => {
 
   it('东海万年碧玉箫的桃花岛真传对三个目标分别绕盾和封穴，整招只扣一次怒气', () => {
     const target = { ...enemy, combat: { openingShield: 9000, def: 400 } }
-    const options = { player: taohua, enemyMain: target, enemyGuards: [target, target], surviveRounds: 3 }
+    const options = { player: taohua, enemyMain: target, enemyGuards: [target, target], surviveRounds: 3, rng: () => 0.44 }
     const build = { weaponId: jade, stance: 'AGILE' as const, outerSkillId: 'yuenv_jian', ultSkillId: 'bihai_chaosheng' }
     const report = fight(build, options)
     const casts = song(report)
     expect(casts).toMatchObject([
-      { round: 2, targetSlot: 'ENEMY_MAIN', hpDelta: -1374, rageDelta: -43, mpDelta: -53 },
-      { round: 2, targetSlot: 'ENEMY_LEFT', hpDelta: -1115 },
-      { round: 2, targetSlot: 'ENEMY_RIGHT', hpDelta: -1115 },
+      { round: 2, targetSlot: 'ENEMY_MAIN', hpDelta: -1203, rageDelta: -64, mpDelta: -53 },
+      { round: 2, targetSlot: 'ENEMY_LEFT', hpDelta: -976 },
+      { round: 2, targetSlot: 'ENEMY_RIGHT', hpDelta: -976 },
     ])
     expect(casts.every((event) => event.shieldDelta === undefined)).toBe(true)
     expect(casts.filter((event) => event.rageDelta !== undefined)).toHaveLength(1)
-    expect(tagged(casts[0], '音律绕盾 1,374 · 增伤 +1,374')).toBe(true)
-    expect(tagged(casts[0], '怒气 -43（节省 42）')).toBe(true)
+    expect(tagged(casts[0], '音律绕盾 1,203 · 增伤 +1,203')).toBe(true)
+    expect(tagged(casts[0], '怒气 -64（节省 21）')).toBe(true)
     expect(effectEvents(report, jade).filter((event) => event.statusApplied === '封穴').map((event) => event.targetSlot))
       .toEqual(['ENEMY_MAIN', 'ENEMY_LEFT', 'ENEMY_RIGHT'])
+    expect(effectEvents(fight(build, { ...options, rng: () => 0.45 }), jade).filter((event) => event.statusApplied === '封穴')).toEqual([])
     const regular = report.events.find((event) => event.round === 3 && event.skillId === 'yuenv_jian')!
     expect(regular).toMatchObject({ hpDelta: 0, shieldAbsorbed: 671 })
     expect(effectEvents(report, jade).filter((event) => event.hpDelta === -120).map((event) => event.round)).toEqual([1, 3])
     const junior = fight(build, { ...options, player: { ...taohua, sectRank: 3 } })
-    expect(song(junior)[0]).toMatchObject({ round: 2, rageDelta: -85, hpDelta: 0, shieldAbsorbed: 1374 })
+    expect(song(junior)[0]).toMatchObject({ round: 2, rageDelta: -85, hpDelta: 0, shieldAbsorbed: 1203 })
     expect(effectEvents(junior, jade).filter((event) => event.statusApplied === '封穴')).toEqual([])
   })
 
-  it('剧情碧玉箫按内力优势提高音律伤害，桃花弟子节省 30 怒气', () => {
+  it('剧情碧玉箫按内力优势提高音律伤害，桃花弟子节省 20 怒气', () => {
     const build = { weaponId: oldJade, ultSkillId: 'bihai_chaosheng', outerSkillId: 'yuenv_jian' }
     const enemyMain = { ...enemy, mp: 100, combat: { openingShield: 9000, def: 400 } }
     const report = fight(build, { player: { ...taohua, sectRank: 1 }, enemyMain, surviveRounds: 2 })
     const hit = song(report)[0]
-    expect(hit).toMatchObject({ hpDelta: -889, rageDelta: -55 })
+    expect(hit).toMatchObject({ hpDelta: -778, rageDelta: -65 })
     expect(hit.shieldDelta).toBeUndefined()
-    expect(tagged(hit, '内力优势强化 +25% · 增伤 +39')).toBe(true)
+    expect(tagged(hit, '内力优势强化 +25% · 增伤 +33')).toBe(true)
     expect(effectEvents(report, oldJade).filter((event) => event.statusApplied === '封穴')).toEqual([])
-    expect(song(fight(build, { enemyMain }))[0]).toMatchObject({ hpDelta: 0, shieldAbsorbed: 889, rageDelta: -85 })
+    expect(song(fight(build, { enemyMain }))[0]).toMatchObject({ hpDelta: 0, shieldAbsorbed: 741, rageDelta: -85 })
   })
 
   it('重剑降速，实际剑招无视招架，余波分别经过其他敌人的防御和护盾', () => {
@@ -1088,10 +1089,10 @@ describe('描金折扇、灵蛇杖、碧玉箫与玄铁重剑', () => {
     const target = { ...enemy, combat: { def: 400, openingShield: 9000 } }
     const tough = { ...player, stats: { ...player.stats, con: 40 } }
     const report = fight({ rightCompanionId: 'huangyaoshi', companionWeapons: { huangyaoshi: jade } },
-      { player: tough, enemyMain: target, enemyGuards: [target], surviveRounds: 3 })
+      { player: tough, enemyMain: target, enemyGuards: [target], surviveRounds: 3, rng: () => 0.44 })
     const [front, rear] = song(report)
-    expect(front).toMatchObject({ round: 3, actorSlot: 'ALLY_RIGHT', targetSlot: 'ENEMY_LEFT', hpDelta: -3516, rageDelta: -43, mpDelta: -220 })
-    expect(rear).toMatchObject({ round: 3, actorSlot: 'ALLY_RIGHT', targetSlot: 'ENEMY_MAIN', hpDelta: -4929 })
+    expect(front).toMatchObject({ round: 3, actorSlot: 'ALLY_RIGHT', targetSlot: 'ENEMY_LEFT', hpDelta: -2666, rageDelta: -64, mpDelta: -220 })
+    expect(rear).toMatchObject({ round: 3, actorSlot: 'ALLY_RIGHT', targetSlot: 'ENEMY_MAIN', hpDelta: -3737 })
     expect(rear.rageDelta).toBeUndefined()
     expect(rear.mpDelta).toBeUndefined()
     expect(song(report).every((event) => event.shieldDelta === undefined)).toBe(true)
@@ -1120,7 +1121,7 @@ describe('描金折扇、灵蛇杖、碧玉箫与玄铁重剑', () => {
     const report = fight({
       rightCompanionId: 'huangrong', leftCompanionId: 'guojing',
       companionWeapons: { huangrong: stick, guojing: saber },
-    }, { surviveRounds: 1, rng: () => 0.3999 })
+    }, { surviveRounds: 1, rng: () => 0.2999 })
     expect(effectEvents(report, stick).filter((event) => event.statusApplied === '封招'))
       .toMatchObject([{ round: 1, actorSlot: 'ALLY_RIGHT', targetSlot: 'ENEMY_MAIN' }])
     expect(effectEvents(report, saber).filter((event) => event.statusApplied === '攻击降低'))
@@ -1240,10 +1241,10 @@ describe('兵刃、招式与阵营克制', () => {
     const build = { weaponId: 'tiancan_glove', outerSkillId: 'xianglong_18' }
     const enemyMain = { ...enemy, combat: { def: 400, openingShield: 500 } }
     const cast = mainCast(fight(build, { enemyMain }))
-    expect(cast).toMatchObject({ hpDelta: -463, shieldAbsorbed: 500 })
-    expect(cast.segments).toContainEqual(tag('天蚕金丝掌套 · 招式伤害 +35% · 增伤 +250'))
+    expect(cast).toMatchObject({ hpDelta: -506, shieldAbsorbed: 500 })
+    expect(cast.segments).toContainEqual(tag('天蚕金丝掌套 · 招式伤害 +35% · 增伤 +261'))
     const shielded = mainCast(fight(build, { enemyMain: { ...enemyMain, combat: { ...enemyMain.combat, openingShield: 5000 } } }))
-    expect(shielded).toMatchObject({ hpDelta: 0, shieldAbsorbed: 963 })
+    expect(shielded).toMatchObject({ hpDelta: 0, shieldAbsorbed: 1006 })
     expect(shielded.segments).toContainEqual(tag('天蚕金丝掌套 · 招式伤害 +35% · 增伤 +0'))
     const report = simulateShaoshiRaid('raid-technique-type', [
       { player, loadout, learnedSkills: {} },
@@ -1304,16 +1305,16 @@ describe('兵刃、招式与阵营克制', () => {
     expect(hit.segments).toContainEqual(tag('双雕白羽箭 · 忽略 9 个百分点轻功闪避'))
   })
 
-  it('真绿玉打狗棒配用打狗棒法时增加本招伤害并在 40% 阈值内封招', () => {
+  it('真绿玉打狗棒配用打狗棒法时增加本招伤害并在 30% 阈值内封招', () => {
     const build = { weaponId: 'dagou_stick_true', outerSkillId: 'dagou_bangfa' }
     const enemyMain = { ...enemy, combat: { openingRage: 100, rageSkillId: 'jiuyin_baiguzhua' } }
     const options = { enemyMain, surviveRounds: 1 }
-    const report = fight(build, { ...options, rng: () => 0.3999 })
+    const report = fight(build, { ...options, rng: () => 0.2999 })
     expect(applied(report, '封招')).toMatchObject([{ targetSlot: 'ENEMY_MAIN', statusRounds: 1 }])
     expect(enemyCasts(report)[0].skillId).toBeUndefined()
-    expect(mainCast(report).segments).toContainEqual(tag('真·绿玉打狗棒 · 招式伤害 +50% · 增伤 +774'))
+    expect(mainCast(report).segments).toContainEqual(tag('真·绿玉打狗棒 · 招式伤害 +35% · 增伤 +541'))
     for (const other of [
-      fight(build, { ...options, rng: () => 0.4 }),
+      fight(build, { ...options, rng: () => 0.3 }),
       fight({ ...build, outerSkillId: 'yuenv_jian' }, { ...options, rng: () => 0 }),
     ]) {
       expect(applied(other, '封招')).toEqual([])
@@ -1329,8 +1330,8 @@ describe('兵刃、招式与阵营克制', () => {
     expect(applied(light, '护体棍势被破')).toMatchObject([{ round: 1, targetSlot: 'ENEMY_MAIN' }])
     expect(applied(fight({ outerSkillId: 'lanhua_shou' }, options), '护体棍势被破')).toHaveLength(1)
     const follow = (report: BattleReportDTO) => report.events.find((event) => event.round === 2 && event.skillId === 'bare_hands')
-    expect(follow(light)?.hpDelta).toBe(-183)
-    expect(follow(unprepared)?.hpDelta).toBeGreaterThan(-183)
+    expect(follow(light)?.hpDelta).toBe(-205)
+    expect(follow(unprepared)?.hpDelta).toBeGreaterThan(-205)
   })
 
   it('柯镇恶首回合近战可触发软猬甲，毒菱打远程且被已配备的轻功避开', () => {
@@ -1477,18 +1478,18 @@ describe('装备固定破甲', () => {
 
       store.challengeTrialStage(7)
       const cast = mainCast(store.activeBattle!)
-      expect(cast).toMatchObject({ round: 1, hpDelta: -28, shieldAbsorbed: 240, shieldDelta: -240, statusRemoved: '护盾' })
-      const fixed = flatTag('沉铁熟铜杖', 15, 0)
-      const percent = { type: 'tag', text: '降龙十八掌 · 穿透 44 点防御 · 增伤 +8', tone: 'gold' }
+      expect(cast).toMatchObject({ round: 1, hpDelta: -41, shieldAbsorbed: 240, shieldDelta: -240, statusRemoved: '护盾' })
+      const fixed = flatTag('沉铁熟铜杖', 15, 1)
+      const percent = { type: 'tag', text: '降龙十八掌 · 穿透 44 点防御 · 增伤 +19', tone: 'gold' }
       expect(cast.segments).toContainEqual(fixed)
       expect(cast.segments).toContainEqual(percent)
-      expect(fierceTags(cast)).toEqual([fierceTag('沉铁熟铜杖', 20)])
+      expect(fierceTags(cast)).toEqual([fierceTag('沉铁熟铜杖', 21)])
 
       store.skipBattleToEnd()
       const logs = store.logs.filter((entry) => entry.channel === 'BATTLE').flatMap((entry) => entry.segments)
       expect(logs).toContainEqual(fixed)
       expect(logs).toContainEqual(percent)
-      expect(logs).toContainEqual(fierceTag('沉铁熟铜杖', 20))
+      expect(logs).toContainEqual(fierceTag('沉铁熟铜杖', 21))
     } finally {
       store.closeBattleStage()
     }
@@ -1502,7 +1503,7 @@ describe('装备固定破甲', () => {
     expect(hasFlatPenetration(noDefense)).toBe(false)
     const lowDefense = castAt({ def: 12 })
     expect(lowDefense.hpDelta).toBe(noDefense.hpDelta)
-    expect(lowDefense.segments.filter((segment) => segment.type === 'tag')).toEqual([flatTag(combinedName, 12, 19)])
+    expect(lowDefense.segments.filter((segment) => segment.type === 'tag')).toEqual([flatTag(combinedName, 12, 20)])
 
     const blocked = castAt({ def: 12, openingShield: 5000 })
     expect(blocked).toMatchObject({ hpDelta: 0, shieldAbsorbed: -noDefense.hpDelta! })
@@ -1603,7 +1604,7 @@ describe('装备刚猛外功增伤', () => {
     const cast = mainCast(fight(combined, {
       surviveRounds: 1, enemyMain: { ...enemy, combat: { def: 400, openingShield: 5000 } },
     }))
-    expect(cast).toMatchObject({ hpDelta: 0, shieldAbsorbed: 1805, shieldDelta: -2707 })
+    expect(cast).toMatchObject({ hpDelta: 0, shieldAbsorbed: 1885, shieldDelta: -2827 })
     expect(fierceTags(cast)).toEqual([])
   })
 
@@ -1619,14 +1620,14 @@ describe('装备刚猛外功增伤', () => {
     const casts = report.events.filter((event) =>
       event.round === 1 && event.type === 'SKILL_CAST' && event.targetSlot === 'ENEMY_LEFT')
     expect(casts).toMatchObject([
-      { actorSlot: 'ALLY_MAIN', hpDelta: -390 },
-      { actorSlot: 'ALLY_LEFT', hpDelta: -1013 },
-      { actorSlot: 'ALLY_RIGHT', hpDelta: -1768 },
+      { actorSlot: 'ALLY_MAIN', hpDelta: -407 },
+      { actorSlot: 'ALLY_LEFT', hpDelta: -1057 },
+      { actorSlot: 'ALLY_RIGHT', hpDelta: -1845 },
     ])
     expect(casts.map(fierceTags)).toEqual([
-      [fierceTag('沉铁熟铜杖', 29)],
+      [fierceTag('沉铁熟铜杖', 30)],
       [],
-      [fierceTag('百斤沉铁破浪巨锚', 231), fierceTag('陨铁重铸金刚腕', 256)],
+      [fierceTag('百斤沉铁破浪巨锚', 241), fierceTag('陨铁重铸金刚腕', 267)],
     ])
   })
 })
@@ -1646,14 +1647,14 @@ describe('奇门破甲与装备破盾', () => {
     const gear = { ...swordGear, outerSkillId: 'xianglong_18' }
     const options = { surviveRounds: 1, enemyMain: { ...agileEnemy, combat: { def: 200, openingShield: 1700 } } }
     const agile = mainCast(fight(gear, options))
-    expect(agile).toMatchObject({ hpDelta: -240, shieldDelta: -1700, shieldAbsorbed: 1700, statusRemoved: '护盾' })
-    expect(agile.segments).toContainEqual(flatTag(swordAndBracer, 95, 121))
-    expect(agile.segments).toContainEqual({ type: 'tag', text: '降龙十八掌 · 穿透 37 点防御 · 增伤 +119', tone: 'gold' })
+    expect(agile).toMatchObject({ hpDelta: -326, shieldDelta: -1700, shieldAbsorbed: 1700, statusRemoved: '护盾' })
+    expect(agile.segments).toContainEqual(flatTag(swordAndBracer, 95, 201))
+    expect(agile.segments).toContainEqual({ type: 'tag', text: '降龙十八掌 · 穿透 37 点防御 · 增伤 +125', tone: 'gold' })
 
     const fierce = mainCast(fight({ ...gear, stance: 'FIERCE' }, options))
     expect(fierce.segments.filter((segment) => segment.type === 'tag' && segment.text.includes('固定破甲')))
-      .toEqual([flatTag('金丝镂花重臂铠', 35, 104)])
-    expect(fierce.segments).toContainEqual({ type: 'tag', text: '降龙十八掌 · 穿透 58 点防御 · 增伤 +200', tone: 'gold' })
+      .toEqual([flatTag('金丝镂花重臂铠', 35, 108)])
+    expect(fierce.segments).toContainEqual({ type: 'tag', text: '降龙十八掌 · 穿透 58 点防御 · 增伤 +208', tone: 'gold' })
   })
 
   it('奇门剑和护腕的固定破甲按实际低防截断', () => {
@@ -1661,7 +1662,7 @@ describe('奇门破甲与装备破盾', () => {
     const options = { surviveRounds: 1, enemyMain: agileEnemy }
     const low = mainCast(fight(gear, { ...options, enemyMain: { ...agileEnemy, combat: { def: 12 } } }))
     expect(low.hpDelta).toBe(mainCast(fight(gear, options)).hpDelta)
-    expect(low.segments.filter((segment) => segment.type === 'tag')).toEqual([flatTag(swordAndBracer, 12, 52)])
+    expect(low.segments.filter((segment) => segment.type === 'tag')).toEqual([flatTag(swordAndBracer, 12, 55)])
   })
 
   it('重掌套常规外功的奇数伤害按 1.5 倍向下取整消耗盾值', () => {
@@ -1691,11 +1692,11 @@ describe('奇门破甲与装备破盾', () => {
       surviveRounds: 1, enemyMain: { ...agileEnemy, combat: { openingShield: 501 } },
     })
     const cast = mainCast(report)
-    expect(cast).toMatchObject({ hpDelta: -772, shieldDelta: -501, shieldAbsorbed: 251, statusRemoved: '护盾' })
+    expect(cast).toMatchObject({ hpDelta: -1035, shieldDelta: -501, shieldAbsorbed: 251, statusRemoved: '护盾' })
     expect(cast.segments).toContainEqual(shieldTag(251, 501))
     expect(effectEvents(report, clawId)).toMatchObject([
       { type: 'EFFECT', statusApplied: '流血', statusRounds: 2 },
-      { type: 'DOT_TICK', hpDelta: -133, statusRounds: 1 },
+      { type: 'DOT_TICK', hpDelta: -146, statusRounds: 1 },
     ])
   })
 
@@ -1783,9 +1784,9 @@ describe('装备固定真伤', () => {
       surviveRounds: 1, enemyMain: { ...enemy, combat: { def: 200, openingShield: 1200 } },
     })
     const cast = mainCast(report)
-    expect(cast).toMatchObject({ hpDelta: -149, shieldAbsorbed: 1200, shieldDelta: -1200, statusRemoved: '护盾' })
-    expect(cast.segments).toContainEqual(flatTag('白驼陨铁金蛇软剑', 40, 34))
-    expect(cast.segments).toContainEqual({ type: 'tag', text: '降龙十八掌 · 穿透 56 点防御 · 增伤 +115', tone: 'gold' })
+    expect(cast).toMatchObject({ hpDelta: -209, shieldAbsorbed: 1200, shieldDelta: -1200, statusRemoved: '护盾' })
+    expect(cast.segments).toContainEqual(flatTag('白驼陨铁金蛇软剑', 40, 75))
+    expect(cast.segments).toContainEqual({ type: 'tag', text: '降龙十八掌 · 穿透 56 点防御 · 增伤 +120', tone: 'gold' })
     const [bonus] = effectEvents(report, snakeSwordId)
     expect(report.events[report.events.indexOf(cast) + 1]).toBe(bonus)
     expect(bonus.hpDelta).toBe(-150)

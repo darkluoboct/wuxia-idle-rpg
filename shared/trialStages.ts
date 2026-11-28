@@ -708,13 +708,13 @@ export const TRIAL_SETS: TrialSetConfig[] = [
       S('WEAPON', '东海万年碧玉箫', {
         atkBonus: 420,
         ...partEffect({ kind: 'TECHNIQUE_DAMAGE', stance: 'AGILE', percent: 30 },
-          '奇门架势招式伤害 +30%，桃花岛真传配用时碧海潮生曲消耗怒气减半，音律出手绕过护盾并封穴 1 回合', outerTrueDamage(120)),
+          '奇门架势招式伤害 +30%，桃花岛真传配用时碧海潮生曲消耗怒气减少 25%，音律出手绕过护盾并有 45% 概率封穴 1 回合', outerTrueDamage(120)),
         signatureOwner: '黄药师 / 桃花岛真传',
         companionUse: { owners: ['huangyaoshi'], stance: 'AGILE', outerSkillId: 'luoying_zhang', ultimate: 'bihai_chaosheng' },
         resonance: { sectId: 'taohua', rank: 4, battleEffects: [
-          { kind: 'ULT_RAGE_DISCOUNT', skillId: 'bihai_chaosheng', percent: 50 },
+          { kind: 'ULT_RAGE_DISCOUNT', skillId: 'bihai_chaosheng', percent: 25 },
           { kind: 'GUARD_BYPASS', guard: 'SHIELD', forms: ['SOUND'] },
-          { kind: 'ON_HIT_STATUS', matches: { forms: ['SOUND'] }, rule: { status: 'SEAL', rounds: 1 } },
+          { kind: 'ON_HIT_STATUS', matches: { forms: ['SOUND'] }, rule: { status: 'SEAL', chancePercent: 45, rounds: 1 } },
         ] },
       }),
       S('HEAD', '碧玉雕花束发冠', { hpBonus: 1600, ...partStats({ intStat: 20 }) }),

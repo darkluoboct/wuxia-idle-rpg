@@ -309,6 +309,8 @@ export const useGameStore = defineStore('wuxiaGame', () => {
     canSaluteSect: sect.canSaluteSect,
     canBegToday: sect.canBegToday,
     unclaimedSectEquipment: sect.unclaimedSectEquipment,
+    unclaimedSectSkills: sect.unclaimedSectSkills,
+    hasUnclaimedSectRewards: sect.hasUnclaimedSectRewards,
     unclaimedWandererEquipment: sect.unclaimedWandererEquipment,
     wandererTeamDamage: sect.wandererTeamDamage,
     gaibangFinalPending: sect.gaibangFinalPending,

@@ -165,7 +165,7 @@ export const usePlayerStore = defineStore('wuxiaPlayer', () => {
   const setBonusStates = computed(() => activeSetBonuses((id) => !!companionAffinity.value[id]?.recruited))
   const collectionBonus = computed(() => totalCompanionSetBonuses(setBonusStates.value))
   const derivedStats = computed(() => onlineState.value?.snapshot.derivedStats ??
-    computeDerivedStats(player.value, currentLoadout.value, collectionBonus.value, companionOf))
+    computeDerivedStats(player.value, currentLoadout.value, collectionBonus.value, companionOf, learnedSkills.value))
 
   /** 好感上限随主线章节推进抬高（仅新游戏）；演武模式不设限 */
   const affinityCap = computed(() => (limitsEnabled.value ? affinityCapFor(player.value.maxChapterId) : 1000))
@@ -182,14 +182,14 @@ export const usePlayerStore = defineStore('wuxiaPlayer', () => {
     innAffinityGain(id, favorite, jianghuTitle.value?.id)))
   /** 伙伴当前形态视图（形态 / 资质已套用），界面与战斗统一读它 */
   const companionOf = (id: string) => (COMPANIONS[id] ? companionView(COMPANIONS[id], companionAffinity.value[id]) : undefined)
-  const companionCombatStats = (id: string) => computeCompanionDerivedStats(player.value, currentLoadout.value, id, companionOf)
+  const companionCombatStats = (id: string) => computeCompanionDerivedStats(player.value, currentLoadout.value, id, companionOf, learnedSkills.value)
 
   function simulateServerBattle(params: Parameters<typeof simulateBattle>[0]) {
-    return simulateBattle({ bonus: collectionBonus.value, companionOf, ownedItemIds: ownedItemIds.value, ...params })
+    return simulateBattle({ bonus: collectionBonus.value, companionOf, ownedItemIds: ownedItemIds.value, learnedSkills: learnedSkills.value, ...params })
   }
 
   // 计算当前实时每小时打坐真气效率
-  const mockIdleRates = computed(() => cultivationRates(player.value, currentLoadout.value, collectionBonus.value.idleQiPct))
+  const mockIdleRates = computed(() => cultivationRates(player.value, currentLoadout.value, collectionBonus.value.idleQiPct, learnedSkills.value))
   const effectiveQiPerHour = computed(() => {
     const live = onlineState.value?.snapshot
     if (!live) return mockIdleRates.value.qi

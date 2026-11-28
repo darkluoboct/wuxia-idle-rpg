@@ -80,19 +80,21 @@ type PresenceRow = CharacterRow & {
   companionAffinity: PlayerSnapshot['companionAffinity']
   affixes: Record<string, number>
   artifact: boolean
+  learnedSkills: Record<string, number>
 }
 
-// 房间只需要当前方案、装备词条、真品和伙伴；各子查询使用 player_id 索引。
+// 房间只需要当前方案、装备词条、真品、已学武学和伙伴；各子查询使用 player_id 索引。
 const presenceColumns = `p.*,
   (SELECT preset FROM player_loadouts WHERE player_id = p.id AND preset_idx = (p.profile->>'activePresetIdx')::int) AS loadout,
   COALESCE((SELECT jsonb_object_agg(item_id, affix_roll) FROM player_items WHERE player_id = p.id AND affix_roll > 0), '{}') AS affixes,
   EXISTS (SELECT 1 FROM player_items WHERE player_id = p.id AND item_id = 'dagou_stick_true') AS artifact,
+  COALESCE((SELECT jsonb_object_agg(skill_id, mastery) FROM player_skills WHERE player_id = p.id), '{}') AS "learnedSkills",
   COALESCE((SELECT jsonb_object_agg(companion_id, state) FROM player_companions WHERE player_id = p.id), '{}') AS "companionAffinity"`
 
 function presenceOfRow(row: PresenceRow, now: number) {
   const { player } = restorePlayer(row, row.affixes)
   recruitTrialCompanions(row.companionAffinity, player.trial.rewardedStageIds)
-  const stats = computeDerivedStats(player, row.loadout, collectionBonus(row), (id) => equippedCompanion(row, id))
+  const stats = computeDerivedStats(player, row.loadout, collectionBonus(row), (id) => equippedCompanion(row, id), row.learnedSkills)
   return presence(player, row.loadout, stats.combatPower, row.artifact, row.revision, now)
 }
 

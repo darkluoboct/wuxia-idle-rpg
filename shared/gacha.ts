@@ -47,12 +47,12 @@ const I = (id: string, weight: number): GachaEntry => ({ kind: 'ITEM', id, weigh
 export const GACHA_POOL: Record<GachaTier, GachaEntry[]> = {
   red: [
     C('hongqigong', 10), C('huangyaoshi', 10), C('zhoubotong', 10), C('ouyangfeng', 10), C('yideng', 10), C('wangchongyang', 10),
-    S('kanglong_youhui', 8), S('bihai_chaosheng', 8), S('jiuyin_zonggang', 8),
+    S('kanglong_youhui', 8), S('bihai_chaosheng', 8), S('jiuyin_zonggang', 8), S('xiantian_gong', 6),
     I('ruanwei_armor', 8), I('wumu_yishu', 8),
   ],
   orange: [
     C('qiuchuji', 8), C('qiuqianren', 8), C('yangkang', 8), C('yinggu', 8), C('zhebie', 8), C('lingzhi', 8),
-    S('dagou_bangfa', 4), S('kongming_quan', 4), S('shuangshou_hubo', 4), S('tanzhi_shentong', 4), S('xiantian_gong', 4), S('dashouyin', 4),
+    S('dagou_bangfa', 4), S('kongming_quan', 4), S('shuangshou_hubo', 4), S('tanzhi_shentong', 4), S('tonggui_jianfa', 4), S('dashouyin', 4),
     I('biyu_xiao', 3), I('wucan_baoyi', 3), I('lingshe_zhang', 3), I('tiancan_glove', 3),
     { kind: 'TOKEN', id: 'guojing', qty: 10, weight: 8 }, { kind: 'TOKEN', id: 'huangrong', qty: 10, weight: 8 },
   ],

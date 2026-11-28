@@ -55,15 +55,17 @@ export function hasMartialFreedom(loadout: LoadoutPresetDTO) {
 }
 
 export function martialEffectiveness(skill: SkillConfig, player?: MartialSchoolMember, freedom = false) {
-  if (freedom) return 100
   const school = schools.get(player?.currentSectId ?? '')
-  if (!school || school.signatureSkills.some((rank) => rank.includes(skill.id))) return 100
   const origin = martialOrigin(skill).id
-  if (origin === school.id) return 100
-  if (skill.slot === 'INNER' && (skill.tier === 'red' || skill.id === 'xiantian_gong') && player?.graduatedSectIds?.includes(origin)) return 80
+  if (school && (school.signatureSkills.some((rank) => rank.includes(skill.id)) || origin === school.id)) return 105
+  if (freedom || !school) return 100
+  if ((skill.tier === 'red' || skill.id === 'xiantian_gong') && player?.graduatedSectIds?.includes(origin)) return 80
   const alignment = origin === 'heifeng' ? 'HERETIC' : schools.get(origin)?.alignment
-  return (school.alignment === 'RIGHTEOUS' && alignment === 'HERETIC') ||
-    (school.alignment === 'HERETIC' && alignment === 'RIGHTEOUS') ? 70 : 100
+  if ((school.alignment === 'RIGHTEOUS' && alignment === 'HERETIC') ||
+    (school.alignment === 'HERETIC' && alignment === 'RIGHTEOUS')) return 70
+  if (school.alignment === 'NEUTRAL' && (skill.slot === 'INNER' || skill.slot === 'ULT') &&
+    (skill.tier === 'orange' || skill.tier === 'red') && schools.has(origin)) return 85
+  return 100
 }
 
 export function equippedMartialSkills(loadout: LoadoutPresetDTO) {

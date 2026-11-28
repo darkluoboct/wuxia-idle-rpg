@@ -10,7 +10,7 @@ import { player, loadout, flaskId, nanBei, enemy, agileEnemy, baseCompanion, fig
 
 it('壮骨提高实际最大气血，田厨在护盾前减免物伤，两个心法都有取得入口', () => {
   const noGear = computeDerivedStats(player, loadout)
-  expect(computeDerivedStats(player, { ...loadout, innerSkillId: 'zhuanggu_jue' }).maxHp).toBe(Math.round(noGear.maxHp * 1.05))
+  expect(computeDerivedStats(player, { ...loadout, innerSkillId: 'zhuanggu_jue' }).maxHp).toBe(Math.round((noGear.maxHp + 420) * 1.05))
   const baseline = fight({}, { surviveRounds: 1, rng: () => 0.99 })
   const report = fight({ innerSkillId: 'tianchu_qigong' }, { surviveRounds: 1, rng: () => 0.99 })
   const incoming = (battle: BattleReportDTO) => battle.events.find((event) => event.actorSlot === 'ENEMY_MAIN' && event.type === 'SKILL_CAST')!
@@ -1459,26 +1459,26 @@ describe('护盾与九阴白骨爪', () => {
   it('白骨爪双倍消耗盾值，奇数盾值用完时只按实际未吸收伤害扣血', () => {
     const shielded = fight(claw, { enemyMain: { ...enemy, combat: { openingShield: 299 } }, surviveRounds: 1 })
     const hit = mainAttacks(shielded)[0]
-    expect(mainAttacks(fight(claw))[0].hpDelta).toBe(-221)
-    expect(hit).toMatchObject({ hpDelta: -71, shieldDelta: -299, shieldAbsorbed: 150, statusRemoved: '护盾' })
+    expect(mainAttacks(fight(claw))[0].hpDelta).toBe(-371)
+    expect(hit).toMatchObject({ hpDelta: -221, shieldDelta: -299, shieldAbsorbed: 150, statusRemoved: '护盾' })
     expect(hit.segments).toContainEqual({ type: 'tag', text: '护盾吸收 150 · 撕盾 299', tone: 'jade' })
-    expect(hit.segments).toContainEqual({ type: 'damage', value: 71, category: 'phys', isCrit: false })
+    expect(hit.segments).toContainEqual({ type: 'damage', value: 221, category: 'phys', isCrit: false })
   })
 
   it('完全吸收的白骨爪仍施加流血，流血穿过护盾结算两回合后解除', () => {
     const report = fight({ ...claw, ultSkillId: 'yiyang_zhi' }, { enemyMain: { ...enemy, combat: { openingShield: 1000 } } })
     expect(mainAttacks(report)).toMatchObject([
-      { round: 1, skillId: clawId, hpDelta: 0, shieldDelta: -442, shieldAbsorbed: 221 },
-      { round: 2, skillId: 'yiyang_zhi', hpDelta: 0, shieldDelta: -404, shieldAbsorbed: 404 },
+      { round: 1, skillId: clawId, hpDelta: 0, shieldDelta: -742, shieldAbsorbed: 371 },
+      { round: 2, skillId: 'yiyang_zhi', hpDelta: -337, shieldDelta: -258, shieldAbsorbed: 258 },
     ])
     const [applied, firstTick, lastTick] = effectEvents(report, clawId)
     expect(effectEvents(report, clawId)).toMatchObject([
       { round: 1, type: 'EFFECT', targetSlot: 'ENEMY_MAIN', statusApplied: '流血', statusRounds: 2 },
-      { round: 1, type: 'DOT_TICK', targetSlot: 'ENEMY_MAIN', hpDelta: -29, statusRounds: 1 },
-      { round: 2, type: 'DOT_TICK', targetSlot: 'ENEMY_MAIN', hpDelta: -29, statusRounds: 0, statusRemoved: '流血' },
+      { round: 1, type: 'DOT_TICK', targetSlot: 'ENEMY_MAIN', hpDelta: -42, statusRounds: 1 },
+      { round: 2, type: 'DOT_TICK', targetSlot: 'ENEMY_MAIN', hpDelta: -42, statusRounds: 0, statusRemoved: '流血' },
     ])
     expect(applied.segments).toContainEqual({ type: 'tag', text: '九阴白骨爪 · 流血', tone: 'red' })
-    expect(firstTick.segments).toContainEqual({ type: 'damage', value: 29, category: 'bleed' })
+    expect(firstTick.segments).toContainEqual({ type: 'damage', value: 42, category: 'bleed' })
     expect(lastTick.segments).toContainEqual({ type: 'text', text: '，流血结束。' })
   })
 
@@ -1489,21 +1489,21 @@ describe('护盾与九阴白骨爪', () => {
       { round: 2, statusApplied: '流血', statusRounds: 2 },
     ])
     expect(report.events.filter((event) => event.type === 'DOT_TICK')).toMatchObject([
-      { round: 1, effectSourceId: 'ruanwei_armor', hpDelta: -14, statusRounds: 1 },
-      { round: 1, effectSourceId: clawId, hpDelta: -29, statusRounds: 1 },
-      { round: 2, effectSourceId: 'ruanwei_armor', hpDelta: -14, statusRounds: 1 },
-      { round: 2, effectSourceId: clawId, hpDelta: -29, statusRounds: 1 },
+      { round: 1, effectSourceId: 'ruanwei_armor', hpDelta: -21, statusRounds: 1 },
+      { round: 1, effectSourceId: clawId, hpDelta: -42, statusRounds: 1 },
+      { round: 2, effectSourceId: 'ruanwei_armor', hpDelta: -21, statusRounds: 1 },
+      { round: 2, effectSourceId: clawId, hpDelta: -42, statusRounds: 1 },
     ])
   })
 
   it('流血击杀按剩余气血播报，出招直接击杀时不施加流血', () => {
-    const killedByBleed = fight(claw, { enemyMain: { ...enemy, hp: 225 } })
+    const killedByBleed = fight(claw, { enemyMain: { ...enemy, hp: 375 } })
     expect(killedByBleed.winner).toBe('ALLY')
     expect(effectEvents(killedByBleed, clawId).at(-1)).toMatchObject({
       type: 'DOT_TICK', hpDelta: -4, statusRemoved: '流血', statusRounds: 0,
     })
     expect(killedByBleed.events.at(-1)?.segments).toContainEqual({ type: 'damage', value: 4, category: 'bleed' })
-    expect(effectEvents(fight(claw, { enemyMain: { ...enemy, hp: 221 } }), clawId)).toEqual([])
+    expect(effectEvents(fight(claw, { enemyMain: { ...enemy, hp: 371 } }), clawId)).toEqual([])
   })
 
   it('一阳指先算穿透再由护盾吸收，增伤按实际扣除的气血记录', () => {
@@ -1550,10 +1550,10 @@ describe('护盾与九阴白骨爪', () => {
       round: 1, actorSlot: 'ENEMY_MAIN', targetSlot: 'ALLY_RIGHT', hpDelta: 0, shieldAbsorbed: 894,
     }))
     expect(report.events.find((event) => event.skillId === clawId && event.statusRemoved === '护盾')).toMatchObject({
-      round: 3, actorSlot: 'ALLY_MAIN', targetSlot: 'ENEMY_MAIN', hpDelta: -3154, shieldAbsorbed: 600, shieldDelta: -1200,
+      round: 3, actorSlot: 'ALLY_MAIN', targetSlot: 'ENEMY_MAIN', hpDelta: -3860, shieldAbsorbed: 600, shieldDelta: -1200,
     })
     expect(effectEvents(report, clawId).filter((event) => event.type === 'DOT_TICK' && event.round === 3 && event.targetSlot === 'ENEMY_MAIN')).toMatchObject([
-      { actorSlot: 'ALLY_LEFT', hpDelta: -272, statusRounds: 1 },
+      { actorSlot: 'ALLY_LEFT', hpDelta: -286, statusRounds: 1 },
     ])
   })
 
@@ -1575,24 +1575,24 @@ describe('护盾与九阴白骨爪', () => {
             store.skipBattleToEnd()
           } else {
             const delay = BATTLE_STEP_MS
-            const hitIndex = report.events.findIndex((event) => event.shieldAbsorbed === 111)
+            const hitIndex = report.events.findIndex((event) => event.skillId === clawId && (event.shieldAbsorbed ?? 0) > 0)
             const tickIndex = report.events.findIndex((event) => event.type === 'DOT_TICK')
             expect(hitIndex).toBeGreaterThan(0)
             expect(tickIndex).toBeGreaterThan(hitIndex)
             vi.advanceTimersByTime(hitIndex * delay)
-            expect(store.floatingPopups.ENEMY_MAIN).toMatchObject({ text: '护盾吸收 111', category: 'shield' })
+            expect(store.floatingPopups.ENEMY_MAIN).toMatchObject({ text: '-109', category: 'phys' })
             const hp = store.liveUnitStates.ENEMY_MAIN.hp
-            expect(hp).toBe(trialStageOf(7)!.boss.hp)
+            expect(hp).toBe(trialStageOf(7)!.boss.hp - 109)
             vi.advanceTimersByTime((tickIndex - hitIndex) * delay)
-            expect(store.floatingPopups.ENEMY_MAIN).toMatchObject({ text: '流血 -17', category: 'bleed' })
-            expect(store.liveUnitStates.ENEMY_MAIN.hp).toBe(hp - 17)
+            expect(store.floatingPopups.ENEMY_MAIN).toMatchObject({ text: '流血 -30', category: 'bleed' })
+            expect(store.liveUnitStates.ENEMY_MAIN.hp).toBe(hp - 30)
             vi.advanceTimersByTime((report.events.length - tickIndex) * delay)
           }
           expect(store.isBattlePlaying).toBe(false)
           const logs = store.logs.filter((entry) => entry.channel === 'BATTLE').flatMap((entry) => entry.segments)
-          expect(logs).toContainEqual({ type: 'tag', text: '护盾吸收 9 · 撕盾 18', tone: 'jade' })
+          expect(logs).toContainEqual({ type: 'tag', text: '护盾吸收 120 · 撕盾 240', tone: 'jade' })
           expect(logs).toContainEqual({ type: 'tag', text: '破盾', tone: 'red' })
-          expect(logs).toContainEqual({ type: 'damage', value: 17, category: 'bleed' })
+          expect(logs).toContainEqual({ type: 'damage', value: 30, category: 'bleed' })
           return { logs, hp: store.liveUnitStates.ENEMY_MAIN.hp }
         } finally {
           store.closeBattleStage()
@@ -1601,6 +1601,27 @@ describe('护盾与九阴白骨爪', () => {
 
       const normal = replay('normal')
       expect(replay('skip')).toEqual(normal)
+
+      const shieldPopupStore = newStore('NEW')
+      try {
+        Object.assign(shieldPopupStore.player.stats, player.stats, { str: 3 })
+        shieldPopupStore.trial.maxStageId = 7
+        shieldPopupStore.trial.stageHours['7'] = TRIAL_PATROL_HOURS[7]
+        shieldPopupStore.updateLoadout({ ...loadout })
+        shieldPopupStore.challengeTrialStage(7)
+        const basicReport = shieldPopupStore.activeBattle!
+        const shieldHit = basicReport.events.findIndex((event) =>
+          event.actorSlot === 'ALLY_MAIN' && event.hpDelta === 0 && (event.shieldAbsorbed ?? 0) > 0)
+        expect(shieldHit).toBeGreaterThan(0)
+        vi.advanceTimersByTime(shieldHit * BATTLE_STEP_MS)
+        expect(shieldPopupStore.floatingPopups.ENEMY_MAIN).toMatchObject({
+          category: 'shield',
+          text: `护盾吸收 ${basicReport.events[shieldHit].shieldAbsorbed!.toLocaleString()}`,
+        })
+        expect(shieldPopupStore.liveUnitStates.ENEMY_MAIN.hp).toBe(trialStageOf(7)!.boss.hp)
+      } finally {
+        shieldPopupStore.closeBattleStage()
+      }
     } finally {
       vi.useRealTimers()
     }
